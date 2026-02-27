@@ -17,6 +17,18 @@ export default function POSPage() {
     })
   }
 
+  function changeQty(id, delta) {
+    setCart(prev =>
+      prev
+        .map(i => i.id === id ? { ...i, quantity: i.quantity + delta } : i)
+        .filter(i => i.quantity > 0)
+    )
+  }
+
+  function removeFromCart(id) {
+    setCart(prev => prev.filter(i => i.id !== id))
+  }
+
   async function checkout() {
     if (cart.length === 0) return alert('กรุณาเลือกสินค้าก่อนครับ')
     const res = await fetch('/orders', {
@@ -35,15 +47,21 @@ export default function POSPage() {
     <div className="flex gap-6">
       <div className="flex-[2]">
         <h2 className="text-slate-500 font-medium mb-3">สินค้า</h2>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3">
           {products.map(p => (
             <div
               key={p.id}
               onClick={() => addToCart(p)}
-              className="bg-white rounded-xl p-4 text-center cursor-pointer shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all"
+              className="bg-white rounded-xl overflow-hidden cursor-pointer shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all"
             >
-              <div className="font-semibold mb-1.5">{p.name}</div>
-              <div className="text-blue-500 text-lg">฿{p.price}</div>
+              {p.image
+                ? <img src={p.image} alt={p.name} className="w-full h-28 object-cover" />
+                : <div className="w-full h-28 bg-slate-100 flex items-center justify-center text-4xl">🛍️</div>
+              }
+              <div className="p-3">
+                <div className="font-semibold text-sm mb-1">{p.name}</div>
+                <div className="text-blue-500 font-medium">฿{p.price}</div>
+              </div>
             </div>
           ))}
         </div>
@@ -54,18 +72,43 @@ export default function POSPage() {
         {cart.length === 0
           ? <p className="text-slate-400 text-sm">ยังไม่มีสินค้า</p>
           : cart.map(i => (
-            <div key={i.id} className="flex justify-between py-2 border-b border-slate-100 text-sm">
-              <span>{i.name} x{i.quantity}</span>
-              <span>฿{i.price * i.quantity}</span>
+            <div key={i.id} className="py-2.5 border-b border-slate-100">
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-sm font-medium flex-1 mr-2">{i.name}</span>
+                <button
+                  onClick={() => removeFromCart(i.id)}
+                  className="text-slate-300 hover:text-red-400 text-xl leading-none cursor-pointer"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => changeQty(i.id, -1)}
+                    className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold cursor-pointer"
+                  >
+                    −
+                  </button>
+                  <span className="w-7 text-center text-sm font-medium">{i.quantity}</span>
+                  <button
+                    onClick={() => changeQty(i.id, 1)}
+                    className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold cursor-pointer"
+                  >
+                    +
+                  </button>
+                </div>
+                <span className="text-sm font-semibold text-slate-700">฿{i.price * i.quantity}</span>
+              </div>
             </div>
           ))
         }
         {cart.length > 0 && (
-          <div className="text-right font-bold text-blue-900 mt-3">รวม ฿{total}</div>
+          <div className="text-right font-bold text-blue-900 mt-3 text-lg">รวม ฿{total}</div>
         )}
         <button
           onClick={checkout}
-          className="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg cursor-pointer"
+          className="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg cursor-pointer font-medium"
         >
           ชำระเงิน
         </button>

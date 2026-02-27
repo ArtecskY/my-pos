@@ -40,6 +40,8 @@ async function initDB() {
     password TEXT NOT NULL
   )`)
 
+  try { db.run('ALTER TABLE products ADD COLUMN image TEXT') } catch (e) { /* column exists */ }
+
   console.log('✅ เชื่อมต่อฐานข้อมูลสำเร็จ')
   return db
 }

@@ -2,15 +2,40 @@ const express = require('express')
 const session = require('express-session')
 const bcrypt = require('bcryptjs')
 const { initDB, save, getDB } = require('./database')
+const cors = require('cors')
+const multer = require('multer')
+const path = require('path')
+const fs = require('fs')
 
 const app = express()
 app.use(express.json())
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true
+}))
 app.use(express.static('public'))
 app.use(session({
   secret: 'pos-secret-key',
   resave: false,
   saveUninitialized: false
 }))
+
+if (!fs.existsSync('public/uploads')) fs.mkdirSync('public/uploads', { recursive: true })
+
+const storage = multer.diskStorage({
+  destination: 'public/uploads/',
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}${path.extname(file.originalname)}`)
+  }
+})
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true)
+    else cb(new Error('ไฟล์ต้องเป็นรูปภาพเท่านั้น'))
+  }
+})
 
 function requireLogin(req, res, next) {
   if (req.session.user) return next()
@@ -23,7 +48,7 @@ initDB().then(() => {
   app.get('/products', (req, res) => {
     const result = db.exec('SELECT * FROM products')
     const products = result[0] ? result[0].values.map(row => ({
-      id: row[0], name: row[1], price: row[2], stock: row[3]
+      id: row[0], name: row[1], price: row[2], stock: row[3], image: row[4] || null
     })) : []
     res.json(products)
   })
@@ -31,8 +56,10 @@ initDB().then(() => {
   app.post('/products', requireLogin, (req, res) => {
     const { name, price, stock } = req.body
     db.run('INSERT INTO products (name, price, stock) VALUES (?, ?, ?)', [name, price, stock])
+    const result = db.exec('SELECT last_insert_rowid()')
+    const id = result[0].values[0][0]
     save()
-    res.json({ message: 'เพิ่มสินค้าสำเร็จ' })
+    res.json({ id, message: 'เพิ่มสินค้าสำเร็จ' })
   })
 
   app.put('/products/:id', requireLogin, (req, res) => {
@@ -42,7 +69,27 @@ initDB().then(() => {
     res.json({ message: 'แก้ไขสินค้าสำเร็จ' })
   })
 
+  app.post('/products/:id/image', requireLogin, upload.single('image'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'ไม่พบไฟล์รูปภาพ' })
+    const imageUrl = `/uploads/${req.file.filename}`
+    // Delete old image file if exists
+    const old = db.exec('SELECT image FROM products WHERE id=?', [req.params.id])
+    if (old[0]?.values[0][0]) {
+      const oldPath = path.join('public', old[0].values[0][0])
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath)
+    }
+    db.run('UPDATE products SET image=? WHERE id=?', [imageUrl, req.params.id])
+    save()
+    res.json({ image: imageUrl })
+  })
+
   app.delete('/products/:id', requireLogin, (req, res) => {
+    // Delete image file if exists
+    const result = db.exec('SELECT image FROM products WHERE id=?', [req.params.id])
+    if (result[0]?.values[0][0]) {
+      const imgPath = path.join('public', result[0].values[0][0])
+      if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath)
+    }
     db.run('DELETE FROM products WHERE id=?', [req.params.id])
     save()
     res.json({ message: 'ลบสินค้าสำเร็จ' })

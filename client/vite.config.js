@@ -6,12 +6,12 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
-      '/products': 'http://localhost:3000',
-      '/orders': 'http://localhost:3000',
-      '/login': 'http://localhost:3000',
-      '/logout': 'http://localhost:3000',
-      '/register': 'http://localhost:3000',
-      '/me': 'http://localhost:3000',
+      '/products': { target: 'http://localhost:3000', changeOrigin: true },
+      '/orders': { target: 'http://localhost:3000', changeOrigin: true },
+      '/login': { target: 'http://localhost:3000', changeOrigin: true },
+      '/logout': { target: 'http://localhost:3000', changeOrigin: true },
+      '/register': { target: 'http://localhost:3000', changeOrigin: true },
+      '/me': { target: 'http://localhost:3000', changeOrigin: true },
     }
   }
 })
