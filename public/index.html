@@ -22,7 +22,7 @@
     .btn { width: 100%; margin-top: 12px; padding: 12px; background: #3b82f6; color: white; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
     .btn:hover { background: #2563eb; }
     .empty { color: #94a3b8; font-size: 0.9rem; }
-    .receipt { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
+    .receipt { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 100; }
     .receipt-box { background: white; border-radius: 16px; padding: 32px; min-width: 300px; text-align: center; }
     .receipt-box h2 { color: #22c55e; margin-bottom: 16px; }
     .receipt-box p { margin-bottom: 8px; color: #475569; }
@@ -44,11 +44,50 @@
     .btn-auth { margin-top: 4px; }
 
     /* Header bar */
-    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
     .header h1 { margin-bottom: 0; }
     .user-info { display: flex; align-items: center; gap: 12px; font-size: 0.9rem; color: #475569; }
     .btn-logout { width: auto; margin-top: 0; padding: 8px 16px; background: #e2e8f0; color: #475569; font-size: 0.9rem; border-radius: 8px; }
     .btn-logout:hover { background: #cbd5e1; }
+
+    /* Page nav tabs */
+    .nav-tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid #e2e8f0; }
+    .nav-tab { padding: 10px 20px; border: none; background: none; cursor: pointer; font-size: 0.95rem; color: #64748b; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+    .nav-tab.active { color: #3b82f6; font-weight: 600; border-bottom-color: #3b82f6; }
+
+    /* Product management */
+    #managePage { display: none; }
+    .manage-card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 6px rgba(0,0,0,0.07); }
+    .manage-card h2 { color: #1e293b; margin-bottom: 16px; font-size: 1.1rem; }
+    .add-form { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
+    .add-form input { flex: 1; min-width: 120px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.95rem; }
+    .add-form input:focus { outline: none; border-color: #3b82f6; }
+    .btn-add { width: auto; margin-top: 0; padding: 10px 20px; white-space: nowrap; }
+    .product-table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+    .product-table th { text-align: left; padding: 10px 12px; color: #64748b; font-weight: 600; border-bottom: 2px solid #e2e8f0; }
+    .product-table td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    .product-table tr:last-child td { border-bottom: none; }
+    .product-table tr:hover td { background: #f8fafc; }
+    .btn-icon { width: auto; margin-top: 0; padding: 6px 12px; font-size: 0.85rem; border-radius: 6px; }
+    .btn-edit { background: #f59e0b; }
+    .btn-edit:hover { background: #d97706; }
+    .btn-delete { background: #ef4444; margin-left: 6px; }
+    .btn-delete:hover { background: #dc2626; }
+    .manage-empty { color: #94a3b8; text-align: center; padding: 24px 0; }
+    .form-error { color: #ef4444; font-size: 0.85rem; margin-top: 6px; width: 100%; }
+
+    /* Edit modal */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 100; }
+    .modal-box { background: white; border-radius: 16px; padding: 32px; width: 360px; }
+    .modal-box h2 { color: #1e3a8a; margin-bottom: 20px; }
+    .modal-field { margin-bottom: 14px; }
+    .modal-field label { display: block; margin-bottom: 6px; font-size: 0.9rem; color: #475569; }
+    .modal-field input { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 1rem; }
+    .modal-field input:focus { outline: none; border-color: #3b82f6; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+    .modal-actions .btn { margin-top: 0; }
+    .btn-cancel { background: #e2e8f0; color: #475569; }
+    .btn-cancel:hover { background: #cbd5e1; }
   </style>
 </head>
 <body>
@@ -83,16 +122,54 @@
         <button class="btn btn-logout" onclick="logout()">ออกจากระบบ</button>
       </div>
     </div>
-    <div class="container">
-      <div class="products">
-        <h2 style="margin-bottom:12px; color:#475569;">สินค้า</h2>
-        <div class="product-grid" id="productGrid"></div>
+
+    <!-- Nav tabs -->
+    <div class="nav-tabs">
+      <button class="nav-tab active" id="navPOS" onclick="showPage('pos')">หน้าขาย</button>
+      <button class="nav-tab" id="navManage" onclick="showPage('manage')">จัดการสินค้า</button>
+    </div>
+
+    <!-- POS page -->
+    <div id="posPage">
+      <div class="container">
+        <div class="products">
+          <h2 style="margin-bottom:12px; color:#475569;">สินค้า</h2>
+          <div class="product-grid" id="productGrid"></div>
+        </div>
+        <div class="cart">
+          <h2>ตะกร้า</h2>
+          <div id="cartItems"><p class="empty">ยังไม่มีสินค้า</p></div>
+          <div class="cart-total" id="cartTotal"></div>
+          <button class="btn" onclick="checkout()">ชำระเงิน</button>
+        </div>
       </div>
-      <div class="cart">
-        <h2>ตะกร้า</h2>
-        <div id="cartItems"><p class="empty">ยังไม่มีสินค้า</p></div>
-        <div class="cart-total" id="cartTotal"></div>
-        <button class="btn" onclick="checkout()">ชำระเงิน</button>
+    </div>
+
+    <!-- Manage page -->
+    <div id="managePage">
+      <div class="manage-card">
+        <h2>เพิ่มสินค้าใหม่</h2>
+        <div class="add-form">
+          <input type="text" id="newName" placeholder="ชื่อสินค้า" />
+          <input type="number" id="newPrice" placeholder="ราคา (฿)" min="0" step="0.01" />
+          <input type="number" id="newStock" placeholder="สต็อก" min="0" />
+          <button class="btn btn-add" onclick="addProduct()">+ เพิ่มสินค้า</button>
+        </div>
+        <div id="addFormError" class="form-error"></div>
+
+        <h2 style="margin-top:8px;">รายการสินค้า</h2>
+        <table class="product-table">
+          <thead>
+            <tr>
+              <th>ชื่อสินค้า</th>
+              <th>ราคา</th>
+              <th>สต็อก</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="productTableBody"></tbody>
+        </table>
+        <p id="manageEmpty" class="manage-empty" style="display:none;">ยังไม่มีสินค้า</p>
       </div>
     </div>
   </div>
@@ -104,6 +181,30 @@
       <p>ขอบคุณที่ใช้บริการ</p>
       <div class="receipt-total" id="receiptTotal"></div>
       <button class="btn btn-close" onclick="closeReceipt()">ปิด</button>
+    </div>
+  </div>
+
+  <!-- Edit modal -->
+  <div class="modal-overlay" id="editModal">
+    <div class="modal-box">
+      <h2>แก้ไขสินค้า</h2>
+      <input type="hidden" id="editId" />
+      <div class="modal-field">
+        <label>ชื่อสินค้า</label>
+        <input type="text" id="editName" />
+      </div>
+      <div class="modal-field">
+        <label>ราคา (฿)</label>
+        <input type="number" id="editPrice" min="0" step="0.01" />
+      </div>
+      <div class="modal-field">
+        <label>สต็อก</label>
+        <input type="number" id="editStock" min="0" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="saveEdit()">บันทึก</button>
+        <button class="btn btn-cancel" onclick="closeEditModal()">ยกเลิก</button>
+      </div>
     </div>
   </div>
 
@@ -146,7 +247,6 @@
       }
 
       if (currentTab === 'register') {
-        // Auto-login after register
         const loginRes = await fetch('/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -178,7 +278,7 @@
       document.getElementById('authScreen').style.display = 'none'
       document.getElementById('posScreen').style.display = 'block'
       document.getElementById('usernameDisplay').textContent = username
-      loadProducts()
+      showPage('pos')
     }
 
     async function checkAuth() {
@@ -189,6 +289,17 @@
       } else {
         document.getElementById('authScreen').style.display = 'flex'
       }
+    }
+
+    // --- Page navigation ---
+
+    function showPage(page) {
+      document.getElementById('posPage').style.display = page === 'pos' ? 'block' : 'none'
+      document.getElementById('managePage').style.display = page === 'manage' ? 'block' : 'none'
+      document.getElementById('navPOS').className = 'nav-tab' + (page === 'pos' ? ' active' : '')
+      document.getElementById('navManage').className = 'nav-tab' + (page === 'manage' ? ' active' : '')
+      if (page === 'pos') loadProducts()
+      if (page === 'manage') loadManageProducts()
     }
 
     // --- POS ---
@@ -249,6 +360,92 @@
 
     function closeReceipt() {
       document.getElementById('receipt').style.display = 'none'
+    }
+
+    // --- Product management ---
+
+    async function loadManageProducts() {
+      const res = await fetch('/products')
+      const products = await res.json()
+      const tbody = document.getElementById('productTableBody')
+      const emptyEl = document.getElementById('manageEmpty')
+      if (products.length === 0) {
+        tbody.innerHTML = ''
+        emptyEl.style.display = 'block'
+        return
+      }
+      emptyEl.style.display = 'none'
+      tbody.innerHTML = products.map(p => `
+        <tr>
+          <td>${p.name}</td>
+          <td>฿${p.price}</td>
+          <td>${p.stock}</td>
+          <td>
+            <button class="btn btn-icon btn-edit" onclick="openEditModal(${p.id}, '${p.name}', ${p.price}, ${p.stock})">แก้ไข</button>
+            <button class="btn btn-icon btn-delete" onclick="deleteProduct(${p.id})">ลบ</button>
+          </td>
+        </tr>
+      `).join('')
+    }
+
+    async function addProduct() {
+      const name = document.getElementById('newName').value.trim()
+      const price = parseFloat(document.getElementById('newPrice').value)
+      const stock = parseInt(document.getElementById('newStock').value)
+      const errorEl = document.getElementById('addFormError')
+      errorEl.textContent = ''
+
+      if (!name || isNaN(price) || isNaN(stock)) {
+        errorEl.textContent = 'กรุณากรอกข้อมูลให้ครบถ้วน'
+        return
+      }
+      if (price < 0 || stock < 0) {
+        errorEl.textContent = 'ราคาและสต็อกต้องไม่ติดลบ'
+        return
+      }
+
+      await fetch('/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, price, stock })
+      })
+      document.getElementById('newName').value = ''
+      document.getElementById('newPrice').value = ''
+      document.getElementById('newStock').value = ''
+      loadManageProducts()
+    }
+
+    async function deleteProduct(id) {
+      if (!confirm('ต้องการลบสินค้านี้?')) return
+      await fetch(`/products/${id}`, { method: 'DELETE' })
+      loadManageProducts()
+    }
+
+    function openEditModal(id, name, price, stock) {
+      document.getElementById('editId').value = id
+      document.getElementById('editName').value = name
+      document.getElementById('editPrice').value = price
+      document.getElementById('editStock').value = stock
+      document.getElementById('editModal').style.display = 'flex'
+    }
+
+    function closeEditModal() {
+      document.getElementById('editModal').style.display = 'none'
+    }
+
+    async function saveEdit() {
+      const id = document.getElementById('editId').value
+      const name = document.getElementById('editName').value.trim()
+      const price = parseFloat(document.getElementById('editPrice').value)
+      const stock = parseInt(document.getElementById('editStock').value)
+      if (!name || isNaN(price) || isNaN(stock)) return
+      await fetch(`/products/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, price, stock })
+      })
+      closeEditModal()
+      loadManageProducts()
     }
 
     checkAuth()
