@@ -5,6 +5,8 @@ export default function ManagePage() {
   const [form, setForm] = useState({ name: '', price: '', stock: '' })
   const [formError, setFormError] = useState('')
   const [editModal, setEditModal] = useState(null)
+  const [addPreview, setAddPreview] = useState(null)
+  const [editPreview, setEditPreview] = useState(null)
   const addImageRef = useRef(null)
   const editImageRef = useRef(null)
 
@@ -37,6 +39,7 @@ export default function ManagePage() {
     }
 
     setForm({ name: '', price: '', stock: '' })
+    setAddPreview(null)
     load()
   }
 
@@ -64,6 +67,7 @@ export default function ManagePage() {
     }
 
     setEditModal(null)
+    setEditPreview(null)
     load()
   }
 
@@ -88,8 +92,17 @@ export default function ManagePage() {
           />
         ))}
         <label className="flex items-center gap-1.5 px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-500 cursor-pointer hover:border-blue-400 whitespace-nowrap">
-          📷 รูปภาพ
-          <input ref={addImageRef} type="file" accept="image/*" className="hidden" />
+          📷 {addPreview ? 'เปลี่ยนรูป' : 'รูปภาพ'}
+          <input
+            ref={addImageRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={e => {
+              const file = e.target.files[0]
+              setAddPreview(file ? URL.createObjectURL(file) : null)
+            }}
+          />
         </label>
         <button
           onClick={addProduct}
@@ -98,6 +111,17 @@ export default function ManagePage() {
           + เพิ่มสินค้า
         </button>
       </div>
+      {addPreview && (
+        <div className="mt-3 mb-2 flex items-center gap-3">
+          <img src={addPreview} className="w-20 h-20 object-cover rounded-xl border border-slate-200" />
+          <button
+            onClick={() => { setAddPreview(null); addImageRef.current.value = '' }}
+            className="text-sm text-red-400 hover:text-red-600 cursor-pointer"
+          >
+            ลบรูป
+          </button>
+        </div>
+      )}
       {formError && <p className="text-red-500 text-sm mb-2">{formError}</p>}
 
       <h2 className="font-semibold text-slate-800 mt-6 mb-3">รายการสินค้า</h2>
@@ -174,7 +198,14 @@ export default function ManagePage() {
                 type="file"
                 accept="image/*"
                 className="w-full text-sm text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-slate-100 file:text-slate-600 hover:file:bg-slate-200 cursor-pointer"
+                onChange={e => {
+                  const file = e.target.files[0]
+                  setEditPreview(file ? URL.createObjectURL(file) : null)
+                }}
               />
+              {editPreview && (
+                <img src={editPreview} className="mt-2 w-full h-32 object-cover rounded-xl border border-slate-200" />
+              )}
             </div>
             <div className="flex gap-2.5 mt-5">
               <button
@@ -184,7 +215,7 @@ export default function ManagePage() {
                 บันทึก
               </button>
               <button
-                onClick={() => setEditModal(null)}
+                onClick={() => { setEditModal(null); setEditPreview(null) }}
                 className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-600 py-2.5 rounded-lg cursor-pointer"
               >
                 ยกเลิก

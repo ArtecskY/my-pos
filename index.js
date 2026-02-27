@@ -37,6 +37,11 @@ const upload = multer({
   }
 })
 
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path}`)
+  next()
+})
+
 function requireLogin(req, res, next) {
   if (req.session.user) return next()
   res.status(401).json({ error: 'กรุณา Login ก่อนครับ' })
@@ -70,6 +75,7 @@ initDB().then(() => {
   })
 
   app.post('/products/:id/image', requireLogin, upload.single('image'), (req, res) => {
+    console.log('📸 image upload hit, file:', req.file, 'session:', req.session.user)
     if (!req.file) return res.status(400).json({ error: 'ไม่พบไฟล์รูปภาพ' })
     const imageUrl = `/uploads/${req.file.filename}`
     // Delete old image file if exists
