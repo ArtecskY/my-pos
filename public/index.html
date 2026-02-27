@@ -28,27 +28,79 @@
     .receipt-box p { margin-bottom: 8px; color: #475569; }
     .receipt-total { font-size: 1.5rem; font-weight: 700; color: #1e3a8a; margin: 12px 0; }
     .btn-close { background: #22c55e; }
+
+    /* Auth */
+    #authScreen { display: none; justify-content: center; align-items: center; min-height: 80vh; }
+    .auth-box { background: white; border-radius: 16px; padding: 40px 36px; width: 360px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    .auth-box h2 { color: #1e3a8a; margin-bottom: 24px; text-align: center; }
+    .auth-tabs { display: flex; margin-bottom: 24px; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; }
+    .auth-tab { flex: 1; padding: 10px; background: white; border: none; cursor: pointer; font-size: 0.95rem; color: #64748b; }
+    .auth-tab.active { background: #3b82f6; color: white; font-weight: 600; }
+    .auth-field { margin-bottom: 16px; }
+    .auth-field label { display: block; margin-bottom: 6px; font-size: 0.9rem; color: #475569; }
+    .auth-field input { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 1rem; }
+    .auth-field input:focus { outline: none; border-color: #3b82f6; }
+    .auth-error { color: #ef4444; font-size: 0.88rem; margin-top: -8px; margin-bottom: 12px; min-height: 18px; }
+    .btn-auth { margin-top: 4px; }
+
+    /* Header bar */
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .header h1 { margin-bottom: 0; }
+    .user-info { display: flex; align-items: center; gap: 12px; font-size: 0.9rem; color: #475569; }
+    .btn-logout { width: auto; margin-top: 0; padding: 8px 16px; background: #e2e8f0; color: #475569; font-size: 0.9rem; border-radius: 8px; }
+    .btn-logout:hover { background: #cbd5e1; }
   </style>
 </head>
 <body>
-  <h1>🛒 ระบบ POS</h1>
-  <div class="container">
-    <div class="products">
-      <h2 style="margin-bottom:12px; color:#475569;">สินค้า</h2>
-      <div class="product-grid" id="productGrid"></div>
+
+  <!-- Auth Screen -->
+  <div id="authScreen">
+    <div class="auth-box">
+      <h2>ระบบ POS</h2>
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tabLogin" onclick="switchTab('login')">เข้าสู่ระบบ</button>
+        <button class="auth-tab" id="tabRegister" onclick="switchTab('register')">สมัครสมาชิก</button>
+      </div>
+      <div id="authError" class="auth-error"></div>
+      <div class="auth-field">
+        <label>Username</label>
+        <input type="text" id="authUsername" placeholder="กรอก username" />
+      </div>
+      <div class="auth-field">
+        <label>Password</label>
+        <input type="password" id="authPassword" placeholder="กรอก password" onkeydown="if(event.key==='Enter') submitAuth()" />
+      </div>
+      <button class="btn btn-auth" id="authSubmitBtn" onclick="submitAuth()">เข้าสู่ระบบ</button>
     </div>
-    <div class="cart">
-      <h2>🧺 ตะกร้า</h2>
-      <div id="cartItems"><p class="empty">ยังไม่มีสินค้า</p></div>
-      <div class="cart-total" id="cartTotal"></div>
-      <button class="btn" onclick="checkout()">ชำระเงิน</button>
+  </div>
+
+  <!-- POS Screen -->
+  <div id="posScreen" style="display:none;">
+    <div class="header">
+      <h1>ระบบ POS</h1>
+      <div class="user-info">
+        <span id="usernameDisplay"></span>
+        <button class="btn btn-logout" onclick="logout()">ออกจากระบบ</button>
+      </div>
+    </div>
+    <div class="container">
+      <div class="products">
+        <h2 style="margin-bottom:12px; color:#475569;">สินค้า</h2>
+        <div class="product-grid" id="productGrid"></div>
+      </div>
+      <div class="cart">
+        <h2>ตะกร้า</h2>
+        <div id="cartItems"><p class="empty">ยังไม่มีสินค้า</p></div>
+        <div class="cart-total" id="cartTotal"></div>
+        <button class="btn" onclick="checkout()">ชำระเงิน</button>
+      </div>
     </div>
   </div>
 
   <!-- ใบเสร็จ -->
   <div class="receipt" id="receipt">
     <div class="receipt-box">
-      <h2>✅ ชำระเงินสำเร็จ!</h2>
+      <h2>ชำระเงินสำเร็จ!</h2>
       <p>ขอบคุณที่ใช้บริการ</p>
       <div class="receipt-total" id="receiptTotal"></div>
       <button class="btn btn-close" onclick="closeReceipt()">ปิด</button>
@@ -57,8 +109,90 @@
 
   <script>
     let cart = []
+    let currentTab = 'login'
 
-    // โหลดสินค้า
+    // --- Auth ---
+
+    function switchTab(tab) {
+      currentTab = tab
+      document.getElementById('authError').textContent = ''
+      document.getElementById('tabLogin').className = 'auth-tab' + (tab === 'login' ? ' active' : '')
+      document.getElementById('tabRegister').className = 'auth-tab' + (tab === 'register' ? ' active' : '')
+      document.getElementById('authSubmitBtn').textContent = tab === 'login' ? 'เข้าสู่ระบบ' : 'สมัครสมาชิก'
+    }
+
+    async function submitAuth() {
+      const username = document.getElementById('authUsername').value.trim()
+      const password = document.getElementById('authPassword').value
+      const errorEl = document.getElementById('authError')
+      errorEl.textContent = ''
+
+      if (!username || !password) {
+        errorEl.textContent = 'กรุณากรอก username และ password'
+        return
+      }
+
+      const endpoint = currentTab === 'login' ? '/login' : '/register'
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        errorEl.textContent = data.error
+        return
+      }
+
+      if (currentTab === 'register') {
+        // Auto-login after register
+        const loginRes = await fetch('/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        })
+        const loginData = await loginRes.json()
+        if (!loginRes.ok) {
+          errorEl.textContent = loginData.error
+          return
+        }
+        showPOS(loginData.username)
+      } else {
+        showPOS(data.username)
+      }
+    }
+
+    async function logout() {
+      await fetch('/logout', { method: 'POST' })
+      cart = []
+      document.getElementById('authUsername').value = ''
+      document.getElementById('authPassword').value = ''
+      document.getElementById('authError').textContent = ''
+      switchTab('login')
+      document.getElementById('posScreen').style.display = 'none'
+      document.getElementById('authScreen').style.display = 'flex'
+    }
+
+    function showPOS(username) {
+      document.getElementById('authScreen').style.display = 'none'
+      document.getElementById('posScreen').style.display = 'block'
+      document.getElementById('usernameDisplay').textContent = username
+      loadProducts()
+    }
+
+    async function checkAuth() {
+      const res = await fetch('/me')
+      if (res.ok) {
+        const user = await res.json()
+        showPOS(user.username)
+      } else {
+        document.getElementById('authScreen').style.display = 'flex'
+      }
+    }
+
+    // --- POS ---
+
     async function loadProducts() {
       const res = await fetch('/products')
       const products = await res.json()
@@ -71,7 +205,6 @@
       `).join('')
     }
 
-    // เพิ่มสินค้าในตะกร้า
     function addToCart(id, name, price) {
       const existing = cart.find(i => i.id === id)
       if (existing) {
@@ -82,7 +215,6 @@
       renderCart()
     }
 
-    // แสดงตะกร้า
     function renderCart() {
       const cartItems = document.getElementById('cartItems')
       if (cart.length === 0) {
@@ -100,7 +232,6 @@
       document.getElementById('cartTotal').textContent = `รวม ฿${total}`
     }
 
-    // ชำระเงิน
     async function checkout() {
       if (cart.length === 0) return alert('กรุณาเลือกสินค้าก่อนครับ')
       const items = cart.map(i => ({ product_id: i.id, quantity: i.quantity }))
@@ -116,12 +247,11 @@
       renderCart()
     }
 
-    // ปิดใบเสร็จ
     function closeReceipt() {
       document.getElementById('receipt').style.display = 'none'
     }
 
-    loadProducts()
+    checkAuth()
   </script>
 </body>
 </html>

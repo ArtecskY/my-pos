@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Language
+
+Always respond in Thai (ภาษาไทย).
+
 ## Commands
 
 ```bash
@@ -30,7 +34,8 @@ This is a minimal Point-of-Sale (POS) system with a Thai-language UI.
 
 **Frontend** (`public/index.html`):
 - Single vanilla JS/HTML file served as static content
-- Fetches data from the same-origin Express API at runtime
+- On load calls `GET /me`; if unauthenticated shows the auth screen, otherwise shows POS directly
+- Auth screen has Login/Register tabs on the same card; Register auto-logs in after success
 - CORS is also configured for `localhost:5173` (Vite), suggesting a separate frontend build may be planned
 
 **Key API routes**:
