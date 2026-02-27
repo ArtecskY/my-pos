@@ -100,6 +100,22 @@ app.get('/me', (req, res) => {
   res.status(401).json({ error: 'ยังไม่ได้ Login' })
 })
 
-app.listen(3000, () => {
-  console.log('Server รันอยู่ที่ http://localhost:3000')
+// แก้ไขสินค้า
+app.put('/products/:id', requireLogin, (req, res) => {
+  const { name, price, stock } = req.body
+  db.prepare(
+    'UPDATE products SET name = ?, price = ?, stock = ? WHERE id = ?'
+  ).run(name, price, stock, req.params.id)
+  res.json({ message: 'แก้ไขสินค้าสำเร็จ' })
+})
+
+// ลบสินค้า
+app.delete('/products/:id', requireLogin, (req, res) => {
+  db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id)
+  res.json({ message: 'ลบสินค้าสำเร็จ' })
+})
+
+const PORT = process.env.PORT || 3000
+app.listen(PORT, () => {
+  console.log(`Server รันอยู่ที่ port ${PORT}`)
 })
