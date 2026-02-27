@@ -18,4 +18,16 @@
     "express": "^5.2.1",
     "express-session": "^1.19.0"
   }
+  {
+  "name": "my-pos",
+  "version": "1.0.0",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  ...
 }
+
