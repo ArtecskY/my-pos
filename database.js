@@ -1,45 +1,52 @@
-const Database = require('better-sqlite3')
-const db = new Database('pos.db')
+const fs = require('fs')
+const initSqlJs = require('sql.js')
 
-// ตารางสินค้า
-db.exec(`
-  CREATE TABLE IF NOT EXISTS products (
+let db
+
+async function initDB() {
+  const SQL = await initSqlJs()
+  
+  if (fs.existsSync('pos.db')) {
+    const fileBuffer = fs.readFileSync('pos.db')
+    db = new SQL.Database(fileBuffer)
+  } else {
+    db = new SQL.Database()
+  }
+
+  db.run(`CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     price REAL NOT NULL,
     stock INTEGER NOT NULL
-  )
-`)
+  )`)
 
-// ตารางออเดอร์
-db.exec(`
-  CREATE TABLE IF NOT EXISTS orders (
+  db.run(`CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     total REAL NOT NULL,
     created_at TEXT DEFAULT (datetime('now','localtime'))
-  )
-`)
+  )`)
 
-// ตารางรายการสินค้าในออเดอร์
-db.exec(`
-  CREATE TABLE IF NOT EXISTS order_items (
+  db.run(`CREATE TABLE IF NOT EXISTS order_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id INTEGER NOT NULL,
     product_id INTEGER NOT NULL,
     quantity INTEGER NOT NULL,
     price REAL NOT NULL
-  )
-`)
+  )`)
 
-console.log('✅ เชื่อมต่อฐานข้อมูลสำเร็จ')
-
-// ตารางผู้ใช้
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
+  db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
     password TEXT NOT NULL
-  )
-`)
+  )`)
 
-module.exports = db
+  console.log('✅ เชื่อมต่อฐานข้อมูลสำเร็จ')
+  return db
+}
+
+function save() {
+  const data = db.export()
+  fs.writeFileSync('pos.db', Buffer.from(data))
+}
+
+module.exports = { initDB, save, getDB: () => db }
