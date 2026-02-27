@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบ POS</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: #f1f5f9; padding: 24px; }
+    h1 { color: #1e3a8a; margin-bottom: 20px; }
+    .container { display: flex; gap: 24px; }
+    .products { flex: 2; }
+    .cart { flex: 1; background: white; border-radius: 12px; padding: 16px; height: fit-content; }
+    .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+    .product-card { background: white; border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.07); }
+    .product-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+    .product-name { font-weight: 600; margin-bottom: 6px; }
+    .product-price { color: #3b82f6; font-size: 1.1rem; }
+    .cart h2 { margin-bottom: 12px; color: #1e293b; }
+    .cart-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 0.9rem; }
+    .cart-total { font-weight: 700; font-size: 1.1rem; margin-top: 12px; text-align: right; color: #1e3a8a; }
+    .btn { width: 100%; margin-top: 12px; padding: 12px; background: #3b82f6; color: white; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+    .btn:hover { background: #2563eb; }
+    .empty { color: #94a3b8; font-size: 0.9rem; }
+    .receipt { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
+    .receipt-box { background: white; border-radius: 16px; padding: 32px; min-width: 300px; text-align: center; }
+    .receipt-box h2 { color: #22c55e; margin-bottom: 16px; }
+    .receipt-box p { margin-bottom: 8px; color: #475569; }
+    .receipt-total { font-size: 1.5rem; font-weight: 700; color: #1e3a8a; margin: 12px 0; }
+    .btn-close { background: #22c55e; }
+  </style>
+</head>
+<body>
+  <h1>🛒 ระบบ POS</h1>
+  <div class="container">
+    <div class="products">
+      <h2 style="margin-bottom:12px; color:#475569;">สินค้า</h2>
+      <div class="product-grid" id="productGrid"></div>
+    </div>
+    <div class="cart">
+      <h2>🧺 ตะกร้า</h2>
+      <div id="cartItems"><p class="empty">ยังไม่มีสินค้า</p></div>
+      <div class="cart-total" id="cartTotal"></div>
+      <button class="btn" onclick="checkout()">ชำระเงิน</button>
+    </div>
+  </div>
+
+  <!-- ใบเสร็จ -->
+  <div class="receipt" id="receipt">
+    <div class="receipt-box">
+      <h2>✅ ชำระเงินสำเร็จ!</h2>
+      <p>ขอบคุณที่ใช้บริการ</p>
+      <div class="receipt-total" id="receiptTotal"></div>
+      <button class="btn btn-close" onclick="closeReceipt()">ปิด</button>
+    </div>
+  </div>
+
+  <script>
+    let cart = []
+
+    // โหลดสินค้า
+    async function loadProducts() {
+      const res = await fetch('/products')
+      const products = await res.json()
+      const grid = document.getElementById('productGrid')
+      grid.innerHTML = products.map(p => `
+        <div class="product-card" onclick="addToCart(${p.id}, '${p.name}', ${p.price})">
+          <div class="product-name">${p.name}</div>
+          <div class="product-price">฿${p.price}</div>
+        </div>
+      `).join('')
+    }
+
+    // เพิ่มสินค้าในตะกร้า
+    function addToCart(id, name, price) {
+      const existing = cart.find(i => i.id === id)
+      if (existing) {
+        existing.quantity++
+      } else {
+        cart.push({ id, name, price, quantity: 1 })
+      }
+      renderCart()
+    }
+
+    // แสดงตะกร้า
+    function renderCart() {
+      const cartItems = document.getElementById('cartItems')
+      if (cart.length === 0) {
+        cartItems.innerHTML = '<p class="empty">ยังไม่มีสินค้า</p>'
+        document.getElementById('cartTotal').textContent = ''
+        return
+      }
+      cartItems.innerHTML = cart.map(i => `
+        <div class="cart-item">
+          <span>${i.name} x${i.quantity}</span>
+          <span>฿${i.price * i.quantity}</span>
+        </div>
+      `).join('')
+      const total = cart.reduce((sum, i) => sum + i.price * i.quantity, 0)
+      document.getElementById('cartTotal').textContent = `รวม ฿${total}`
+    }
+
+    // ชำระเงิน
+    async function checkout() {
+      if (cart.length === 0) return alert('กรุณาเลือกสินค้าก่อนครับ')
+      const items = cart.map(i => ({ product_id: i.id, quantity: i.quantity }))
+      const res = await fetch('/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items })
+      })
+      const order = await res.json()
+      document.getElementById('receiptTotal').textContent = `฿${order.total}`
+      document.getElementById('receipt').style.display = 'flex'
+      cart = []
+      renderCart()
+    }
+
+    // ปิดใบเสร็จ
+    function closeReceipt() {
+      document.getElementById('receipt').style.display = 'none'
+    }
+
+    loadProducts()
+  </script>
+</body>
+</html>
