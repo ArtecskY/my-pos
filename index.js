@@ -123,11 +123,24 @@ initDB().then(() => {
   })
 
   app.get('/orders', requireLogin, (req, res) => {
-    const result = db.exec('SELECT * FROM orders')
+    const result = db.exec('SELECT * FROM orders ORDER BY id DESC')
     const orders = result[0] ? result[0].values.map(row => ({
       id: row[0], total: row[1], created_at: row[2]
     })) : []
     res.json(orders)
+  })
+
+  app.get('/orders/:id/items', requireLogin, (req, res) => {
+    const result = db.exec(`
+      SELECT oi.id, oi.quantity, oi.price, p.name
+      FROM order_items oi
+      JOIN products p ON p.id = oi.product_id
+      WHERE oi.order_id = ?
+    `, [req.params.id])
+    const items = result[0] ? result[0].values.map(row => ({
+      id: row[0], quantity: row[1], price: row[2], name: row[3]
+    })) : []
+    res.json(items)
   })
 
   app.post('/register', (req, res) => {

@@ -2,6 +2,7 @@ export default function NavTabs({ page, onChangePage }) {
   const tabs = [
     ['pos', 'หน้าขาย'],
     ['manage', 'จัดการสินค้า'],
+    ['orders', 'ประวัติรายการ'],
   ]
   return (
     <div className="flex gap-1 border-b-2 border-slate-200 mb-5">

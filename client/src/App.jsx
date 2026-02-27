@@ -3,6 +3,7 @@ import AuthScreen from './components/AuthScreen'
 import NavTabs from './components/NavTabs'
 import POSPage from './pages/POSPage'
 import ManagePage from './pages/ManagePage'
+import OrdersPage from './pages/OrdersPage'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -46,7 +47,9 @@ export default function App() {
         </div>
       </div>
       <NavTabs page={page} onChangePage={setPage} />
-      {page === 'pos' ? <POSPage /> : <ManagePage />}
+      {page === 'pos' && <POSPage />}
+      {page === 'manage' && <ManagePage />}
+      {page === 'orders' && <OrdersPage />}
     </div>
   )
 }
