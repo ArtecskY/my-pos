@@ -40,7 +40,36 @@ async function initDB() {
     password TEXT NOT NULL
   )`)
 
+  db.run(`CREATE TABLE IF NOT EXISTS categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE
+  )`)
+
+  db.run(`CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )`)
+
+  db.run(`CREATE TABLE IF NOT EXISTS emails (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    password TEXT NOT NULL,
+    link_sms TEXT,
+    credits REAL NOT NULL DEFAULT 0,
+    category_id INTEGER,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+  )`)
+
   try { db.run('ALTER TABLE products ADD COLUMN image TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE products ADD COLUMN category_id INTEGER') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE orders ADD COLUMN transfer_amount REAL') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE orders ADD COLUMN transfer_time TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE categories ADD COLUMN fill_type TEXT DEFAULT "UID"') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE emails ADD COLUMN note TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE emails ADD COLUMN cost REAL DEFAULT 0') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN credit_deducted REAL') } catch (e) { /* column exists */ }
+  // migrate old ID_PASS → EMAIL
+  db.run('UPDATE categories SET fill_type="EMAIL" WHERE fill_type="ID_PASS"')
 
   console.log('✅ เชื่อมต่อฐานข้อมูลสำเร็จ')
   return db

@@ -3,3 +3,4 @@ client/node_modules/
 client/dist/
 pos.db
 public/uploads/
+google-credentials.json

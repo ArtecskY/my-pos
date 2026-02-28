@@ -1,13 +1,32 @@
 import { useState, useEffect } from 'react'
 
+function nowLocalTime() {
+  const d = new Date()
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export default function POSPage() {
   const [products, setProducts] = useState([])
+  const [categories, setCategories] = useState([])
+  const [selectedCat, setSelectedCat] = useState('')
   const [cart, setCart] = useState([])
   const [receipt, setReceipt] = useState(null)
+  const [showPayModal, setShowPayModal] = useState(false)
+  const [transferAmount, setTransferAmount] = useState('')
+  const [transferTime, setTransferTime] = useState('')
+  const [razerAmounts, setRazerAmounts] = useState({}) // { [productId]: creditAmount }
 
   useEffect(() => {
-    fetch('/products').then(r => r.json()).then(setProducts)
+    Promise.all([
+      fetch('/products').then(r => r.json()),
+      fetch('/categories').then(r => r.json()),
+    ]).then(([p, c]) => { setProducts(p); setCategories(c) })
   }, [])
+
+  const filtered = selectedCat
+    ? products.filter(p => String(p.category_id) === selectedCat)
+    : products
 
   function addToCart(p) {
     setCart(prev => {
@@ -29,16 +48,43 @@ export default function POSPage() {
     setCart(prev => prev.filter(i => i.id !== id))
   }
 
-  async function checkout() {
+  function openPayModal() {
     if (cart.length === 0) return alert('กรุณาเลือกสินค้าก่อนครับ')
+    setTransferAmount(String(total))
+    setTransferTime(nowLocalTime())
+    setRazerAmounts({})
+    setShowPayModal(true)
+  }
+
+  async function confirmCheckout() {
+    // Validate RAZER items ต้องมี credit_amount
+    for (const item of cart) {
+      if (item.fill_type === 'RAZER') {
+        if (!razerAmounts[item.id] || Number(razerAmounts[item.id]) <= 0) {
+          alert(`กรุณากรอกจำนวนเครดิตที่จะตัดสำหรับ "${item.name}"`)
+          return
+        }
+      }
+    }
     const res = await fetch('/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: cart.map(i => ({ product_id: i.id, quantity: i.quantity })) }),
+      body: JSON.stringify({
+        items: cart.map(i => ({
+          product_id: i.id,
+          quantity: i.quantity,
+          ...(i.fill_type === 'RAZER' ? { credit_amount: Number(razerAmounts[i.id]) } : {}),
+        })),
+        transfer_amount: transferAmount ? Number(transferAmount) : null,
+        transfer_time: transferTime || null,
+      }),
     })
     const order = await res.json()
+    if (!res.ok) { alert(order.error); return }
+    setShowPayModal(false)
     setReceipt(order)
     setCart([])
+    fetch('/products').then(r => r.json()).then(setProducts)
   }
 
   const total = cart.reduce((sum, i) => sum + i.price * i.quantity, 0)
@@ -46,27 +92,59 @@ export default function POSPage() {
   return (
     <div className="flex gap-6">
       <div className="flex-[2]">
-        <h2 className="text-slate-500 font-medium mb-3">สินค้า</h2>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3">
-          {products.map(p => (
-            <div
-              key={p.id}
-              onClick={() => addToCart(p)}
-              className="bg-white rounded-xl overflow-hidden cursor-pointer shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all"
+        {/* Category filter dropdown */}
+        <div className="flex items-center gap-3 mb-4">
+          <label className="text-sm text-slate-500 whitespace-nowrap">หมวดหมู่:</label>
+          <select
+            value={selectedCat}
+            onChange={e => setSelectedCat(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white min-w-[180px]"
+          >
+            <option value="">ทั้งหมด ({products.length} รายการ)</option>
+            {categories.map(c => (
+              <option key={c.id} value={String(c.id)}>
+                {c.name} ({products.filter(p => p.category_id === c.id).length} รายการ)
+              </option>
+            ))}
+          </select>
+          {selectedCat && (
+            <button
+              onClick={() => setSelectedCat('')}
+              className="text-sm text-slate-400 hover:text-slate-600 cursor-pointer"
             >
-              {p.image
-                ? <img src={p.image} alt={p.name} className="w-full h-28 object-cover" />
-                : <div className="w-full h-28 bg-slate-100 flex items-center justify-center text-4xl">🛍️</div>
-              }
-              <div className="p-3">
-                <div className="font-semibold text-sm mb-1">{p.name}</div>
-                <div className="text-blue-500 font-medium">฿{p.price}</div>
+              ล้างตัวกรอง ×
+            </button>
+          )}
+        </div>
+
+        {/* Product grid */}
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3">
+          {filtered.length === 0
+            ? <p className="text-slate-400 text-sm col-span-full py-6 text-center">ไม่มีสินค้าในหมวดหมู่นี้</p>
+            : filtered.map(p => (
+              <div
+                key={p.id}
+                onClick={() => addToCart(p)}
+                className="bg-white rounded-xl overflow-hidden cursor-pointer shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all"
+              >
+                {p.image
+                  ? <img src={p.image} alt={p.name} className="w-full h-28 object-cover" />
+                  : <div className="w-full h-28 bg-slate-100 flex items-center justify-center text-4xl">🛍️</div>
+                }
+                <div className="p-3">
+                  {p.category_name && (
+                    <div className="text-xs text-slate-400 mb-0.5">{p.category_name}</div>
+                  )}
+                  <div className="font-semibold text-sm mb-1">{p.name}</div>
+                  <div className="text-blue-500 font-medium">฿{p.price}</div>
+                </div>
               </div>
-            </div>
-          ))}
+            ))
+          }
         </div>
       </div>
 
+      {/* Cart */}
       <div className="flex-1 bg-white rounded-xl p-4 h-fit">
         <h2 className="font-semibold text-slate-800 mb-3">ตะกร้า</h2>
         {cart.length === 0
@@ -107,13 +185,77 @@ export default function POSPage() {
           <div className="text-right font-bold text-blue-900 mt-3 text-lg">รวม ฿{total}</div>
         )}
         <button
-          onClick={checkout}
+          onClick={openPayModal}
           className="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg cursor-pointer font-medium"
         >
           ชำระเงิน
         </button>
       </div>
 
+      {/* Payment modal */}
+      {showPayModal && (
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
+          <div className="bg-white rounded-2xl p-8 w-[360px]">
+            <h2 className="text-blue-900 font-bold text-lg mb-5">รายละเอียดการชำระเงิน</h2>
+            <div className="text-center text-2xl font-bold text-blue-900 mb-5">รวม ฿{total}</div>
+            <div className="mb-4">
+              <label className="block text-sm text-slate-500 mb-1.5">จำนวนเงินโอน (฿)</label>
+              <input
+                type="number"
+                value={transferAmount}
+                onChange={e => setTransferAmount(e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+                placeholder="0.00"
+              />
+            </div>
+            <div className="mb-6">
+              <label className="block text-sm text-slate-500 mb-1.5">เวลาโอน</label>
+              <input
+                type="datetime-local"
+                value={transferTime}
+                onChange={e => setTransferTime(e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            {/* RAZER credit inputs */}
+            {cart.some(i => i.fill_type === 'RAZER') && (
+              <div className="mb-6 border border-green-200 rounded-xl p-4 bg-green-50">
+                <p className="text-sm font-medium text-green-800 mb-3">จำนวนเครดิต Razer ที่จะตัด</p>
+                {cart.filter(i => i.fill_type === 'RAZER').map(item => (
+                  <div key={item.id} className="mb-3">
+                    <label className="block text-xs text-green-700 mb-1">{item.name} × {item.quantity}</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={razerAmounts[item.id] || ''}
+                      onChange={e => setRazerAmounts(prev => ({ ...prev, [item.id]: e.target.value }))}
+                      className="w-full border border-green-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500 bg-white"
+                      placeholder="กรอกจำนวนเครดิตที่จะตัด"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2.5">
+              <button
+                onClick={confirmCheckout}
+                className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg cursor-pointer font-medium"
+              >
+                ยืนยันชำระเงิน
+              </button>
+              <button
+                onClick={() => setShowPayModal(false)}
+                className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-600 py-3 rounded-lg cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receipt modal */}
       {receipt && (
         <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
           <div className="bg-white rounded-2xl p-8 min-w-[300px] text-center">

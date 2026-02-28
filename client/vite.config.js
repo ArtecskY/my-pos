@@ -13,6 +13,11 @@ export default defineConfig({
       '/logout': { target: 'http://localhost:3000', changeOrigin: true },
       '/register': { target: 'http://localhost:3000', changeOrigin: true },
       '/me': { target: 'http://localhost:3000', changeOrigin: true },
+      '/uploads': { target: 'http://localhost:3000', changeOrigin: true },
+      '/categories': { target: 'http://localhost:3000', changeOrigin: true },
+      '/sheet-config': { target: 'http://localhost:3000', changeOrigin: true },
+      '/export-to-sheets': { target: 'http://localhost:3000', changeOrigin: true },
+      '/emails': { target: 'http://localhost:3000', changeOrigin: true },
     }
   }
 })

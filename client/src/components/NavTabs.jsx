@@ -2,6 +2,7 @@ export default function NavTabs({ page, onChangePage }) {
   const tabs = [
     ['pos', 'หน้าขาย'],
     ['manage', 'จัดการสินค้า'],
+    ['emails', 'จัดการ Email'],
     ['orders', 'ประวัติรายการ'],
   ]
   return (

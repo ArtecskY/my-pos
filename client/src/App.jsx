@@ -4,6 +4,7 @@ import NavTabs from './components/NavTabs'
 import POSPage from './pages/POSPage'
 import ManagePage from './pages/ManagePage'
 import OrdersPage from './pages/OrdersPage'
+import EmailsPage from './pages/EmailsPage'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -49,6 +50,7 @@ export default function App() {
       <NavTabs page={page} onChangePage={setPage} />
       {page === 'pos' && <POSPage />}
       {page === 'manage' && <ManagePage />}
+      {page === 'emails' && <EmailsPage />}
       {page === 'orders' && <OrdersPage />}
     </div>
   )
