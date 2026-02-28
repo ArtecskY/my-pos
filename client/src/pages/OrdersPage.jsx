@@ -1,20 +1,19 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 
-function formatDate(dateStr) {
+function formatThaiDate(dateStr) {
+  if (!dateStr) return '—'
   const date = new Date(dateStr.replace(' ', 'T'))
-  return date.toLocaleString('th-TH', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return date.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+function formatTimeOnly(dateStr) {
+  if (!dateStr) return '—'
+  const date = new Date(dateStr.replace(' ', 'T'))
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 export default function OrdersPage() {
-  const [orders, setOrders] = useState([])
-  const [expanded, setExpanded] = useState(null)
-  const [items, setItems] = useState({})
+  const [orderItems, setOrderItems] = useState([])
 
   const [showExport, setShowExport] = useState(false)
   const [savedSheetId, setSavedSheetId] = useState(null)
@@ -25,8 +24,37 @@ export default function OrdersPage() {
   const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
-    fetch('/orders').then(r => r.json()).then(setOrders)
+    fetch('/order-items').then(r => r.json()).then(setOrderItems)
   }, [])
+
+  // จัดกลุ่มตาม order_id โดยรักษาลำดับ
+  const grouped = useMemo(() => {
+    const map = {}
+    const list = []
+    for (const item of orderItems) {
+      if (!map[item.order_id]) {
+        const g = {
+          order_id: item.order_id,
+          transfer_time: item.transfer_time,
+          created_at: item.created_at,
+          transfer_amount: item.transfer_amount,
+          total: item.total,
+          items: [],
+        }
+        map[item.order_id] = g
+        list.push(g)
+      }
+      map[item.order_id].items.push(item)
+    }
+    return list
+  }, [orderItems])
+
+  async function deleteOrder(id) {
+    if (!confirm(`ลบรายการ #${id}? สต็อกสินค้าจะถูกคืนกลับ`)) return
+    const res = await fetch(`/orders/${id}`, { method: 'DELETE' })
+    if (!res.ok) { alert('ลบไม่สำเร็จ กรุณาลองใหม่'); return }
+    setOrderItems(prev => prev.filter(i => i.order_id !== id))
+  }
 
   async function loadSheetConfig() {
     const data = await fetch('/sheet-config').then(r => r.json())
@@ -36,8 +64,7 @@ export default function OrdersPage() {
   }
 
   function openExport() {
-    setExportMsg('')
-    setSaveMsg('')
+    setExportMsg(''); setSaveMsg('')
     setShowExport(true)
     loadSheetConfig()
   }
@@ -57,36 +84,16 @@ export default function OrdersPage() {
   }
 
   async function exportToSheets() {
-    setExportMsg('')
-    setExporting(true)
+    setExportMsg(''); setExporting(true)
     const res = await fetch('/export-to-sheets', { method: 'POST' })
     const data = await res.json()
     setExporting(false)
     setExportMsg(res.ok ? `✅ ${data.message}` : `❌ ${data.error}`)
   }
 
-  async function toggleOrder(id) {
-    if (expanded === id) { setExpanded(null); return }
-    setExpanded(id)
-    if (!items[id]) {
-      const res = await fetch(`/orders/${id}/items`)
-      const data = await res.json()
-      setItems(prev => ({ ...prev, [id]: data }))
-    }
-  }
-
-  async function deleteOrder(id) {
-    if (!confirm(`ลบรายการ #${id}? สต็อกสินค้าจะถูกคืนกลับ`)) return
-    const res = await fetch(`/orders/${id}`, { method: 'DELETE' })
-    if (!res.ok) { alert('ลบไม่สำเร็จ กรุณาลองใหม่'); return }
-    setOrders(prev => prev.filter(o => o.id !== id))
-    setItems(prev => { const n = { ...prev }; delete n[id]; return n })
-    if (expanded === id) setExpanded(null)
-  }
-
   return (
     <div className="bg-white rounded-xl p-6 shadow-sm">
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-5">
         <h2 className="font-semibold text-slate-800">ประวัติการทำรายการ</h2>
         <button
           onClick={openExport}
@@ -97,69 +104,89 @@ export default function OrdersPage() {
         </button>
       </div>
 
-      {orders.length === 0
-        ? <p className="text-slate-400 text-center py-6">ยังไม่มีรายการ</p>
-        : (
-          <div className="space-y-2">
-            {orders.map(order => (
-              <div key={order.id} className="border border-slate-200 rounded-xl overflow-hidden">
-                <div className="flex items-center">
-                  <button
-                    onClick={() => toggleOrder(order.id)}
-                    className="flex-1 flex justify-between items-center px-4 py-3 hover:bg-slate-50 cursor-pointer"
-                  >
-                    <div className="flex items-center gap-4">
-                      <span className="text-xs font-mono text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
-                        #{order.id}
-                      </span>
-                      <span className="text-sm text-slate-600">
-                        {order.transfer_time ? formatDate(order.transfer_time) : '—'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-bold text-blue-900">฿{order.total}</span>
-                      <span className="text-slate-300 text-xs">{expanded === order.id ? '▲' : '▼'}</span>
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => deleteOrder(order.id)}
-                    className="px-3 py-3 text-slate-300 hover:text-red-500 cursor-pointer"
-                    title="ลบรายการ"
-                  >
-                    🗑
-                  </button>
-                </div>
-
-                {expanded === order.id && (
-                  <div className="border-t border-slate-100 bg-slate-50 px-4 py-3 space-y-1.5">
-                    {items[order.id]
-                      ? items[order.id].map(item => (
-                          <div key={item.id} className="flex justify-between text-sm">
-                            <span className="text-slate-600">{item.name} × {item.quantity}</span>
-                            <span className="text-slate-700 font-medium">฿{item.price * item.quantity}</span>
-                          </div>
-                        ))
-                      : <p className="text-slate-400 text-sm text-center py-1">กำลังโหลด...</p>
-                    }
-                    <div className="mt-2 pt-2 border-t border-slate-200 space-y-1">
-                      {order.transfer_amount != null && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-slate-500">จำนวนเงินโอน</span>
-                          <span className="text-slate-700 font-medium">฿{order.transfer_amount}</span>
-                        </div>
+      {grouped.length === 0 ? (
+        <p className="text-slate-400 text-center py-8">ยังไม่มีรายการ</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="text-slate-500 text-left border-b-2 border-slate-200">
+                <th className="pb-2.5 px-3 font-medium">วันที่</th>
+                <th className="pb-2.5 px-3 font-medium">เวลาโอน</th>
+                <th className="pb-2.5 px-3 font-medium">ชื่อสินค้า</th>
+                <th className="pb-2.5 px-3 font-medium text-right">จำนวน / เครดิต</th>
+                <th className="pb-2.5 px-3 font-medium">Email ที่ใช้</th>
+                <th className="pb-2.5 px-2"></th>
+              </tr>
+            </thead>
+            {grouped.map(order => {
+              const dateStr = order.transfer_time || order.created_at
+              return (
+                <tbody key={order.order_id} className="border-t-2 border-slate-100">
+                  {order.items.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50">
+                      {/* วันที่ — แสดงแค่แถวแรกของแต่ละ order */}
+                      {idx === 0 && (
+                        <td
+                          rowSpan={order.items.length}
+                          className="py-3 px-3 text-slate-600 align-top whitespace-nowrap"
+                        >
+                          {formatThaiDate(dateStr)}
+                        </td>
                       )}
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-500">เวลาทำรายการ</span>
-                        <span className="text-slate-700">{formatDate(order.created_at)}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )
-      }
+                      {/* เวลาโอน */}
+                      {idx === 0 && (
+                        <td
+                          rowSpan={order.items.length}
+                          className="py-3 px-3 font-mono text-slate-500 align-top whitespace-nowrap"
+                        >
+                          {formatTimeOnly(order.transfer_time)}
+                        </td>
+                      )}
+                      {/* ชื่อสินค้า */}
+                      <td className="py-2.5 px-3 text-slate-800">
+                        {item.product_name}
+                        {item.quantity > 1 && (
+                          <span className="text-slate-400 ml-1.5 text-xs">×{item.quantity}</span>
+                        )}
+                      </td>
+                      {/* จำนวน / เครดิต */}
+                      <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                        {item.credit_deducted != null ? (
+                          <span className="text-blue-700 font-semibold">
+                            {Number(item.credit_deducted).toFixed(2)} เครดิต
+                          </span>
+                        ) : (
+                          <span className="text-slate-600">×{item.quantity}</span>
+                        )}
+                      </td>
+                      {/* Email ที่ใช้ */}
+                      <td className="py-2.5 px-3 font-mono text-xs text-slate-500">
+                        {item.email_used || <span className="text-slate-300">—</span>}
+                      </td>
+                      {/* ปุ่มลบ — แสดงแค่แถวแรก */}
+                      {idx === 0 && (
+                        <td
+                          rowSpan={order.items.length}
+                          className="py-3 px-2 align-top"
+                        >
+                          <button
+                            onClick={() => deleteOrder(order.order_id)}
+                            className="text-slate-300 hover:text-red-500 cursor-pointer"
+                            title="ลบรายการ"
+                          >
+                            🗑
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              )
+            })}
+          </table>
+        </div>
+      )}
 
       {/* Export Modal */}
       {showExport && (
@@ -168,10 +195,8 @@ export default function OrdersPage() {
             <h2 className="font-bold text-slate-800 mb-1">Export to Google Sheets</h2>
             <p className="text-sm text-slate-400 mb-5">ข้อมูลจะแยกตาม Tab วันที่ (พ.ศ.) โดยอัตโนมัติ</p>
 
-            {/* Sheet ID section */}
             <div className="mb-5">
               <label className="block text-sm font-medium text-slate-600 mb-2">Google Sheet ID</label>
-
               {editMode ? (
                 <div className="space-y-2">
                   <input
@@ -213,7 +238,6 @@ export default function OrdersPage() {
                   </button>
                 </div>
               )}
-
               {saveMsg && (
                 <p className={`text-sm mt-2 ${saveMsg.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>{saveMsg}</p>
               )}

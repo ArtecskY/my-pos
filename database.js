@@ -68,6 +68,7 @@ async function initDB() {
   try { db.run('ALTER TABLE emails ADD COLUMN note TEXT') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE emails ADD COLUMN cost REAL DEFAULT 0') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE order_items ADD COLUMN credit_deducted REAL') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN email_id_used INTEGER') } catch (e) { /* column exists */ }
   // migrate old ID_PASS → EMAIL
   db.run('UPDATE categories SET fill_type="EMAIL" WHERE fill_type="ID_PASS"')
 

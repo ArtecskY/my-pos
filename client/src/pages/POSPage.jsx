@@ -15,7 +15,9 @@ export default function POSPage() {
   const [showPayModal, setShowPayModal] = useState(false)
   const [transferAmount, setTransferAmount] = useState('')
   const [transferTime, setTransferTime] = useState('')
-  const [razerAmounts, setRazerAmounts] = useState({}) // { [productId]: creditAmount }
+  const [razerAmounts, setRazerAmounts] = useState({})     // { [productId]: creditAmount }
+  const [selectedEmails, setSelectedEmails] = useState({}) // { [productId]: emailId (string) }
+  const [availableEmails, setAvailableEmails] = useState({}) // { [productId]: [{id,email,credits}] }
 
   useEffect(() => {
     Promise.all([
@@ -48,22 +50,36 @@ export default function POSPage() {
     setCart(prev => prev.filter(i => i.id !== id))
   }
 
-  function openPayModal() {
+  function usesEmailCredits(fill_type) {
+    return ['EMAIL', 'RAZER', 'OTHER_EMAIL'].includes(fill_type)
+  }
+
+  async function openPayModal() {
     if (cart.length === 0) return alert('กรุณาเลือกสินค้าก่อนครับ')
     setTransferAmount(String(total))
     setTransferTime(nowLocalTime())
     setRazerAmounts({})
+    setSelectedEmails({})
+    setAvailableEmails({})
     setShowPayModal(true)
+    // pre-fetch สำหรับ EMAIL/OTHER_EMAIL (RAZER รอให้กรอก credit amount ก่อน)
+    for (const item of cart) {
+      if (['EMAIL', 'OTHER_EMAIL'].includes(item.fill_type)) {
+        const needed = item.price * item.quantity
+        const data = await fetch(`/emails/available?category_id=${item.category_id}&needed=${needed}`).then(r => r.json())
+        setAvailableEmails(prev => ({ ...prev, [item.id]: data }))
+        if (data.length === 1) setSelectedEmails(prev => ({ ...prev, [item.id]: String(data[0].id) }))
+      }
+    }
   }
 
   async function confirmCheckout() {
-    // Validate RAZER items ต้องมี credit_amount
     for (const item of cart) {
-      if (item.fill_type === 'RAZER') {
-        if (!razerAmounts[item.id] || Number(razerAmounts[item.id]) <= 0) {
-          alert(`กรุณากรอกจำนวนเครดิตที่จะตัดสำหรับ "${item.name}"`)
-          return
-        }
+      if (item.fill_type === 'RAZER' && (!razerAmounts[item.id] || Number(razerAmounts[item.id]) <= 0)) {
+        alert(`กรุณากรอกจำนวนเครดิตที่จะตัดสำหรับ "${item.name}"`); return
+      }
+      if (usesEmailCredits(item.fill_type) && !selectedEmails[item.id]) {
+        alert(`กรุณาเลือก Email สำหรับ "${item.name}"`); return
       }
     }
     const res = await fetch('/orders', {
@@ -74,6 +90,7 @@ export default function POSPage() {
           product_id: i.id,
           quantity: i.quantity,
           ...(i.fill_type === 'RAZER' ? { credit_amount: Number(razerAmounts[i.id]) } : {}),
+          ...(usesEmailCredits(i.fill_type) ? { email_id: Number(selectedEmails[i.id]) } : {}),
         })),
         transfer_amount: transferAmount ? Number(transferAmount) : null,
         transfer_time: transferTime || null,
@@ -217,22 +234,75 @@ export default function POSPage() {
                 className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
               />
             </div>
-            {/* RAZER credit inputs */}
-            {cart.some(i => i.fill_type === 'RAZER') && (
-              <div className="mb-6 border border-green-200 rounded-xl p-4 bg-green-50">
-                <p className="text-sm font-medium text-green-800 mb-3">จำนวนเครดิต Razer ที่จะตัด</p>
-                {cart.filter(i => i.fill_type === 'RAZER').map(item => (
-                  <div key={item.id} className="mb-3">
-                    <label className="block text-xs text-green-700 mb-1">{item.name} × {item.quantity}</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={razerAmounts[item.id] || ''}
-                      onChange={e => setRazerAmounts(prev => ({ ...prev, [item.id]: e.target.value }))}
-                      className="w-full border border-green-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500 bg-white"
-                      placeholder="กรอกจำนวนเครดิตที่จะตัด"
-                    />
+            {/* Email selection + RAZER credit inputs */}
+            {cart.some(i => usesEmailCredits(i.fill_type)) && (
+              <div className="mb-6 space-y-3">
+                {cart.filter(i => usesEmailCredits(i.fill_type)).map(item => (
+                  <div key={item.id} className="border border-blue-200 rounded-xl p-4 bg-blue-50">
+                    <p className="text-sm font-semibold text-blue-800 mb-3">
+                      {item.name} × {item.quantity}
+                    </p>
+
+                    {/* RAZER: กรอก credit amount ก่อน */}
+                    {item.fill_type === 'RAZER' && (
+                      <div className="mb-3">
+                        <label className="block text-xs text-slate-500 mb-1">จำนวนเครดิตที่จะตัด</label>
+                        <input
+                          type="number" step="0.01" min="0"
+                          value={razerAmounts[item.id] || ''}
+                          onChange={e => {
+                            const val = e.target.value
+                            setRazerAmounts(prev => ({ ...prev, [item.id]: val }))
+                            setSelectedEmails(prev => ({ ...prev, [item.id]: '' }))
+                            const needed = Number(val)
+                            if (needed > 0 && item.category_id) {
+                              fetch(`/emails/available?category_id=${item.category_id}&needed=${needed}`)
+                                .then(r => r.json())
+                                .then(data => {
+                                  setAvailableEmails(prev => ({ ...prev, [item.id]: data }))
+                                  if (data.length === 1) setSelectedEmails(prev => ({ ...prev, [item.id]: String(data[0].id) }))
+                                })
+                            } else {
+                              setAvailableEmails(prev => ({ ...prev, [item.id]: [] }))
+                            }
+                          }}
+                          className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white"
+                          placeholder="กรอกจำนวนเครดิต"
+                        />
+                      </div>
+                    )}
+
+                    {/* Email selector */}
+                    {(item.fill_type !== 'RAZER' || Number(razerAmounts[item.id]) > 0) && (
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1">
+                          Email ที่ใช้ตัดเครดิต
+                          {item.fill_type !== 'RAZER' && (
+                            <span className="text-blue-600 ml-1">(ต้องการ {(item.price * item.quantity).toFixed(2)} เครดิต)</span>
+                          )}
+                        </label>
+                        {availableEmails[item.id] === undefined ? (
+                          <p className="text-xs text-slate-400 py-1">กำลังโหลด...</p>
+                        ) : availableEmails[item.id].length === 0 ? (
+                          <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                            ไม่มี Email ที่มีเครดิตเพียงพอ
+                          </p>
+                        ) : (
+                          <select
+                            value={selectedEmails[item.id] || ''}
+                            onChange={e => setSelectedEmails(prev => ({ ...prev, [item.id]: e.target.value }))}
+                            className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white"
+                          >
+                            <option value="">— เลือก Email —</option>
+                            {availableEmails[item.id].map(e => (
+                              <option key={e.id} value={e.id}>
+                                {e.email} (คงเหลือ {Number(e.credits).toFixed(2)})
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

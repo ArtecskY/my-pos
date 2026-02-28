@@ -159,26 +159,18 @@ initDB().then(() => {
     return ['EMAIL', 'RAZER', 'OTHER_EMAIL'].includes(fill_type)
   }
 
-  function deductEmailCredits(category_id, amount) {
-    const emailRes = db.exec(
-      'SELECT id, credits FROM emails WHERE category_id=? AND credits > 0 ORDER BY credits DESC',
-      [category_id]
-    )
-    if (!emailRes[0]) return
-    let remaining = amount
-    for (const [id, credits] of emailRes[0].values) {
-      if (remaining <= 0) break
-      const deduct = Math.min(credits, remaining)
-      db.run('UPDATE emails SET credits = credits - ? WHERE id=?', [deduct, id])
-      remaining -= deduct
-    }
+  function deductFromEmail(email_id, amount) {
+    db.run('UPDATE emails SET credits = credits - ? WHERE id=?', [amount, email_id])
+  }
+
+  function restoreToEmail(email_id, amount) {
+    db.run('UPDATE emails SET credits = credits + ? WHERE id=?', [amount, email_id])
   }
 
   function restoreEmailCredits(category_id, amount) {
-    // คืนเครดิตให้ email แรกในหมวด (เรียง id ASC)
-    const emailRes = db.exec('SELECT id FROM emails WHERE category_id=? ORDER BY id ASC LIMIT 1', [category_id])
-    if (!emailRes[0]) return
-    db.run('UPDATE emails SET credits = credits + ? WHERE id=?', [amount, emailRes[0].values[0][0]])
+    // legacy fallback: คืนให้ email แรกในหมวด
+    const r = db.exec('SELECT id FROM emails WHERE category_id=? ORDER BY id ASC LIMIT 1', [category_id])
+    if (r[0]) db.run('UPDATE emails SET credits = credits + ? WHERE id=?', [amount, r[0].values[0][0]])
   }
 
   app.post('/orders', requireLogin, (req, res) => {
@@ -194,17 +186,15 @@ initDB().then(() => {
       const fill_type = catRes[0]?.values[0][0] || 'UID'
 
       if (usesEmailCredits(fill_type)) {
-        const needed = fill_type === 'RAZER'
-          ? (item.credit_amount || 0)
-          : price * item.quantity
-        if (fill_type === 'RAZER' && !item.credit_amount) {
+        if (!item.email_id) return res.status(400).json({ error: `กรุณาเลือก Email สำหรับ "${name}"` })
+        if (fill_type === 'RAZER' && !item.credit_amount)
           return res.status(400).json({ error: `กรุณากรอกจำนวนเครดิตสำหรับ "${name}"` })
-        }
-        const credRes = db.exec('SELECT COALESCE(SUM(credits),0) FROM emails WHERE category_id=?', [category_id])
-        const totalCredits = credRes[0].values[0][0]
-        if (totalCredits < needed) {
-          return res.status(400).json({ error: `สินค้า "${name}" มีเครดิตใน Email ไม่พอ (เหลือ ${totalCredits.toFixed(2)} ต้องการ ${needed})` })
-        }
+        const needed = fill_type === 'RAZER' ? (item.credit_amount || 0) : price * item.quantity
+        const emailRes = db.exec('SELECT credits FROM emails WHERE id=? AND category_id=?', [item.email_id, category_id])
+        if (!emailRes[0]) return res.status(400).json({ error: `ไม่พบ Email ที่เลือกสำหรับ "${name}"` })
+        const emailCredits = emailRes[0].values[0][0]
+        if (emailCredits < needed)
+          return res.status(400).json({ error: `Email ที่เลือกมีเครดิตไม่พอสำหรับ "${name}" (เหลือ ${Number(emailCredits).toFixed(2)} ต้องการ ${needed})` })
       } else {
         if (stock < item.quantity) {
           return res.status(400).json({ error: `สินค้า "${name}" มีสต็อกไม่พอ (เหลือ ${stock} ชิ้น)` })
@@ -232,15 +222,16 @@ initDB().then(() => {
       db.run('INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)',
         [orderId, item.product_id, item.quantity, price])
 
-      let creditDeducted = null
+      let creditDeducted = null, emailIdUsed = null
       if (usesEmailCredits(fill_type)) {
         creditDeducted = fill_type === 'RAZER' ? item.credit_amount : price * item.quantity
-        deductEmailCredits(category_id, creditDeducted)
+        emailIdUsed = item.email_id
+        deductFromEmail(item.email_id, creditDeducted)
       } else {
         db.run('UPDATE products SET stock = stock - ? WHERE id=?', [item.quantity, item.product_id])
       }
-      db.run('UPDATE order_items SET credit_deducted=? WHERE order_id=? AND product_id=?',
-        [creditDeducted, orderId, item.product_id])
+      db.run('UPDATE order_items SET credit_deducted=?, email_id_used=? WHERE order_id=? AND product_id=?',
+        [creditDeducted, emailIdUsed, orderId, item.product_id])
     }
 
     save()
@@ -258,13 +249,17 @@ initDB().then(() => {
 
   app.delete('/orders/:id', requireLogin, (req, res) => {
     const id = req.params.id
-    const items = db.exec('SELECT product_id, quantity, price, credit_deducted FROM order_items WHERE order_id=?', [id])
+    const items = db.exec('SELECT product_id, quantity, price, credit_deducted, email_id_used FROM order_items WHERE order_id=?', [id])
     if (items[0]) {
-      for (const [product_id, quantity, price, credit_deducted] of items[0].values) {
+      for (const [product_id, quantity, price, credit_deducted, email_id_used] of items[0].values) {
         if (credit_deducted != null) {
-          const pRes = db.exec('SELECT category_id FROM products WHERE id=?', [product_id])
-          const category_id = pRes[0]?.values[0][0]
-          restoreEmailCredits(category_id, credit_deducted)
+          if (email_id_used != null) {
+            restoreToEmail(email_id_used, credit_deducted)
+          } else {
+            const pRes = db.exec('SELECT category_id FROM products WHERE id=?', [product_id])
+            const category_id = pRes[0]?.values[0][0]
+            if (category_id) restoreEmailCredits(category_id, credit_deducted)
+          }
         } else {
           db.run('UPDATE products SET stock = stock + ? WHERE id=?', [quantity, product_id])
         }
@@ -274,6 +269,19 @@ initDB().then(() => {
     db.run('DELETE FROM orders WHERE id=?', [id])
     save()
     res.json({ message: 'ลบรายการสำเร็จ' })
+  })
+
+  app.get('/emails/available', requireLogin, (req, res) => {
+    const { category_id, needed } = req.query
+    if (!category_id) return res.json([])
+    const result = db.exec(
+      'SELECT id, email, credits FROM emails WHERE category_id=? AND credits >= ? ORDER BY credits DESC',
+      [category_id, Number(needed) || 0]
+    )
+    const emails = result[0] ? result[0].values.map(row => ({
+      id: row[0], email: row[1], credits: row[2]
+    })) : []
+    res.json(emails)
   })
 
   // --- Email routes ---
@@ -362,6 +370,25 @@ initDB().then(() => {
     } catch (err) {
       res.status(500).json({ error: err.message })
     }
+  })
+
+  app.get('/order-items', requireLogin, (req, res) => {
+    const result = db.exec(`
+      SELECT o.id, o.transfer_time, o.created_at, o.transfer_amount, o.total,
+             p.name, oi.quantity, oi.price, oi.credit_deducted, e.email
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      JOIN products p ON p.id = oi.product_id
+      LEFT JOIN emails e ON e.id = oi.email_id_used
+      ORDER BY COALESCE(o.transfer_time, o.created_at) DESC, o.id DESC, oi.id ASC
+    `)
+    const items = result[0] ? result[0].values.map(row => ({
+      order_id: row[0], transfer_time: row[1], created_at: row[2],
+      transfer_amount: row[3], total: row[4],
+      product_name: row[5], quantity: row[6], price: row[7],
+      credit_deducted: row[8], email_used: row[9] || null,
+    })) : []
+    res.json(items)
   })
 
   app.get('/orders/:id/items', requireLogin, (req, res) => {

@@ -18,6 +18,7 @@ export default defineConfig({
       '/sheet-config': { target: 'http://localhost:3000', changeOrigin: true },
       '/export-to-sheets': { target: 'http://localhost:3000', changeOrigin: true },
       '/emails': { target: 'http://localhost:3000', changeOrigin: true },
+      '/order-items': { target: 'http://localhost:3000', changeOrigin: true },
     }
   }
 })
