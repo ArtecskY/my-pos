@@ -159,7 +159,7 @@ export default function ManagePage() {
   }
 
   function getAddForm(catId) {
-    return addForms[catId] || { name: '', price: '', stock: '', imagePreview: null, price_usd: '', cost: '' }
+    return addForms[catId] || { name: '', price: '', stock: '', unlimitedStock: false, imagePreview: null, price_usd: '', cost: '' }
   }
 
   function setAddForm(catId, updates) {
@@ -179,8 +179,8 @@ export default function ManagePage() {
 
     const isIDPassCat = isIDPass(cat.fill_type)
     const needsStock = !usesEmailCredits(cat.fill_type) && !isIDPassCat
-    if (needsStock && form.stock === '') { err('กรุณากรอกสต็อก'); return }
-    if (needsStock && Number(form.stock) < 0) { err('สต็อกต้องไม่ติดลบ'); return }
+    if (needsStock && !form.unlimitedStock && form.stock === '') { err('กรุณากรอกสต็อก'); return }
+    if (needsStock && !form.unlimitedStock && Number(form.stock) < 0) { err('สต็อกต้องไม่ติดลบ'); return }
 
     const res = await fetch('/products', {
       method: 'POST',
@@ -188,9 +188,9 @@ export default function ManagePage() {
       body: JSON.stringify({
         name: form.name.trim(),
         price: Number(form.price),
-        stock: needsStock ? Number(form.stock) : 0,
+        stock: needsStock ? (form.unlimitedStock ? -1 : Number(form.stock)) : 0,
         category_id: cat.id,
-        price_usd: isIDPassCat && form.price_usd !== '' ? Number(form.price_usd) : null,
+        price_usd: form.price_usd !== '' ? Number(form.price_usd) : null,
       }),
     })
     const data = await res.json()
@@ -213,7 +213,7 @@ export default function ManagePage() {
       if (addImageRefs.current[cat.id]) addImageRefs.current[cat.id].value = ''
     }
 
-    setAddForms(prev => ({ ...prev, [cat.id]: { name: '', price: '', stock: '', imagePreview: null, price_usd: '', cost: '' } }))
+    setAddForms(prev => ({ ...prev, [cat.id]: { name: '', price: '', stock: '', unlimitedStock: false, imagePreview: null, price_usd: '', cost: '' } }))
     loadAll()
   }
 
@@ -236,7 +236,7 @@ export default function ManagePage() {
         price: Number(price),
         stock: needsStock ? Number(stock) : 0,
         category_id: category_id || null,
-        price_usd: isIDPass(fill_type) ? (price_usd !== '' && price_usd != null ? Number(price_usd) : null) : null,
+        price_usd: price_usd !== '' && price_usd != null ? Number(price_usd) : null,
       }),
     })
 
@@ -301,7 +301,7 @@ export default function ManagePage() {
   }
 
   function getPromoForm(catId) {
-    return promoForms[catId] || { name: '', price: '', components: [], pendingId: '', pendingQty: '1', error: '' }
+    return promoForms[catId] || { name: '', price: '', price_usd: '', components: [], pendingId: '', pendingQty: '1', error: '' }
   }
 
   function setPromoForm(catId, updates) {
@@ -339,6 +339,7 @@ export default function ManagePage() {
         stock: 0,
         category_id: cat.id,
         is_bundle: 1,
+        price_usd: form.price_usd !== '' ? Number(form.price_usd) : null,
       }),
     })
     const data = await res.json()
@@ -449,14 +450,22 @@ export default function ManagePage() {
                             </td>
                             <td className="py-2.5 px-2 text-slate-500">฿{p.price}</td>
                             {p.is_bundle
-                              ? <td className="py-2.5 px-2 text-slate-400">สต็อก {p.stock}</td>
+                              ? <td className="py-2.5 px-2 text-slate-400">
+                                  สต็อก {p.stock}
+                                  {p.price_usd != null && <span className="ml-1.5 text-green-600 text-xs font-medium">${p.price_usd}</span>}
+                                </td>
                               : p.fill_type === 'ID_PASS'
                                 ? <td className="py-2.5 px-2 text-slate-400">
                                     สต็อก {p.stock}
                                     {p.price_usd != null && <span className="ml-1.5 text-green-600 text-xs font-medium">${p.price_usd}</span>}
                                   </td>
                                 : needsStock
-                                  ? <td className="py-2.5 px-2 text-slate-400">สต็อก {p.stock}</td>
+                                  ? <td className="py-2.5 px-2 text-slate-400">
+                                      {p.stock === -1
+                                        ? <span className="text-emerald-600 font-medium">ไม่จำกัด</span>
+                                        : `สต็อก ${p.stock}`}
+                                      {p.price_usd != null && <span className="ml-1.5 text-green-600 text-xs font-medium">${p.price_usd}</span>}
+                                    </td>
                                   : <td className="py-2.5 px-2 text-slate-400 text-xs">เครดิต {Number(p.stock).toFixed(2)}</td>
                             }
                             <td className="py-2.5 px-2 text-right whitespace-nowrap">
@@ -519,12 +528,30 @@ export default function ManagePage() {
                           />
                         </>
                       ) : needsStock && (
-                        <input
-                          type="number" placeholder="สต็อก"
-                          value={form.stock}
-                          onChange={e => setAddForm(cat.id, { stock: e.target.value })}
-                          className={`w-24 ${inputCls}`}
-                        />
+                        <>
+                          <input
+                            type="number" placeholder="สต็อก"
+                            value={form.stock}
+                            onChange={e => setAddForm(cat.id, { stock: e.target.value })}
+                            disabled={form.unlimitedStock}
+                            className={`w-24 ${inputCls} ${form.unlimitedStock ? 'opacity-40' : ''}`}
+                          />
+                          <label className="flex items-center gap-1.5 cursor-pointer text-sm text-slate-600 whitespace-nowrap">
+                            <input
+                              type="checkbox"
+                              checked={!!form.unlimitedStock}
+                              onChange={e => setAddForm(cat.id, { unlimitedStock: e.target.checked, stock: '' })}
+                              className="w-4 h-4 accent-emerald-500"
+                            />
+                            ไม่จำกัด
+                          </label>
+                          <input
+                            type="number" step="0.01" placeholder="ราคา $"
+                            value={form.price_usd}
+                            onChange={e => setAddForm(cat.id, { price_usd: e.target.value })}
+                            className={`w-24 ${inputCls}`}
+                          />
+                        </>
                       )}
                       <label className="flex items-center gap-1.5 px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-500 cursor-pointer hover:border-blue-400 bg-white whitespace-nowrap">
                         📷 {form.imagePreview ? 'เปลี่ยนรูป' : 'รูปภาพ'}
@@ -595,6 +622,12 @@ export default function ManagePage() {
                         value={promoForm.price}
                         onChange={e => setPromoForm(cat.id, { price: e.target.value })}
                         className={`w-28 ${inputCls}`}
+                      />
+                      <input
+                        type="number" step="0.01" placeholder="ราคา $"
+                        value={promoForm.price_usd}
+                        onChange={e => setPromoForm(cat.id, { price_usd: e.target.value })}
+                        className={`w-24 ${inputCls}`}
                       />
                     </div>
 
@@ -918,14 +951,27 @@ export default function ManagePage() {
             {!usesEmailCredits(editModal.fill_type) && !isIDPass(editModal.fill_type) && (
               <div className="mb-3.5">
                 <label className="block text-sm text-slate-500 mb-1.5">สต็อก</label>
-                <input
-                  type="number" value={editModal.stock}
-                  onChange={e => setEditModal(m => ({ ...m, stock: e.target.value }))}
-                  className={`w-full ${inputCls}`}
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={Number(editModal.stock) === -1 ? '' : editModal.stock}
+                    onChange={e => setEditModal(m => ({ ...m, stock: e.target.value }))}
+                    disabled={Number(editModal.stock) === -1}
+                    className={`flex-1 ${inputCls} ${Number(editModal.stock) === -1 ? 'opacity-40' : ''}`}
+                  />
+                  <label className="flex items-center gap-1.5 cursor-pointer text-sm text-slate-600 whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={Number(editModal.stock) === -1}
+                      onChange={e => setEditModal(m => ({ ...m, stock: e.target.checked ? -1 : '' }))}
+                      className="w-4 h-4 accent-emerald-500"
+                    />
+                    ไม่จำกัด
+                  </label>
+                </div>
               </div>
             )}
-            {isIDPass(editModal.fill_type) && (
+            {!usesEmailCredits(editModal.fill_type) && (
               <div className="mb-3.5">
                 <label className="block text-sm text-slate-500 mb-1.5">ราคา $ (ราคาขายในหน่วย USD)</label>
                 <input

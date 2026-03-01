@@ -277,6 +277,13 @@ initDB().then(() => {
     return ['EMAIL', 'RAZER', 'OTHER_EMAIL'].includes(fill_type)
   }
 
+  // คำนวณเครดิตต่อชิ้นจากชื่อสินค้า เช่น "50$" หรือ "แพ็ก 50$" → 50
+  // ถ้าไม่พบ pattern ใช้ราคา ฿ แทน
+  function parseCreditPerUnit(name, price) {
+    const m = /(\d+(?:\.\d+)?)\$/.exec(name)
+    return m ? Number(m[1]) : price
+  }
+
   function deductFromEmail(email_id, amount) {
     db.run('UPDATE emails SET credits = credits - ? WHERE id=?', [amount, email_id])
   }
@@ -295,6 +302,7 @@ initDB().then(() => {
     const { items, transfer_amount, transfer_time } = req.body
 
     // Validate stock before proceeding
+    const emailPendingDeductions = {} // track total deductions per email_id in this order
     for (const item of items) {
       const pRes = db.exec('SELECT stock, name, category_id, price, is_bundle FROM products WHERE id=?', [item.product_id])
       if (!pRes[0]) return res.status(400).json({ error: 'ไม่พบสินค้า' })
@@ -317,7 +325,7 @@ initDB().then(() => {
             const lotsRes = db.exec('SELECT COALESCE(SUM(stock), 0) FROM product_lots WHERE product_id=?', [compId])
             compStock = lotsRes[0]?.values[0][0] || 0
           }
-          if (compStock < bundleQty * item.quantity)
+          if (compStock !== -1 && compStock < bundleQty * item.quantity)
             return res.status(400).json({ error: `${compName} มีสต็อกไม่พอสำหรับแพ็ก "${name}" (ต้องการ ${bundleQty * item.quantity} เหลือ ${compStock})` })
         }
       } else {
@@ -333,14 +341,16 @@ initDB().then(() => {
           if (!item.email_id) return res.status(400).json({ error: `กรุณาเลือก Email สำหรับ "${name}"` })
           if (fill_type === 'RAZER' && !item.credit_amount)
             return res.status(400).json({ error: `กรุณากรอกจำนวนเครดิตสำหรับ "${name}"` })
-          const needed = fill_type === 'RAZER' ? (item.credit_amount || 0) : price * item.quantity
+          const needed = fill_type === 'RAZER' ? (item.credit_amount || 0) : parseCreditPerUnit(name, price) * item.quantity
           const emailRes = db.exec('SELECT credits FROM emails WHERE id=? AND fill_type=?', [item.email_id, fill_type])
           if (!emailRes[0]) return res.status(400).json({ error: `ไม่พบ Email ที่เลือกสำหรับ "${name}"` })
           const emailCredits = emailRes[0].values[0][0]
-          if (emailCredits < needed)
-            return res.status(400).json({ error: `Email ที่เลือกมีเครดิตไม่พอสำหรับ "${name}" (เหลือ ${Number(emailCredits).toFixed(2)} ต้องการ ${needed})` })
+          const alreadyPending = emailPendingDeductions[item.email_id] || 0
+          if (emailCredits - alreadyPending < needed)
+            return res.status(400).json({ error: `Email ที่เลือกมีเครดิตไม่พอสำหรับ "${name}" (เหลือ ${Number(emailCredits - alreadyPending).toFixed(2)} ต้องการ ${needed})` })
+          emailPendingDeductions[item.email_id] = alreadyPending + needed
         } else {
-          if (stock < item.quantity)
+          if (stock !== -1 && stock < item.quantity)
             return res.status(400).json({ error: `สินค้า "${name}" มีสต็อกไม่พอ (เหลือ ${stock} ชิ้น)` })
         }
       }
@@ -358,20 +368,31 @@ initDB().then(() => {
     const orderId = orderResult[0].values[0][0]
 
     for (const item of items) {
-      const pRes = db.exec('SELECT price, category_id, is_bundle, price_usd FROM products WHERE id=?', [item.product_id])
-      const [price, category_id, is_bundle, price_usd] = pRes[0].values[0]
+      const pRes = db.exec('SELECT price, category_id, is_bundle, price_usd, name FROM products WHERE id=?', [item.product_id])
+      const [price, category_id, is_bundle, price_usd, productName] = pRes[0].values[0]
 
       db.run('INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)',
         [orderId, item.product_id, item.quantity, price])
+      const orderItemId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
 
       let creditDeducted = null, emailIdUsed = null, lotIdUsed = null, priceUsdUsed = null
       if (is_bundle) {
-        // ตัด stock จาก components
+        // ตัด stock จาก components และคำนวณ price_usd รวมจาก components
+        let totalCompPriceUsd = 0
+        let hasCompPriceUsd = false
         const comps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [item.product_id])
         if (comps[0]) {
           for (const [compId, bundleQty] of comps[0].values) {
-            const compFtRes = db.exec('SELECT c.fill_type FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id=?', [compId])
-            const compFillType = compFtRes[0]?.values[0][0]
+            const compRes = db.exec(
+              'SELECT c.fill_type, p.price_usd FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id=?',
+              [compId]
+            )
+            const compFillType = compRes[0]?.values[0][0]
+            const compPriceUsd = compRes[0]?.values[0][1]
+            if (compPriceUsd != null) {
+              totalCompPriceUsd += Number(compPriceUsd) * bundleQty
+              hasCompPriceUsd = true
+            }
             const needed = bundleQty * item.quantity
             if (compFillType === 'ID_PASS') {
               let remaining = needed
@@ -385,10 +406,11 @@ initDB().then(() => {
                 }
               }
             } else {
-              db.run('UPDATE products SET stock = stock - ? WHERE id=?', [needed, compId])
+              db.run('UPDATE products SET stock = stock - ? WHERE id=? AND stock != -1', [needed, compId])
             }
           }
         }
+        if (hasCompPriceUsd) priceUsdUsed = totalCompPriceUsd * item.quantity
       } else {
         const catRes = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
         const fill_type = catRes[0]?.values[0][0] || 'UID'
@@ -407,15 +429,15 @@ initDB().then(() => {
             }
           }
         } else if (usesEmailCredits(fill_type)) {
-          creditDeducted = fill_type === 'RAZER' ? item.credit_amount : price * item.quantity
+          creditDeducted = fill_type === 'RAZER' ? item.credit_amount : parseCreditPerUnit(productName, price) * item.quantity
           emailIdUsed = item.email_id
           deductFromEmail(item.email_id, creditDeducted)
         } else {
-          db.run('UPDATE products SET stock = stock - ? WHERE id=?', [item.quantity, item.product_id])
+          db.run('UPDATE products SET stock = stock - ? WHERE id=? AND stock != -1', [item.quantity, item.product_id])
         }
       }
-      db.run('UPDATE order_items SET credit_deducted=?, email_id_used=?, lot_id_used=?, price_usd_used=? WHERE order_id=? AND product_id=?',
-        [creditDeducted, emailIdUsed, lotIdUsed, priceUsdUsed, orderId, item.product_id])
+      db.run('UPDATE order_items SET credit_deducted=?, email_id_used=?, lot_id_used=?, price_usd_used=? WHERE id=?',
+        [creditDeducted, emailIdUsed, lotIdUsed, priceUsdUsed, orderItemId])
     }
 
     save()
@@ -583,10 +605,11 @@ initDB().then(() => {
   app.get('/order-items', requireLogin, (req, res) => {
     const result = db.exec(`
       SELECT o.id, o.transfer_time, o.created_at, o.transfer_amount, o.total,
-             p.name, oi.quantity, oi.price, oi.credit_deducted, e.email, oi.price_usd_used
+             p.name, oi.quantity, oi.price, oi.credit_deducted, e.email, oi.price_usd_used, c.name
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       JOIN products p ON p.id = oi.product_id
+      LEFT JOIN categories c ON c.id = p.category_id
       LEFT JOIN emails e ON e.id = oi.email_id_used
       ORDER BY COALESCE(o.transfer_time, o.created_at) DESC, o.id DESC, oi.id ASC
     `)
@@ -595,7 +618,7 @@ initDB().then(() => {
       transfer_amount: row[3], total: row[4],
       product_name: row[5], quantity: row[6], price: row[7],
       credit_deducted: row[8], email_used: row[9] || null,
-      price_usd_used: row[10] ?? null,
+      price_usd_used: row[10] ?? null, category_name: row[11] || null,
     })) : []
     res.json(items)
   })
