@@ -1,10 +1,17 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 
 const FILL_TYPE_CONFIG = {
   'EMAIL':       { label: 'Apple ID',       cls: 'bg-blue-100 text-blue-700' },
   'RAZER':       { label: 'Razer',          cls: 'bg-green-100 text-green-700' },
   'OTHER_EMAIL': { label: 'อื่นๆ · Email', cls: 'bg-purple-100 text-purple-700' },
 }
+
+const FILTER_TYPES = [
+  { key: '',            label: 'ทั้งหมด' },
+  { key: 'EMAIL',       label: 'Apple ID' },
+  { key: 'RAZER',       label: 'Razer' },
+  { key: 'OTHER_EMAIL', label: 'อื่นๆ · Email' },
+]
 
 function FillTypeBadge({ fill_type }) {
   const cfg = FILL_TYPE_CONFIG[fill_type]
@@ -40,23 +47,36 @@ function CopyCell({ value, masked, maskChar = '••••••••' }) {
 
 export default function EmailsPage() {
   const [emails, setEmails] = useState([])
-  const [categories, setCategories] = useState([])
-  const [form, setForm] = useState({ email: '', password: '', link_sms: '', credits: '', cost: '', category_id: '', note: '' })
+  const [form, setForm] = useState({ email: '', password: '', link_sms: '', credits: '', cost: '', fill_type: '', note: '' })
   const [formError, setFormError] = useState('')
   const [showPass, setShowPass] = useState({})
   const [editModal, setEditModal] = useState(null)
   const [editShowPass, setEditShowPass] = useState(false)
 
+  // Filter state
+  const [hideZero, setHideZero] = useState(false)
+  const [filterType, setFilterType] = useState('')
+  const [search, setSearch] = useState('')
+
   async function loadAll() {
-    const [e, c] = await Promise.all([
-      fetch('/emails').then(r => r.json()),
-      fetch('/categories').then(r => r.json()),
-    ])
-    setEmails(e)
-    setCategories(c.filter(x => ['EMAIL', 'RAZER', 'OTHER_EMAIL'].includes(x.fill_type)))
+    setEmails(await fetch('/emails').then(r => r.json()))
   }
 
   useEffect(() => { loadAll() }, [])
+
+  // Filtered email list
+  const filtered = useMemo(() => emails.filter(e => {
+    if (hideZero && Number(e.credits) === 0) return false
+    if (filterType && e.fill_type !== filterType) return false
+    if (search && !e.email.toLowerCase().includes(search.toLowerCase())) return false
+    return true
+  }), [emails, hideZero, filterType, search])
+
+  // Filter types present in the data
+  const presentTypes = useMemo(() => {
+    const types = new Set(emails.map(e => e.fill_type).filter(Boolean))
+    return FILTER_TYPES.filter(f => f.key === '' || types.has(f.key))
+  }, [emails])
 
   async function addEmail() {
     setFormError('')
@@ -72,18 +92,18 @@ export default function EmailsPage() {
         link_sms: form.link_sms.trim() || null,
         credits: form.credits !== '' ? Number(form.credits) : 0,
         cost: form.cost !== '' ? Number(form.cost) : 0,
-        category_id: form.category_id || null,
+        fill_type: form.fill_type || null,
         note: form.note.trim() || null,
       }),
     })
     const data = await res.json()
     if (!res.ok) { setFormError(data.error); return }
-    setForm({ email: '', password: '', link_sms: '', credits: '', cost: '', category_id: '', note: '' })
+    setForm({ email: '', password: '', link_sms: '', credits: '', cost: '', fill_type: '', note: '' })
     loadAll()
   }
 
   async function saveEdit() {
-    const { id, email, password, link_sms, credits, cost, category_id, note } = editModal
+    const { id, email, password, link_sms, credits, cost, fill_type, note } = editModal
     await fetch(`/emails/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -92,7 +112,7 @@ export default function EmailsPage() {
         link_sms: link_sms || null,
         credits: Number(credits) || 0,
         cost: Number(cost) || 0,
-        category_id: category_id || null,
+        fill_type: fill_type || null,
         note: note || null,
       }),
     })
@@ -153,14 +173,12 @@ export default function EmailsPage() {
           />
           <select
             className={`${inputCls} text-slate-600`}
-            value={form.category_id}
-            onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}
+            value={form.fill_type}
+            onChange={e => setForm(f => ({ ...f, fill_type: e.target.value }))}
           >
             <option value="">— เลือกประเภท Email —</option>
-            {categories.map(c => (
-              <option key={c.id} value={c.id}>
-                {FILL_TYPE_CONFIG[c.fill_type]?.label || c.fill_type}
-              </option>
+            {Object.entries(FILL_TYPE_CONFIG).map(([key, cfg]) => (
+              <option key={key} value={key}>{cfg.label}</option>
             ))}
           </select>
           <textarea
@@ -171,9 +189,6 @@ export default function EmailsPage() {
             onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
           />
         </div>
-        {categories.length === 0 && (
-          <p className="text-amber-500 text-xs mb-2">ยังไม่มีหมวดหมู่ประเภท Email — ไปสร้างที่หน้าจัดการสินค้าก่อนครับ</p>
-        )}
         {formError && <p className="text-red-500 text-sm mb-2">{formError}</p>}
         <button
           onClick={addEmail}
@@ -185,9 +200,70 @@ export default function EmailsPage() {
 
       {/* Email list */}
       <div className="bg-white rounded-xl p-6 shadow-sm">
-        <h2 className="font-semibold text-slate-800 mb-4">รายการ Email ทั้งหมด ({emails.length})</h2>
-        {emails.length === 0
-          ? <p className="text-slate-400 text-center py-6">ยังไม่มี Email</p>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="font-semibold text-slate-800">
+            รายการ Email ทั้งหมด
+            <span className="ml-2 text-slate-400 font-normal text-sm">
+              ({filtered.length}{filtered.length !== emails.length ? `/${emails.length}` : ''})
+            </span>
+          </h2>
+        </div>
+
+        {/* Filter bar */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          {/* Search */}
+          <input
+            type="text"
+            placeholder="ค้นหา Email..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 min-w-[180px]"
+          />
+
+          {/* ซ่อน 0 เครดิต toggle */}
+          <button
+            onClick={() => setHideZero(v => !v)}
+            className={`px-3 py-1.5 rounded-lg text-sm border cursor-pointer transition-colors ${
+              hideZero
+                ? 'bg-slate-700 text-white border-transparent'
+                : 'bg-white text-slate-500 border-slate-300 hover:border-slate-400'
+            }`}
+          >
+            ซ่อน 0 เครดิต
+          </button>
+
+          {/* กรองตามประเภท */}
+          <div className="flex rounded-lg border border-slate-300 overflow-hidden">
+            {presentTypes.map(t => (
+              <button
+                key={t.key}
+                onClick={() => setFilterType(t.key)}
+                className={`px-3 py-1.5 text-sm cursor-pointer transition-colors ${
+                  filterType === t.key
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-white text-slate-500 hover:bg-slate-50'
+                } ${t.key !== presentTypes[presentTypes.length - 1].key ? 'border-r border-slate-300' : ''}`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* ล้าง filter */}
+          {(hideZero || filterType || search) && (
+            <button
+              onClick={() => { setHideZero(false); setFilterType(''); setSearch('') }}
+              className="px-3 py-1.5 text-sm text-slate-400 hover:text-slate-600 cursor-pointer"
+            >
+              ล้างตัวกรอง ×
+            </button>
+          )}
+        </div>
+
+        {filtered.length === 0
+          ? <p className="text-slate-400 text-center py-6">
+              {emails.length === 0 ? 'ยังไม่มี Email' : 'ไม่มี Email ตรงเงื่อนไข'}
+            </p>
           : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -204,8 +280,8 @@ export default function EmailsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {emails.map(e => (
-                    <tr key={e.id} className="border-b border-slate-100 hover:bg-slate-50">
+                  {filtered.map(e => (
+                    <tr key={e.id} className={`border-b border-slate-100 hover:bg-slate-50 ${Number(e.credits) === 0 ? 'opacity-50' : ''}`}>
                       {/* ประเภท */}
                       <td className="py-2.5 px-2">
                         {e.fill_type ? <FillTypeBadge fill_type={e.fill_type} /> : <span className="text-slate-300 text-xs">—</span>}
@@ -215,7 +291,7 @@ export default function EmailsPage() {
                         ฿{Number(e.cost).toFixed(2)}
                       </td>
                       {/* เครดิต */}
-                      <td className="py-2.5 px-2 text-right font-semibold text-blue-700 whitespace-nowrap">
+                      <td className={`py-2.5 px-2 text-right font-semibold whitespace-nowrap ${Number(e.credits) === 0 ? 'text-slate-300' : 'text-blue-700'}`}>
                         {Number(e.credits).toFixed(2)}
                       </td>
                       {/* Email */}
@@ -286,17 +362,15 @@ export default function EmailsPage() {
             <h2 className="text-blue-900 font-bold mb-5">แก้ไข Email</h2>
             <div className="space-y-3.5">
               <div>
-                <label className="block text-sm text-slate-500 mb-1.5">ประเภท (หมวดหมู่ Email)</label>
+                <label className="block text-sm text-slate-500 mb-1.5">ประเภท Email</label>
                 <select
                   className={`w-full ${inputCls} text-slate-600`}
-                  value={editModal.category_id ?? ''}
-                  onChange={e => setEditModal(m => ({ ...m, category_id: e.target.value || null }))}
+                  value={editModal.fill_type ?? ''}
+                  onChange={e => setEditModal(m => ({ ...m, fill_type: e.target.value || null }))}
                 >
                   <option value="">— ไม่ระบุ —</option>
-                  {categories.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {FILL_TYPE_CONFIG[c.fill_type]?.label || c.fill_type}
-                    </option>
+                  {Object.entries(FILL_TYPE_CONFIG).map(([key, cfg]) => (
+                    <option key={key} value={key}>{cfg.label}</option>
                   ))}
                 </select>
               </div>

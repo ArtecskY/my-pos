@@ -60,6 +60,20 @@ async function initDB() {
     created_at TEXT DEFAULT (datetime('now','localtime'))
   )`)
 
+  db.run(`CREATE TABLE IF NOT EXISTS product_bundles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    component_id INTEGER NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1
+  )`)
+
+  db.run(`CREATE TABLE IF NOT EXISTS product_lots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    cost REAL NOT NULL DEFAULT 0,
+    stock INTEGER NOT NULL DEFAULT 0
+  )`)
+
   try { db.run('ALTER TABLE products ADD COLUMN image TEXT') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE products ADD COLUMN category_id INTEGER') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE orders ADD COLUMN transfer_amount REAL') } catch (e) { /* column exists */ }
@@ -67,8 +81,15 @@ async function initDB() {
   try { db.run('ALTER TABLE categories ADD COLUMN fill_type TEXT DEFAULT "UID"') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE emails ADD COLUMN note TEXT') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE emails ADD COLUMN cost REAL DEFAULT 0') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE emails ADD COLUMN fill_type TEXT') } catch (e) { /* column exists */ }
+  // migrate fill_type จาก categories สำหรับ email เก่าที่มี category_id
+  db.run(`UPDATE emails SET fill_type = (SELECT fill_type FROM categories WHERE id = emails.category_id) WHERE fill_type IS NULL AND category_id IS NOT NULL`)
   try { db.run('ALTER TABLE order_items ADD COLUMN credit_deducted REAL') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE order_items ADD COLUMN email_id_used INTEGER') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE products ADD COLUMN is_bundle INTEGER DEFAULT 0') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE products ADD COLUMN price_usd REAL') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN lot_id_used INTEGER') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN price_usd_used REAL') } catch (e) { /* column exists */ }
   // migrate old ID_PASS → EMAIL
   db.run('UPDATE categories SET fill_type="EMAIL" WHERE fill_type="ID_PASS"')
 

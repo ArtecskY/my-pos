@@ -19,6 +19,8 @@ export default defineConfig({
       '/export-to-sheets': { target: 'http://localhost:3000', changeOrigin: true },
       '/emails': { target: 'http://localhost:3000', changeOrigin: true },
       '/order-items': { target: 'http://localhost:3000', changeOrigin: true },
+      '/product-lots': { target: 'http://localhost:3000', changeOrigin: true },
+      '/id-pass-dashboard': { target: 'http://localhost:3000', changeOrigin: true },
     }
   }
 })

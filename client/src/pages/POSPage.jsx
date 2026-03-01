@@ -10,6 +10,7 @@ export default function POSPage() {
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [selectedCat, setSelectedCat] = useState('')
+  const [search, setSearch] = useState('')
   const [cart, setCart] = useState([])
   const [receipt, setReceipt] = useState(null)
   const [showPayModal, setShowPayModal] = useState(false)
@@ -26,9 +27,21 @@ export default function POSPage() {
     ]).then(([p, c]) => { setProducts(p); setCategories(c) })
   }, [])
 
-  const filtered = selectedCat
-    ? products.filter(p => String(p.category_id) === selectedCat)
-    : products
+  const grouped = categories
+    .filter(cat => !selectedCat || String(cat.id) === selectedCat)
+    .map(cat => {
+      const searchLower = search.toLowerCase()
+      const catMatch = !search || cat.name.toLowerCase().includes(searchLower)
+      return {
+        ...cat,
+        products: products.filter(p =>
+          p.category_id === cat.id &&
+          p.stock > 0 &&
+          (catMatch || p.name.toLowerCase().includes(searchLower))
+        ),
+      }
+    })
+    .filter(cat => cat.products.length > 0)
 
   function addToCart(p) {
     setCart(prev => {
@@ -66,7 +79,7 @@ export default function POSPage() {
     for (const item of cart) {
       if (['EMAIL', 'OTHER_EMAIL'].includes(item.fill_type)) {
         const needed = item.price * item.quantity
-        const data = await fetch(`/emails/available?category_id=${item.category_id}&needed=${needed}`).then(r => r.json())
+        const data = await fetch(`/emails/available?fill_type=${item.fill_type}&needed=${needed}`).then(r => r.json())
         setAvailableEmails(prev => ({ ...prev, [item.id]: data }))
         if (data.length === 1) setSelectedEmails(prev => ({ ...prev, [item.id]: String(data[0].id) }))
       }
@@ -108,57 +121,68 @@ export default function POSPage() {
 
   return (
     <div className="flex gap-6">
-      <div className="flex-[2]">
-        {/* Category filter dropdown */}
-        <div className="flex items-center gap-3 mb-4">
-          <label className="text-sm text-slate-500 whitespace-nowrap">หมวดหมู่:</label>
+      <div className="flex-[2] space-y-5">
+        {/* Filter bar */}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="ค้นหาสินค้า..."
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white flex-1"
+          />
           <select
             value={selectedCat}
             onChange={e => setSelectedCat(e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white min-w-[180px]"
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white"
           >
-            <option value="">ทั้งหมด ({products.length} รายการ)</option>
+            <option value="">ทุกหมวดหมู่</option>
             {categories.map(c => (
-              <option key={c.id} value={String(c.id)}>
-                {c.name} ({products.filter(p => p.category_id === c.id).length} รายการ)
-              </option>
+              <option key={c.id} value={String(c.id)}>{c.name}</option>
             ))}
           </select>
-          {selectedCat && (
+          {(selectedCat || search) && (
             <button
-              onClick={() => setSelectedCat('')}
-              className="text-sm text-slate-400 hover:text-slate-600 cursor-pointer"
+              onClick={() => { setSelectedCat(''); setSearch('') }}
+              className="px-3 py-2 text-sm text-slate-400 hover:text-slate-600 cursor-pointer whitespace-nowrap"
             >
-              ล้างตัวกรอง ×
+              ล้าง ×
             </button>
           )}
         </div>
 
-        {/* Product grid */}
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3">
-          {filtered.length === 0
-            ? <p className="text-slate-400 text-sm col-span-full py-6 text-center">ไม่มีสินค้าในหมวดหมู่นี้</p>
-            : filtered.map(p => (
-              <div
-                key={p.id}
-                onClick={() => addToCart(p)}
-                className="bg-white rounded-xl overflow-hidden cursor-pointer shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all"
-              >
-                {p.image
-                  ? <img src={p.image} alt={p.name} className="w-full h-28 object-cover" />
-                  : <div className="w-full h-28 bg-slate-100 flex items-center justify-center text-4xl">🛍️</div>
-                }
-                <div className="p-3">
-                  {p.category_name && (
-                    <div className="text-xs text-slate-400 mb-0.5">{p.category_name}</div>
-                  )}
-                  <div className="font-semibold text-sm mb-1">{p.name}</div>
-                  <div className="text-blue-500 font-medium">฿{p.price}</div>
+        {grouped.length === 0 ? (
+          <p className="text-slate-400 text-sm py-6 text-center">ไม่มีสินค้าในระบบ</p>
+        ) : grouped.map(cat => (
+          <div key={cat.id}>
+            {/* Category header */}
+            <h3 className="font-bold text-slate-700 text-base mb-3 pb-2 border-b border-slate-200">
+              {cat.name}
+            </h3>
+            {/* Product grid */}
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(155px,1fr))] gap-3">
+              {cat.products.map(p => (
+                <div
+                  key={p.id}
+                  onClick={() => addToCart(p)}
+                  className="bg-white rounded-xl overflow-hidden cursor-pointer shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all"
+                >
+                  {p.image
+                    ? <img src={p.image} alt={p.name} className="w-full h-28 object-cover" />
+                    : <div className="w-full h-28 bg-slate-100 flex items-center justify-center text-4xl">🛍️</div>
+                  }
+                  <div className="p-3">
+                    <div className="font-semibold text-sm mb-1">{p.name}</div>
+                    <div className="text-blue-500 font-medium">฿{p.price}</div>
+                    {p.stock <= 5 && (
+                      <div className="text-xs text-orange-400 mt-0.5">เหลือ {p.stock} ชิ้น</div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
-          }
-        </div>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Cart */}
@@ -256,7 +280,7 @@ export default function POSPage() {
                             setSelectedEmails(prev => ({ ...prev, [item.id]: '' }))
                             const needed = Number(val)
                             if (needed > 0 && item.category_id) {
-                              fetch(`/emails/available?category_id=${item.category_id}&needed=${needed}`)
+                              fetch(`/emails/available?fill_type=${item.fill_type}&needed=${needed}`)
                                 .then(r => r.json())
                                 .then(data => {
                                   setAvailableEmails(prev => ({ ...prev, [item.id]: data }))

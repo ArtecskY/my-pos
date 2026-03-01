@@ -156,6 +156,10 @@ export default function OrdersPage() {
                           <span className="text-blue-700 font-semibold">
                             {Number(item.credit_deducted).toFixed(2)} เครดิต
                           </span>
+                        ) : item.price_usd_used != null ? (
+                          <span className="text-green-700 font-semibold">
+                            ${Number(item.price_usd_used).toFixed(2)}
+                          </span>
                         ) : (
                           <span className="text-slate-600">×{item.quantity}</span>
                         )}
