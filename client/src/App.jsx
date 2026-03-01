@@ -5,6 +5,7 @@ import POSPage from './pages/POSPage'
 import ManagePage from './pages/ManagePage'
 import OrdersPage from './pages/OrdersPage'
 import EmailsPage from './pages/EmailsPage'
+import UsersPage from './pages/UsersPage'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -47,11 +48,12 @@ export default function App() {
           </button>
         </div>
       </div>
-      <NavTabs page={page} onChangePage={setPage} />
+      <NavTabs page={page} onChangePage={setPage} user={user} />
       {page === 'pos' && <POSPage />}
       {page === 'manage' && <ManagePage />}
       {page === 'emails' && <EmailsPage />}
       {page === 'orders' && <OrdersPage />}
+      {page === 'users' && user?.is_admin && <UsersPage currentUser={user} />}
     </div>
   )
 }

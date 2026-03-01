@@ -93,6 +93,9 @@ async function initDB() {
   try { db.run('ALTER TABLE products ADD COLUMN price_usd REAL') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE order_items ADD COLUMN lot_id_used INTEGER') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE order_items ADD COLUMN price_usd_used REAL') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0') } catch (e) { /* column exists */ }
+  // ผู้ใช้คนแรกเป็น admin เสมอ
+  db.run('UPDATE users SET is_admin=1 WHERE id=(SELECT MIN(id) FROM users)')
   // migrate old ID_PASS → EMAIL
   db.run('UPDATE categories SET fill_type="EMAIL" WHERE fill_type="ID_PASS"')
 

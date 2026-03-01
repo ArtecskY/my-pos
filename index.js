@@ -639,26 +639,38 @@ initDB().then(() => {
     res.json(items)
   })
 
+  function requireAdmin(req, res, next) {
+    if (!req.session.user?.is_admin) return res.status(403).json({ error: 'ต้องการสิทธิ์ Admin' })
+    next()
+  }
+
+  // สร้างผู้ใช้ — admin เท่านั้น (หรือ bootstrap ถ้ายังไม่มีผู้ใช้)
   app.post('/register', (req, res) => {
-    const { username, password } = req.body
+    const { username, password, is_admin } = req.body
+    const countRes = db.exec('SELECT COUNT(*) FROM users')
+    const userCount = countRes[0]?.values[0][0] || 0
+    if (userCount > 0 && !req.session.user?.is_admin) {
+      return res.status(403).json({ error: 'ไม่มีสิทธิ์สร้างผู้ใช้' })
+    }
+    const adminFlag = userCount === 0 ? 1 : (is_admin ? 1 : 0)
     const hash = bcrypt.hashSync(password, 10)
     try {
-      db.run('INSERT INTO users (username, password) VALUES (?, ?)', [username, hash])
+      db.run('INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)', [username, hash, adminFlag])
       save()
-      res.json({ message: 'สมัครสมาชิกสำเร็จ' })
+      res.json({ message: 'สร้างผู้ใช้สำเร็จ' })
     } catch {
-      res.status(400).json({ error: 'Username นี้มีแล้วครับ' })
+      res.status(400).json({ error: 'Username นี้มีแล้ว' })
     }
   })
 
   app.post('/login', (req, res) => {
     const { username, password } = req.body
-    const result = db.exec('SELECT * FROM users WHERE username=?', [username])
+    const result = db.exec('SELECT id, username, password, is_admin FROM users WHERE username=?', [username])
     if (!result[0]) return res.status(401).json({ error: 'Username หรือ Password ไม่ถูกต้อง' })
     const user = result[0].values[0]
     if (!bcrypt.compareSync(password, user[2])) return res.status(401).json({ error: 'Username หรือ Password ไม่ถูกต้อง' })
-    req.session.user = { id: user[0], username: user[1] }
-    res.json({ message: 'Login สำเร็จ', username: user[1] })
+    req.session.user = { id: user[0], username: user[1], is_admin: user[3] === 1 }
+    res.json({ message: 'Login สำเร็จ', username: user[1], is_admin: user[3] === 1 })
   })
 
   app.post('/logout', (req, res) => {
@@ -669,6 +681,21 @@ initDB().then(() => {
   app.get('/me', (req, res) => {
     if (req.session.user) return res.json(req.session.user)
     res.status(401).json({ error: 'ยังไม่ได้ Login' })
+  })
+
+  app.get('/users', requireLogin, requireAdmin, (req, res) => {
+    const result = db.exec('SELECT id, username, is_admin FROM users ORDER BY id')
+    const users = result[0] ? result[0].values.map(r => ({ id: r[0], username: r[1], is_admin: r[2] === 1 })) : []
+    res.json(users)
+  })
+
+  app.delete('/users/:id', requireLogin, requireAdmin, (req, res) => {
+    if (Number(req.params.id) === req.session.user.id) {
+      return res.status(400).json({ error: 'ไม่สามารถลบบัญชีตัวเองได้' })
+    }
+    db.run('DELETE FROM users WHERE id=?', [req.params.id])
+    save()
+    res.json({ message: 'ลบผู้ใช้สำเร็จ' })
   })
 
   // SPA fallback — ส่ง React index.html สำหรับทุก route ที่ไม่ใช่ API
