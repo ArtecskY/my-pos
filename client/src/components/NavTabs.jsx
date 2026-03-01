@@ -4,6 +4,7 @@ export default function NavTabs({ page, onChangePage, user }) {
     ['manage', 'จัดการสินค้า'],
     ['emails', 'จัดการ Email'],
     ['orders', 'ประวัติรายการ'],
+    ['dashboard', 'Dashboard'],
     ...(user?.is_admin ? [['users', 'จัดการผู้ใช้']] : []),
   ]
   return (

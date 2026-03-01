@@ -6,6 +6,7 @@ import ManagePage from './pages/ManagePage'
 import OrdersPage from './pages/OrdersPage'
 import EmailsPage from './pages/EmailsPage'
 import UsersPage from './pages/UsersPage'
+import DashboardPage from './pages/DashboardPage'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -53,6 +54,7 @@ export default function App() {
       {page === 'manage' && <ManagePage />}
       {page === 'emails' && <EmailsPage />}
       {page === 'orders' && <OrdersPage />}
+      {page === 'dashboard' && <DashboardPage />}
       {page === 'users' && user?.is_admin && <UsersPage currentUser={user} />}
     </div>
   )

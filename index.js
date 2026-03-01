@@ -379,20 +379,22 @@ initDB().then(() => {
         [orderId, item.product_id, item.quantity, price])
       const orderItemId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
 
-      let creditDeducted = null, emailIdUsed = null, lotIdUsed = null, priceUsdUsed = null, costUsed = null
+      let creditDeducted = null, emailIdUsed = null, lotIdUsed = null, priceUsdUsed = null
+      let costUsed = null, lotCostUsed = null, bundleLotInfo = null
       if (is_bundle) {
-        // ตัด stock จาก components และคำนวณ price_usd รวมจาก components
         let totalCompPriceUsd = 0
         let hasCompPriceUsd = false
+        const bundleComponents = []
         const comps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [item.product_id])
         if (comps[0]) {
           for (const [compId, bundleQty] of comps[0].values) {
             const compRes = db.exec(
-              'SELECT c.fill_type, p.price_usd FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id=?',
+              'SELECT c.fill_type, p.price_usd, p.name FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id=?',
               [compId]
             )
             const compFillType = compRes[0]?.values[0][0]
             const compPriceUsd = compRes[0]?.values[0][1]
+            const compName = compRes[0]?.values[0][2] || ''
             if (compPriceUsd != null) {
               totalCompPriceUsd += Number(compPriceUsd) * bundleQty
               hasCompPriceUsd = true
@@ -400,35 +402,39 @@ initDB().then(() => {
             const needed = bundleQty * item.quantity
             if (compFillType === 'ID_PASS') {
               let remaining = needed
-              const lots = db.exec('SELECT id, stock FROM product_lots WHERE product_id=? AND stock > 0 ORDER BY cost ASC', [compId])
+              let firstCost = null
+              const lots = db.exec('SELECT id, stock, cost FROM product_lots WHERE product_id=? AND stock > 0 ORDER BY cost ASC', [compId])
               if (lots[0]) {
-                for (const [lotId, lotStock] of lots[0].values) {
+                for (const [lotId, lotStock, lotCost] of lots[0].values) {
                   if (remaining <= 0) break
                   const deduct = Math.min(remaining, lotStock)
                   db.run('UPDATE product_lots SET stock = stock - ? WHERE id=?', [deduct, lotId])
+                  if (firstCost === null) firstCost = lotCost
                   remaining -= deduct
                 }
               }
+              bundleComponents.push({ name: compName, cost: firstCost })
             } else {
               db.run('UPDATE products SET stock = stock - ? WHERE id=? AND stock != -1', [needed, compId])
+              bundleComponents.push({ name: compName, cost: null })
             }
           }
         }
         if (hasCompPriceUsd) priceUsdUsed = totalCompPriceUsd * item.quantity
+        if (bundleComponents.length > 0) bundleLotInfo = JSON.stringify(bundleComponents)
       } else {
         const catRes = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
         const fill_type = catRes[0]?.values[0][0] || 'UID'
         if (fill_type === 'ID_PASS') {
           priceUsdUsed = price_usd
-          // ตัด stock จาก lots เรียงตาม cost ต่ำสุดก่อน
           let remaining = item.quantity
-          const lots = db.exec('SELECT id, stock FROM product_lots WHERE product_id=? AND stock > 0 ORDER BY cost ASC', [item.product_id])
+          const lots = db.exec('SELECT id, stock, cost FROM product_lots WHERE product_id=? AND stock > 0 ORDER BY cost ASC', [item.product_id])
           if (lots[0]) {
-            for (const [lotId, lotStock] of lots[0].values) {
+            for (const [lotId, lotStock, lotCost] of lots[0].values) {
               if (remaining <= 0) break
               const deduct = Math.min(remaining, lotStock)
               db.run('UPDATE product_lots SET stock = stock - ? WHERE id=?', [deduct, lotId])
-              if (!lotIdUsed) lotIdUsed = lotId
+              if (!lotIdUsed) { lotIdUsed = lotId; lotCostUsed = lotCost }
               remaining -= deduct
             }
           }
@@ -443,8 +449,8 @@ initDB().then(() => {
           if (c != null && c > 0) costUsed = c
         }
       }
-      db.run('UPDATE order_items SET credit_deducted=?, email_id_used=?, lot_id_used=?, price_usd_used=?, cost_used=? WHERE id=?',
-        [creditDeducted, emailIdUsed, lotIdUsed, priceUsdUsed, costUsed, orderItemId])
+      db.run('UPDATE order_items SET credit_deducted=?, email_id_used=?, lot_id_used=?, price_usd_used=?, cost_used=?, lot_cost_used=?, bundle_lot_info=? WHERE id=?',
+        [creditDeducted, emailIdUsed, lotIdUsed, priceUsdUsed, costUsed, lotCostUsed, bundleLotInfo, orderItemId])
     }
 
     save()
@@ -612,7 +618,8 @@ initDB().then(() => {
   app.get('/order-items', requireLogin, (req, res) => {
     const result = db.exec(`
       SELECT o.id, o.transfer_time, o.created_at, o.transfer_amount, o.total,
-             p.name, oi.quantity, oi.price, oi.credit_deducted, e.email, oi.price_usd_used, c.name, oi.cost_used
+             p.name, oi.quantity, oi.price, oi.credit_deducted, e.email, oi.price_usd_used, c.name, oi.cost_used,
+             oi.lot_cost_used, oi.bundle_lot_info
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       JOIN products p ON p.id = oi.product_id
@@ -626,7 +633,8 @@ initDB().then(() => {
       product_name: row[5], quantity: row[6], price: row[7],
       credit_deducted: row[8], email_used: row[9] || null,
       price_usd_used: row[10] ?? null, category_name: row[11] || null,
-      cost_used: row[12] ?? null,
+      cost_used: row[12] ?? null, lot_cost_used: row[13] ?? null,
+      bundle_lot_info: row[14] ?? null,
     })) : []
     res.json(items)
   })
