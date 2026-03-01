@@ -191,6 +191,7 @@ export default function ManagePage() {
         stock: needsStock ? (form.unlimitedStock ? -1 : Number(form.stock)) : 0,
         category_id: cat.id,
         price_usd: form.price_usd !== '' ? Number(form.price_usd) : null,
+        cost: form.cost !== '' ? Number(form.cost) : 0,
       }),
     })
     const data = await res.json()
@@ -224,7 +225,7 @@ export default function ManagePage() {
   }
 
   async function saveEdit() {
-    const { id, name, price, stock, category_id, fill_type, price_usd } = editModal
+    const { id, name, price, stock, category_id, fill_type, price_usd, cost } = editModal
     if (!name || price === '') return
 
     const needsStock = !usesEmailCredits(fill_type) && !isIDPass(fill_type)
@@ -237,6 +238,7 @@ export default function ManagePage() {
         stock: needsStock ? Number(stock) : 0,
         category_id: category_id || null,
         price_usd: price_usd !== '' && price_usd != null ? Number(price_usd) : null,
+        cost: cost !== '' && cost != null ? Number(cost) : 0,
       }),
     })
 
@@ -549,6 +551,12 @@ export default function ManagePage() {
                             type="number" step="0.01" placeholder="ราคา $"
                             value={form.price_usd}
                             onChange={e => setAddForm(cat.id, { price_usd: e.target.value })}
+                            className={`w-24 ${inputCls}`}
+                          />
+                          <input
+                            type="number" step="0.01" placeholder="ราคาทุน ฿"
+                            value={form.cost}
+                            onChange={e => setAddForm(cat.id, { cost: e.target.value })}
                             className={`w-24 ${inputCls}`}
                           />
                         </>
@@ -948,6 +956,18 @@ export default function ManagePage() {
                 className={`w-full ${inputCls}`}
               />
             </div>
+            {!usesEmailCredits(editModal.fill_type) && !isIDPass(editModal.fill_type) && !editModal.is_bundle && (
+              <div className="mb-3.5">
+                <label className="block text-sm text-slate-500 mb-1.5">ราคาทุน (฿)</label>
+                <input
+                  type="number" step="0.01" min="0"
+                  value={editModal.cost ?? ''}
+                  onChange={e => setEditModal(m => ({ ...m, cost: e.target.value }))}
+                  className={`w-full ${inputCls}`}
+                  placeholder="0.00"
+                />
+              </div>
+            )}
             {!usesEmailCredits(editModal.fill_type) && !isIDPass(editModal.fill_type) && (
               <div className="mb-3.5">
                 <label className="block text-sm text-slate-500 mb-1.5">สต็อก</label>

@@ -98,7 +98,7 @@ initDB().then(() => {
     const result = db.exec(`
       SELECT p.id, p.name, p.price, p.stock, p.image, p.category_id, c.name, c.fill_type, p.is_bundle,
         COALESCE((SELECT SUM(e.credits) FROM emails e WHERE e.fill_type = c.fill_type), 0),
-        p.price_usd
+        p.price_usd, p.cost
       FROM products p
       LEFT JOIN categories c ON c.id = p.category_id
     `)
@@ -111,6 +111,7 @@ initDB().then(() => {
         image: row[4] || null, category_id: row[5] || null,
         category_name: row[6] || null, fill_type, is_bundle,
         price_usd: row[10] ?? null,
+        cost: row[11] ?? 0,
       }
     }) : []
     // คำนวณ stock ของ bundle และ ID_PASS จาก sub-tables
@@ -149,9 +150,9 @@ initDB().then(() => {
   })
 
   app.post('/products', requireLogin, (req, res) => {
-    const { name, price, stock, category_id, is_bundle, price_usd } = req.body
-    db.run('INSERT INTO products (name, price, stock, category_id, is_bundle, price_usd) VALUES (?, ?, ?, ?, ?, ?)',
-      [name, price, stock, category_id || null, is_bundle ? 1 : 0, price_usd ?? null])
+    const { name, price, stock, category_id, is_bundle, price_usd, cost } = req.body
+    db.run('INSERT INTO products (name, price, stock, category_id, is_bundle, price_usd, cost) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [name, price, stock, category_id || null, is_bundle ? 1 : 0, price_usd ?? null, cost ?? 0])
     const result = db.exec('SELECT last_insert_rowid()')
     const id = result[0].values[0][0]
     save()
@@ -159,9 +160,9 @@ initDB().then(() => {
   })
 
   app.put('/products/:id', requireLogin, (req, res) => {
-    const { name, price, stock, category_id, price_usd } = req.body
-    db.run('UPDATE products SET name=?, price=?, stock=?, category_id=?, price_usd=? WHERE id=?',
-      [name, price, stock, category_id || null, price_usd ?? null, req.params.id])
+    const { name, price, stock, category_id, price_usd, cost } = req.body
+    db.run('UPDATE products SET name=?, price=?, stock=?, category_id=?, price_usd=?, cost=? WHERE id=?',
+      [name, price, stock, category_id || null, price_usd ?? null, cost ?? 0, req.params.id])
     save()
     res.json({ message: 'แก้ไขสินค้าสำเร็จ' })
   })
@@ -378,7 +379,7 @@ initDB().then(() => {
         [orderId, item.product_id, item.quantity, price])
       const orderItemId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
 
-      let creditDeducted = null, emailIdUsed = null, lotIdUsed = null, priceUsdUsed = null
+      let creditDeducted = null, emailIdUsed = null, lotIdUsed = null, priceUsdUsed = null, costUsed = null
       if (is_bundle) {
         // ตัด stock จาก components และคำนวณ price_usd รวมจาก components
         let totalCompPriceUsd = 0
@@ -437,10 +438,13 @@ initDB().then(() => {
           deductFromEmail(item.email_id, creditDeducted)
         } else {
           db.run('UPDATE products SET stock = stock - ? WHERE id=? AND stock != -1', [item.quantity, item.product_id])
+          const costRes = db.exec('SELECT cost FROM products WHERE id=?', [item.product_id])
+          const c = costRes[0]?.values[0][0]
+          if (c != null && c > 0) costUsed = c
         }
       }
-      db.run('UPDATE order_items SET credit_deducted=?, email_id_used=?, lot_id_used=?, price_usd_used=? WHERE id=?',
-        [creditDeducted, emailIdUsed, lotIdUsed, priceUsdUsed, orderItemId])
+      db.run('UPDATE order_items SET credit_deducted=?, email_id_used=?, lot_id_used=?, price_usd_used=?, cost_used=? WHERE id=?',
+        [creditDeducted, emailIdUsed, lotIdUsed, priceUsdUsed, costUsed, orderItemId])
     }
 
     save()
@@ -608,7 +612,7 @@ initDB().then(() => {
   app.get('/order-items', requireLogin, (req, res) => {
     const result = db.exec(`
       SELECT o.id, o.transfer_time, o.created_at, o.transfer_amount, o.total,
-             p.name, oi.quantity, oi.price, oi.credit_deducted, e.email, oi.price_usd_used, c.name
+             p.name, oi.quantity, oi.price, oi.credit_deducted, e.email, oi.price_usd_used, c.name, oi.cost_used
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       JOIN products p ON p.id = oi.product_id
@@ -622,6 +626,7 @@ initDB().then(() => {
       product_name: row[5], quantity: row[6], price: row[7],
       credit_deducted: row[8], email_used: row[9] || null,
       price_usd_used: row[10] ?? null, category_name: row[11] || null,
+      cost_used: row[12] ?? null,
     })) : []
     res.json(items)
   })

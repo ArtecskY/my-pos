@@ -93,6 +93,8 @@ async function initDB() {
   try { db.run('ALTER TABLE products ADD COLUMN price_usd REAL') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE order_items ADD COLUMN lot_id_used INTEGER') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE order_items ADD COLUMN price_usd_used REAL') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE products ADD COLUMN cost REAL DEFAULT 0') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN cost_used REAL') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0') } catch (e) { /* column exists */ }
   // ผู้ใช้คนแรกเป็น admin เสมอ
   db.run('UPDATE users SET is_admin=1 WHERE id=(SELECT MIN(id) FROM users)')

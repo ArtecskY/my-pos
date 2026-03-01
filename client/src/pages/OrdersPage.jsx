@@ -57,8 +57,10 @@ function Tooltip({ transfer_time, created_at }) {
 }
 
 function buildProductName(item) {
-  if (item.merged) {
-    return item.mergedName ?? '—'
+  if (item.merged) return item.mergedName ?? '—'
+  // UID products ที่มีราคาทุน: แสดง x{qty} เสมอ
+  if (item.cost_used != null && Number(item.cost_used) > 0) {
+    return `${item.product_name} x${item.quantity}`
   }
   const dollarPat = /(\d+(?:\.\d+)?)\$/
   const m = dollarPat.exec(item.product_name)
@@ -273,7 +275,10 @@ export default function OrdersPage() {
                       <th className="pb-3 pt-4 px-2"></th>
                     </tr>
                   </thead>
-                  {currentGroup.orders.map(order => (
+                  {currentGroup.orders.map(order => {
+                    const orderUsdTotal = order.items.reduce((s, i) => s + (i.price_usd_used != null ? Number(i.price_usd_used) : 0), 0)
+                    const hasUsd = orderUsdTotal > 0
+                    return (
                     <tbody key={order.order_id} className="border-t border-slate-100">
                       {order.items.map((item, idx) => (
                         <tr key={idx} className="hover:bg-slate-50">
@@ -300,28 +305,38 @@ export default function OrdersPage() {
                               <Tooltip transfer_time={order.transfer_time} created_at={order.created_at} />
                             </td>
                           )}
-                          {/* ชื่อเกม */}
+                          {/* ชื่อเกม — แสดงครั้งแรกเท่านั้น */}
                           <td className="py-2.5 px-3 text-slate-400 text-xs whitespace-nowrap">
-                            {item.category_name || <span className="text-slate-200">—</span>}
+                            {idx === 0 ? (item.category_name || <span className="text-slate-200">—</span>) : null}
                           </td>
                           {/* ชื่อสินค้า */}
                           <td className="py-2.5 px-3 text-slate-800 font-medium">
                             {buildProductName(item)}
                           </td>
                           {/* จำนวน / เครดิต */}
-                          <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                            {item.credit_deducted != null ? (
-                              <span className="text-blue-600 font-semibold">
-                                {Number(item.credit_deducted).toFixed(2)} เครดิต
-                              </span>
-                            ) : item.price_usd_used != null ? (
-                              <span className="text-green-600 font-semibold">
-                                ${Number(item.price_usd_used).toFixed(2)}
-                              </span>
-                            ) : (
-                              <span className="text-slate-500">×{item.quantity}</span>
-                            )}
-                          </td>
+                          {hasUsd ? (
+                            idx === 0 ? (
+                              <td rowSpan={order.items.length} className="py-2.5 px-3 text-right align-middle whitespace-nowrap">
+                                <span className="text-green-600 font-bold text-base">
+                                  ${Number.isInteger(orderUsdTotal) ? orderUsdTotal : orderUsdTotal.toFixed(2)}
+                                </span>
+                              </td>
+                            ) : null
+                          ) : (
+                            <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                              {item.credit_deducted != null ? (
+                                <span className="text-blue-600 font-semibold">
+                                  {Number(item.credit_deducted).toFixed(2)}
+                                </span>
+                              ) : item.cost_used != null && Number(item.cost_used) > 0 ? (
+                                <span className="text-amber-700 font-semibold">
+                                  {(() => { const v = Number(item.cost_used) * item.quantity; return Number.isInteger(v) ? v : v.toFixed(2) })()}
+                                </span>
+                              ) : (
+                                <span className="text-slate-500">×{item.quantity}</span>
+                              )}
+                            </td>
+                          )}
                           {/* Email */}
                           <td className="py-2.5 px-3 font-mono text-xs text-slate-400">
                             {item.email_used || <span className="text-slate-200">—</span>}
@@ -341,7 +356,8 @@ export default function OrdersPage() {
                         </tr>
                       ))}
                     </tbody>
-                  ))}
+                    )
+                  })}
                 </table>
               </div>
             </>
