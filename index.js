@@ -619,12 +619,13 @@ initDB().then(() => {
     const result = db.exec(`
       SELECT o.id, o.transfer_time, o.created_at, o.transfer_amount, o.total,
              p.name, oi.quantity, oi.price, oi.credit_deducted, e.email, oi.price_usd_used, c.name, oi.cost_used,
-             oi.lot_cost_used, oi.bundle_lot_info
+             COALESCE(oi.lot_cost_used, pl.cost) as lot_cost_used, oi.bundle_lot_info
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       JOIN products p ON p.id = oi.product_id
       LEFT JOIN categories c ON c.id = p.category_id
       LEFT JOIN emails e ON e.id = oi.email_id_used
+      LEFT JOIN product_lots pl ON pl.id = oi.lot_id_used
       ORDER BY COALESCE(o.transfer_time, o.created_at) DESC, o.id DESC, oi.id ASC
     `)
     const items = result[0] ? result[0].values.map(row => ({

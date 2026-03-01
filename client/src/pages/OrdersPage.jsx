@@ -309,7 +309,7 @@ export default function OrdersPage() {
                         {idx === 0 && (
                           <td rowSpan={order.items.length} className="py-3 px-4 align-top">
                             <span className="font-mono text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">
-                              #{orderIdx + 1}
+                              #{filteredOrders.length - orderIdx}
                             </span>
                           </td>
                         )}
@@ -365,7 +365,7 @@ export default function OrdersPage() {
                                       ).join('\n')
                                     } catch { return i.product_name }
                                   }
-                                  return `${i.product_name}${i.lot_cost_used != null ? ` ต้นทุน ${i.lot_cost_used}` : ''}`
+                                  return `${i.product_name}\n  ต้นทุน Lot: ${i.lot_cost_used != null ? `฿${i.lot_cost_used}` : '—'}`
                                 }).join('\n')}
                               </InfoTooltip>
                             </td>
