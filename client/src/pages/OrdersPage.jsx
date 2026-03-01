@@ -46,6 +46,7 @@ function InfoTooltip({ children, label = 'ⓘ' }) {
   )
 }
 
+
 function buildProductName(item) {
   if (item.merged) return item.mergedName ?? '—'
   if (item.cost_used != null && Number(item.cost_used) > 0) {
@@ -301,6 +302,8 @@ export default function OrdersPage() {
               {filteredOrders.map((order, orderIdx) => {
                 const orderUsdTotal = order.items.reduce((s, i) => s + (i.price_usd_used != null ? Number(i.price_usd_used) : 0), 0)
                 const hasUsd = orderUsdTotal > 0
+                const orderCostTotal = order.items.reduce((s, i) => s + (i.cost_used != null && Number(i.cost_used) > 0 ? Number(i.cost_used) * i.quantity : 0), 0)
+                const hasCost = !hasUsd && orderCostTotal > 0
                 return (
                   <tbody key={order.order_id} className="border-t border-slate-100">
                     {order.items.map((item, idx) => (
@@ -370,15 +373,19 @@ export default function OrdersPage() {
                               </InfoTooltip>
                             </td>
                           ) : null
+                        ) : hasCost ? (
+                          idx === 0 ? (
+                            <td rowSpan={order.items.length} className="py-2.5 px-3 text-right align-middle whitespace-nowrap">
+                              <span className="text-amber-700 font-bold text-base">
+                                ฿{Number.isInteger(orderCostTotal) ? orderCostTotal : orderCostTotal.toFixed(2)}
+                              </span>
+                            </td>
+                          ) : null
                         ) : (
                           <td className="py-2.5 px-3 text-right whitespace-nowrap">
                             {item.credit_deducted != null ? (
                               <span className="text-blue-600 font-semibold">
                                 {Number(item.credit_deducted).toFixed(2)}
-                              </span>
-                            ) : item.cost_used != null && Number(item.cost_used) > 0 ? (
-                              <span className="text-amber-700 font-semibold">
-                                {(() => { const v = Number(item.cost_used) * item.quantity; return Number.isInteger(v) ? v : v.toFixed(2) })()}
                               </span>
                             ) : (
                               <span className="text-slate-500">×{item.quantity}</span>
