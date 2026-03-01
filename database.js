@@ -1,13 +1,16 @@
 const fs = require('fs')
+const path = require('path')
 const initSqlJs = require('sql.js')
+
+const DB_PATH = path.join(process.env.DATA_DIR || __dirname, 'pos.db')
 
 let db
 
 async function initDB() {
   const SQL = await initSqlJs()
-  
-  if (fs.existsSync('pos.db')) {
-    const fileBuffer = fs.readFileSync('pos.db')
+
+  if (fs.existsSync(DB_PATH)) {
+    const fileBuffer = fs.readFileSync(DB_PATH)
     db = new SQL.Database(fileBuffer)
   } else {
     db = new SQL.Database()
@@ -99,7 +102,7 @@ async function initDB() {
 
 function save() {
   const data = db.export()
-  fs.writeFileSync('pos.db', Buffer.from(data))
+  fs.writeFileSync(DB_PATH, Buffer.from(data))
 }
 
 module.exports = { initDB, save, getDB: () => db }

@@ -5,3 +5,7 @@ buildCommand = "npm install && npm run build"
 [deploy]
 startCommand = "npm start"
 restartPolicyType = "ON_FAILURE"
+
+# ตั้ง Environment Variable ใน Railway Dashboard:
+#   DATA_DIR = /data
+# แล้ว mount Railway Volume ที่ /data

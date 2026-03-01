@@ -14,7 +14,10 @@ app.use(cors({
   origin: 'http://localhost:5173',
   credentials: true
 }))
+const UPLOADS_DIR = path.join(process.env.DATA_DIR || path.join(__dirname, 'public'), 'uploads')
+
 app.use(express.static(path.join(__dirname, 'client/dist')))
+app.use('/uploads', express.static(UPLOADS_DIR))
 app.use(express.static('public'))
 app.use(session({
   secret: 'pos-secret-key',
@@ -22,10 +25,10 @@ app.use(session({
   saveUninitialized: false
 }))
 
-if (!fs.existsSync('public/uploads')) fs.mkdirSync('public/uploads', { recursive: true })
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true })
 
 const storage = multer.diskStorage({
-  destination: 'public/uploads/',
+  destination: UPLOADS_DIR,
   filename: (req, file, cb) => {
     cb(null, `${Date.now()}${path.extname(file.originalname)}`)
   }
