@@ -967,11 +967,11 @@ export default function ManagePage() {
                     <thead className="sticky top-0 z-10">
                       <tr className="text-slate-500 text-left bg-white">
 
-                        <th className="pb-2.5 px-3 font-medium whitespace-nowrap bg-white border-b-2 border-slate-200 sticky left-0 z-20">ชื่อสินค้า</th>
-                        <th className="pb-2.5 px-3 font-medium whitespace-nowrap bg-white border-b-2 border-slate-200">ราคา ฿</th>
-                        <th className="pb-2.5 px-3 font-medium whitespace-nowrap bg-white border-b-2 border-slate-200">ราคา $</th>
+                        <th className="pb-2.5 px-3 font-medium whitespace-nowrap bg-white border border-slate-300 sticky left-0 z-20">ชื่อสินค้า</th>
+                        <th className="pb-2.5 px-3 font-medium whitespace-nowrap bg-white border border-slate-300">ราคา ฿</th>
+                        <th className="pb-2.5 px-3 font-medium whitespace-nowrap bg-white border border-slate-300">ราคา $</th>
                         {uniqueCosts.map(cost => (
-                          <th key={cost} className="pb-2.5 px-3 font-medium whitespace-nowrap bg-white border-b-2 border-slate-200 text-right">
+                          <th key={cost} className="pb-2.5 px-3 font-medium whitespace-nowrap bg-white border border-slate-300 text-right">
                             {dashEditCost?.old_cost === cost ? (
                               <div className="flex items-center gap-1 justify-end">
                                 <span className="text-slate-400 text-xs">฿</span>
@@ -997,16 +997,16 @@ export default function ManagePage() {
                             )}
                           </th>
                         ))}
-                        <th className="pb-2.5 px-2"></th>
+                        <th className="pb-2.5 px-2 bg-white border border-slate-300"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {products.map(product => (
-                        <tr key={product.id} className="border-t border-slate-100 hover:bg-slate-50">
-                          <td className="py-3 px-3 font-medium text-slate-800 whitespace-nowrap sticky left-0 bg-white z-10">{product.name}</td>
-                          <td className="py-3 px-3 text-slate-600 whitespace-nowrap">฿{product.price}</td>
+                        <tr key={product.id} className="hover:bg-slate-50">
+                          <td className="py-3 px-3 font-medium text-slate-800 whitespace-nowrap sticky left-0 bg-white z-10 border border-slate-300">{product.name}</td>
+                          <td className="py-3 px-3 text-slate-600 whitespace-nowrap border border-slate-300">฿{product.price}</td>
                           {/* ราคา $ — คลิกเพื่อแก้ไข */}
-                          <td className="py-3 px-3">
+                          <td className="py-3 px-3 border border-slate-300">
                             {dashEditUsd?.productId === product.id ? (
                               <div className="flex items-center gap-1">
                                 <span className="text-slate-400 text-xs">$</span>
@@ -1036,7 +1036,7 @@ export default function ManagePage() {
                           {uniqueCosts.map(cost => {
                             const lot = product.lots.find(l => l.cost === cost)
                             if (!lot) return (
-                              <td key={cost} className="py-3 px-3 text-center">
+                              <td key={cost} className="py-3 px-3 text-center border border-slate-300">
                                 {dashNewLot?.productId === product.id && dashNewLot?.cost === cost ? (
                                   <div className="flex items-center gap-1 justify-end">
                                     <input
@@ -1060,7 +1060,7 @@ export default function ManagePage() {
                               </td>
                             )
                             return (
-                              <td key={cost} className="py-3 px-3 text-right">
+                              <td key={cost} className="py-3 px-3 text-right border border-slate-300">
                                 {dashEditLot?.id === lot.id ? (
                                   <div className="space-y-1 min-w-[90px]">
                                     <div className="flex items-center gap-1 text-xs justify-end">
@@ -1091,7 +1091,7 @@ export default function ManagePage() {
                             )
                           })}
                           {/* เพิ่ม lot ต้นทุนใหม่ */}
-                          <td className="py-3 px-2">
+                          <td className="py-3 px-2 border border-slate-300">
                             {dashNewLot?.productId === product.id ? (
                               <div className="space-y-1 min-w-[120px]">
                                 <input
