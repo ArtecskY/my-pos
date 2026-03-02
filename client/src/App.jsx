@@ -38,7 +38,7 @@ export default function App() {
   return (
     <div className="p-6 bg-slate-100 min-h-screen">
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold text-blue-900">ระบบ POS</h1>
+        <h1 className="text-2xl font-bold text-blue-900">Wisdom Order</h1>
         <div className="flex items-center gap-3 text-sm text-slate-500">
           <span>{user.username}</span>
           <button

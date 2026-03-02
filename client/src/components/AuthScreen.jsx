@@ -21,7 +21,7 @@ export default function AuthScreen({ onLogin }) {
   return (
     <div className="flex justify-center items-center min-h-screen bg-slate-100">
       <div className="bg-white rounded-2xl p-10 w-[360px] shadow-lg">
-        <h2 className="text-xl font-bold text-blue-900 text-center mb-6">ระบบ POS</h2>
+        <h2 className="text-xl font-bold text-blue-900 text-center mb-6">Wisdom Order</h2>
         {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
         <div className="mb-4">
           <label className="block text-sm text-slate-500 mb-1.5">Username</label>
