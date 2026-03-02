@@ -387,7 +387,6 @@ initDB().then(() => {
           if (isRazerLike && !item.credit_amount)
             return res.status(400).json({ error: `กรุณากรอกจำนวนเครดิตสำหรับ "${name}"` })
           const needed = isRazerLike ? (item.credit_amount || 0)
-            : isCustom ? item.quantity  // custom type: 1 credit per fill
             : parseCreditPerUnit(name, price) * item.quantity
           const emailRes = db.exec('SELECT credits FROM emails WHERE id=? AND fill_type=?', [item.email_id, fill_type])
           if (!emailRes[0]) return res.status(400).json({ error: `ไม่พบ Email ที่เลือกสำหรับ "${name}"` })
@@ -486,7 +485,6 @@ initDB().then(() => {
           const customBehavior = isCustom ? getCustomEmailBehavior(fill_type) : null
           const isRazerLike = fill_type === 'RAZER' || customBehavior === 'RAZER'
           creditDeducted = isRazerLike ? item.credit_amount
-            : isCustom ? item.quantity  // custom type: 1 credit per fill
             : parseCreditPerUnit(productName, price) * item.quantity
           emailIdUsed = item.email_id
           deductFromEmail(item.email_id, creditDeducted)

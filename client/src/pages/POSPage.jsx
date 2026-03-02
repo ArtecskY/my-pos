@@ -24,13 +24,14 @@ function isRazerBehavior(fill_type, emailTypes = []) {
   return et?.behavior === 'RAZER'
 }
 
-// custom type (ไม่ใช่ built-in) ใช้ 1 credit ต่อ 1 fill
-// built-in EMAIL/OTHER_EMAIL ใช้ creditPerUnit (ตาม $X หรือราคา)
 const EMAIL_BUILTINS = ['EMAIL', 'OTHER_EMAIL']
 function creditsNeeded(item, emailTypes, qty) {
   const q = qty ?? item.quantity
   if (EMAIL_BUILTINS.includes(item.fill_type)) return creditPerUnit(item) * q
-  return q // custom type: 1 credit per fill
+  // custom type ที่ behavior=EMAIL → ตัดเหมือน Apple ID
+  const ct = emailTypes.find(t => t.key === item.fill_type)
+  if (ct?.behavior === 'EMAIL') return creditPerUnit(item) * q
+  return q
 }
 
 
