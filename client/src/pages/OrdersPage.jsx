@@ -95,6 +95,9 @@ export default function OrdersPage() {
   const [exporting, setExporting] = useState(false)
   const [editTimeOrderId, setEditTimeOrderId] = useState(null)
   const [editTimeValue, setEditTimeValue] = useState('')
+  const [editTimeValue2, setEditTimeValue2] = useState('')
+  const [editAmountOrderId, setEditAmountOrderId] = useState(null)
+  const [editAmountValue, setEditAmountValue] = useState('')
 
   useEffect(() => {
     fetch('/order-items').then(r => r.json()).then(setOrderItems)
@@ -115,6 +118,7 @@ export default function OrdersPage() {
         const g = {
           order_id: item.order_id,
           transfer_time: item.transfer_time,
+          transfer_time2: item.transfer_time2 || null,
           created_at: item.created_at,
           transfer_amount: item.transfer_amount,
           total: item.total,
@@ -205,27 +209,47 @@ export default function OrdersPage() {
   }
 
   function startEditTime(order) {
-    // แปลง transfer_time หรือ created_at เป็น "YYYY-MM-DDTHH:MM" สำหรับ input datetime-local
     const raw = order.transfer_time || order.created_at || ''
-    const dt = raw ? raw.replace(' ', 'T').slice(0, 16) : ''
     setEditTimeOrderId(order.order_id)
-    setEditTimeValue(dt)
+    setEditTimeValue(raw ? raw.slice(11, 16) : '')
+    setEditTimeValue2(order.transfer_time2 ? order.transfer_time2.slice(11, 16) : '')
   }
 
   async function saveEditTime(orderId) {
     if (!editTimeValue) { setEditTimeOrderId(null); return }
-    // แปลง "YYYY-MM-DDTHH:MM" → "YYYY-MM-DD HH:MM:00"
-    const formatted = editTimeValue.replace('T', ' ') + ':00'
+    const order = filteredOrders.find(o => o.order_id === orderId)
+    const raw = order?.transfer_time || order?.created_at || ''
+    const dateStr = raw.slice(0, 10)
+    const formatted = `${dateStr} ${editTimeValue}:00`
+    const formatted2 = editTimeValue2 ? `${dateStr} ${editTimeValue2}:00` : null
     const res = await fetch(`/orders/${orderId}/transfer-time`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transfer_time: formatted }),
+      body: JSON.stringify({ transfer_time: formatted, transfer_time2: formatted2 }),
     })
     if (!res.ok) { alert('อัปเดตเวลาไม่สำเร็จ'); return }
     setOrderItems(prev => prev.map(i =>
-      i.order_id === orderId ? { ...i, transfer_time: formatted } : i
+      i.order_id === orderId ? { ...i, transfer_time: formatted, transfer_time2: formatted2 } : i
     ))
     setEditTimeOrderId(null)
+  }
+
+  function startEditAmount(order) {
+    setEditAmountOrderId(order.order_id)
+    setEditAmountValue(order.transfer_amount ?? '')
+  }
+
+  async function saveEditAmount(orderId) {
+    const res = await fetch(`/orders/${orderId}/transfer-amount`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transfer_amount: Number(editAmountValue) }),
+    })
+    if (!res.ok) { alert('อัปเดตยอดโอนไม่สำเร็จ'); return }
+    setOrderItems(prev => prev.map(i =>
+      i.order_id === orderId ? { ...i, transfer_amount: Number(editAmountValue) } : i
+    ))
+    setEditAmountOrderId(null)
   }
 
   async function loadSheetConfig() {
@@ -374,38 +398,70 @@ export default function OrdersPage() {
                         )}
                         {/* ยอดโอน */}
                         {idx === 0 && (
-                          <td rowSpan={order.items.length} className="py-3 px-3 align-top whitespace-nowrap">
-                            {order.transfer_amount != null
-                              ? <span className="font-semibold text-emerald-600">฿{Number(order.transfer_amount).toLocaleString()}</span>
-                              : <span className="text-slate-300">—</span>
-                            }
+                          <td rowSpan={order.items.length} className="py-3 px-3 align-middle whitespace-nowrap">
+                            {editAmountOrderId === order.order_id ? (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  value={editAmountValue}
+                                  onChange={e => setEditAmountValue(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveEditAmount(order.order_id)
+                                    if (e.key === 'Escape') setEditAmountOrderId(null)
+                                  }}
+                                  className="border border-blue-400 rounded px-1 py-0.5 text-xs font-mono w-20 focus:outline-none"
+                                  autoFocus
+                                />
+                                <button onClick={() => saveEditAmount(order.order_id)} className="text-green-500 hover:text-green-700 text-xs cursor-pointer">✓</button>
+                                <button onClick={() => setEditAmountOrderId(null)} className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer">✕</button>
+                              </div>
+                            ) : (
+                              <span
+                                className="font-semibold text-emerald-600 cursor-pointer hover:text-emerald-700 hover:underline"
+                                title="คลิกเพื่อแก้ไขยอดโอน"
+                                onClick={() => startEditAmount(order)}
+                              >
+                                {order.transfer_amount != null
+                                  ? `฿${Number(order.transfer_amount).toLocaleString()}`
+                                  : <span className="text-slate-300 font-normal">—</span>
+                                }
+                              </span>
+                            )}
                           </td>
                         )}
                         {/* เวลา */}
                         {idx === 0 && (
-                          <td rowSpan={order.items.length} className="py-3 px-3 align-top text-slate-500 whitespace-nowrap">
+                          <td rowSpan={order.items.length} className="py-3 px-3 align-middle text-slate-500 whitespace-nowrap">
                             {editTimeOrderId === order.order_id ? (
-                              <div className="flex items-center gap-1">
+                              <div className="flex flex-col gap-1">
                                 <input
-                                  type="datetime-local"
+                                  type="time"
                                   value={editTimeValue}
                                   onChange={e => setEditTimeValue(e.target.value)}
-                                  onKeyDown={e => {
-                                    if (e.key === 'Enter') saveEditTime(order.order_id)
-                                    if (e.key === 'Escape') setEditTimeOrderId(null)
-                                  }}
-                                  className="border border-blue-400 rounded px-1 py-0.5 text-xs font-mono w-36 focus:outline-none"
+                                  className="border border-blue-400 rounded px-1 py-0.5 text-xs font-mono w-24 focus:outline-none"
                                   autoFocus
                                 />
-                                <button onClick={() => saveEditTime(order.order_id)} className="text-green-500 hover:text-green-700 text-xs cursor-pointer">✓</button>
-                                <button onClick={() => setEditTimeOrderId(null)} className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer">✕</button>
+                                <input
+                                  type="time"
+                                  value={editTimeValue2}
+                                  onChange={e => setEditTimeValue2(e.target.value)}
+                                  className="border border-slate-300 rounded px-1 py-0.5 text-xs font-mono w-24 focus:outline-none"
+                                  placeholder="เวลา 2"
+                                />
+                                <div className="flex gap-1">
+                                  <button onClick={() => saveEditTime(order.order_id)} className="text-green-500 hover:text-green-700 text-xs cursor-pointer">✓</button>
+                                  <button onClick={() => setEditTimeOrderId(null)} className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer">✕</button>
+                                </div>
                               </div>
                             ) : (
                               <span
                                 className="font-mono cursor-pointer hover:text-blue-500 hover:underline"
                                 title="คลิกเพื่อแก้ไขเวลา"
                                 onClick={() => startEditTime(order)}
-                              >{formatTimeOnly(order.transfer_time)}</span>
+                              >
+                                {formatTimeOnly(order.transfer_time)}
+                                {order.transfer_time2 && `+${formatTimeOnly(order.transfer_time2)}`}
+                              </span>
                             )}
                           </td>
                         )}
