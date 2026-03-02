@@ -5,10 +5,14 @@ const path = require('path')
 const CREDENTIALS_PATH = path.join(__dirname, 'google-credentials.json')
 
 function getClient() {
-  if (!fs.existsSync(CREDENTIALS_PATH)) {
-    throw new Error('ไม่พบไฟล์ google-credentials.json')
+  let credentials
+  if (process.env.GOOGLE_CREDENTIALS) {
+    credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS)
+  } else if (fs.existsSync(CREDENTIALS_PATH)) {
+    credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH))
+  } else {
+    throw new Error('ไม่พบ Google credentials (ตั้ง env GOOGLE_CREDENTIALS หรือใส่ google-credentials.json)')
   }
-  const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH))
   return new google.auth.GoogleAuth({
     credentials,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
