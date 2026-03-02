@@ -325,15 +325,13 @@ export default function ManagePage() {
     e.preventDefault()
     if (!dragItem.current || dragItem.current.catId !== catId) return
     if (dragItem.current.index === index) return
+    const fromIdx = dragItem.current.index
+    dragItem.current = { catId, index }
     setProducts(prev => {
-      const updated = [...prev]
-      const catItems = updated.filter(p => p.category_id === catId)
-      const others = updated.filter(p => p.category_id !== catId)
-      const fromIdx = dragItem.current.index
-      const toIdx = index
+      const catItems = prev.filter(p => p.category_id === catId)
+      const others = prev.filter(p => p.category_id !== catId)
       const moved = catItems.splice(fromIdx, 1)[0]
-      catItems.splice(toIdx, 0, moved)
-      dragItem.current = { catId, index: toIdx }
+      catItems.splice(index, 0, moved)
       return [...others, ...catItems]
     })
   }
@@ -341,12 +339,15 @@ export default function ManagePage() {
   async function handleDrop(catId) {
     if (!dragItem.current || dragItem.current.catId !== catId) return
     dragItem.current = null
-    const catItems = products.filter(p => p.category_id === catId)
-    const payload = catItems.map((p, i) => ({ id: p.id, sort_order: i }))
-    await fetch('/products/reorder', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+    setProducts(prev => {
+      const catItems = prev.filter(p => p.category_id === catId)
+      const payload = catItems.map((p, i) => ({ id: p.id, sort_order: i }))
+      fetch('/products/reorder', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      return prev
     })
   }
 
