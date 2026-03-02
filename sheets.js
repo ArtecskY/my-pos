@@ -7,7 +7,9 @@ const CREDENTIALS_PATH = path.join(__dirname, 'google-credentials.json')
 function getClient() {
   let credentials
   if (process.env.GOOGLE_CREDENTIALS) {
-    credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS)
+    let raw = process.env.GOOGLE_CREDENTIALS.trim()
+    if (!raw.startsWith('{')) raw = Buffer.from(raw, 'base64').toString('utf-8')
+    credentials = JSON.parse(raw)
   } else if (fs.existsSync(CREDENTIALS_PATH)) {
     credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH))
   } else {
