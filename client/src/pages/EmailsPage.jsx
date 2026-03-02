@@ -405,7 +405,7 @@ export default function EmailsPage() {
                             rel="noreferrer"
                             className="inline-block px-2.5 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-md text-xs font-medium cursor-pointer transition-colors"
                           >
-                            SMS
+                            {e.fill_type === 'RAZER' ? 'Backup' : 'SMS'}
                           </a>
                         ) : (
                           <span className="text-slate-300 text-xs">—</span>
