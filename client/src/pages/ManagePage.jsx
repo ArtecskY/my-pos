@@ -1061,10 +1061,10 @@ export default function ManagePage() {
                               </td>
                             )
                             return (
-                              <td key={cost} className="py-3 px-3 text-right border border-slate-300">
+                              <td key={cost} className="py-3 px-3 text-center border border-slate-300">
                                 {dashEditLot?.id === lot.id ? (
-                                  <div className="space-y-1 min-w-[90px]">
-                                    <div className="flex items-center gap-1 text-xs justify-end">
+                                  <div className="space-y-1 min-w-[90px] inline-block">
+                                    <div className="flex items-center gap-1 text-xs justify-center">
                                       <span className="text-slate-400">×</span>
                                       <input
                                         type="number" step="1" min="0"
@@ -1074,7 +1074,7 @@ export default function ManagePage() {
                                         autoFocus
                                       />
                                     </div>
-                                    <div className="flex gap-1 justify-end">
+                                    <div className="flex gap-1 justify-center">
                                       <button onClick={saveLotEdit} className="px-2 py-0.5 bg-green-500 text-white rounded text-xs cursor-pointer">บันทึก</button>
                                       <button onClick={() => setDashEditLot(null)} className="px-2 py-0.5 bg-slate-200 text-slate-600 rounded text-xs cursor-pointer">ยกเลิก</button>
                                       <button onClick={() => deleteLot(lot.id)} className="px-2 py-0.5 bg-red-100 text-red-500 rounded text-xs cursor-pointer">ลบ</button>
@@ -1083,7 +1083,7 @@ export default function ManagePage() {
                                 ) : (
                                   <button
                                     onClick={() => { setDashEditLot({ id: lot.id, cost: lot.cost, stock: lot.stock }); setDashEditUsd(null) }}
-                                    className="text-right hover:bg-slate-100 rounded px-2 py-1 cursor-pointer w-full"
+                                    className="hover:bg-slate-100 rounded px-2 py-1 cursor-pointer whitespace-nowrap"
                                   >
                                     <span className="text-slate-700 font-medium">{lot.stock} ชิ้น</span>
                                   </button>
