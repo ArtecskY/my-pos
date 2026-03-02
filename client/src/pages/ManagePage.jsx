@@ -1034,7 +1034,30 @@ export default function ManagePage() {
                           {/* Lot columns — pivot by cost */}
                           {uniqueCosts.map(cost => {
                             const lot = product.lots.find(l => l.cost === cost)
-                            if (!lot) return <td key={cost} className="py-3 px-3 text-center text-slate-300">—</td>
+                            if (!lot) return (
+                              <td key={cost} className="py-3 px-3 text-center">
+                                {dashNewLot?.productId === product.id && dashNewLot?.cost === cost ? (
+                                  <div className="flex items-center gap-1 justify-end">
+                                    <input
+                                      type="number" step="1" min="0" placeholder="จำนวน"
+                                      value={dashNewLot.stock}
+                                      onChange={e => setDashNewLot(p => ({ ...p, stock: e.target.value }))}
+                                      onKeyDown={e => { if (e.key === 'Enter') saveNewLot(); if (e.key === 'Escape') setDashNewLot(null) }}
+                                      className="w-16 border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:border-blue-500"
+                                      autoFocus
+                                    />
+                                    <button onClick={saveNewLot} className="text-green-600 hover:text-green-800 cursor-pointer">✓</button>
+                                    <button onClick={() => setDashNewLot(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">✕</button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => { setDashNewLot({ productId: product.id, cost, stock: '' }); setDashEditLot(null); setDashEditUsd(null) }}
+                                    className="text-slate-300 hover:text-blue-400 hover:bg-blue-50 rounded px-2 py-1 cursor-pointer w-full"
+                                    title="คลิกเพื่อเพิ่มจำนวน"
+                                  >—</button>
+                                )}
+                              </td>
+                            )
                             return (
                               <td key={cost} className="py-3 px-3 text-right">
                                 {dashEditLot?.id === lot.id ? (
