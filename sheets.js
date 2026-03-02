@@ -61,7 +61,7 @@ function isEmailLike(fill_type) {
 // totalCost = ต้นทุนรวม (คอลัมน์ที่ 8)
 // note      = หมายเหตุ (คอลัมน์ที่ 10)
 function computeItemData(item) {
-  const { fill_type, quantity, credit_deducted, email_cost,
+  const { product_name, fill_type, quantity, credit_deducted, email_cost,
           lot_cost_used, price_usd_used, cost_used,
           is_bundle, bundle_lot_info } = item
 
@@ -77,13 +77,13 @@ function computeItemData(item) {
         const compCost = (c.cost ?? 0) * coins
         totalCoins += coins
         totalCost += compCost
-        if (c.cost && coins) parts.push(`${c.name} ${compCost.toFixed(2)}฿`)
+        parts.push(`  ${c.name}${c.cost != null ? ` ต้นทุน ${c.cost}` : ''}`)
       }
       return {
         unitQty: totalCoins || quantity,
         cost: totalCost,
         totalCost,
-        note: parts.join(' | '),
+        note: product_name + '\n' + parts.join('\n'),
       }
     } catch {}
   }
