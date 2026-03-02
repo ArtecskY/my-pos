@@ -67,14 +67,7 @@ function InfoTooltip({ children, label = 'ⓘ' }) {
 
 
 function buildProductName(item) {
-  if (item.merged) {
-    if (item.mergedName) return item.mergedName
-    // ชื่อสินค้าไม่มี $ — แสดงชื่อทุก item ที่ merge กัน
-    if (item.mergedItems?.length) {
-      return item.mergedItems.map(mi => mi.name + (mi.qty > 1 ? ` ×${mi.qty}` : '')).join(' + ')
-    }
-    return item.product_name
-  }
+  if (item.merged) return item.mergedName ?? item.product_name
   if (item.cost_used != null && Number(item.cost_used) > 0) {
     return `${item.product_name} x${item.quantity}`
   }
@@ -478,17 +471,28 @@ export default function OrdersPage() {
                         </td>
                         {/* ชื่อสินค้า + ⓘ */}
                         <td className="py-2.5 px-3 text-slate-800 font-medium">
-                          <span>{buildProductName(item)}</span>
-                          {/* ⓘ EMAIL merged — แสดง breakdown */}
-                          {item.merged && item.mergedItems && (
-                            <InfoTooltip>
-                              {item.mergedItems.map(mi =>
-                                `${mi.name} ×${mi.qty}${mi.dollarAmt != null ? ` = ${Number.isInteger(mi.dollarAmt) ? mi.dollarAmt : mi.dollarAmt.toFixed(2)}$` : ''}`
-                              ).join('\n')}
-                              {item.mergedDollarTotal != null
-                                ? `\n──────────\nรวม ${Number.isInteger(item.mergedDollarTotal) ? item.mergedDollarTotal : item.mergedDollarTotal.toFixed(2)}$`
-                                : ''}
-                            </InfoTooltip>
+                          {item.merged && !item.mergedName && item.mergedItems ? (
+                            // Non-dollar merged (เช่น BLEACH) — แสดงชื่อแต่ละแพ็กเป็นบรรทัดๆ
+                            <div className="space-y-0.5 leading-tight">
+                              {item.mergedItems.map((mi, i) => (
+                                <div key={i}>{mi.name} ×{mi.qty}</div>
+                              ))}
+                            </div>
+                          ) : (
+                            <>
+                              <span>{buildProductName(item)}</span>
+                              {/* ⓘ dollar merged — แสดง breakdown */}
+                              {item.merged && item.mergedItems && (
+                                <InfoTooltip>
+                                  {item.mergedItems.map(mi =>
+                                    `${mi.name} ×${mi.qty}${mi.dollarAmt != null ? ` = ${Number.isInteger(mi.dollarAmt) ? mi.dollarAmt : mi.dollarAmt.toFixed(2)}$` : ''}`
+                                  ).join('\n')}
+                                  {item.mergedDollarTotal != null
+                                    ? `\n──────────\nรวม ${Number.isInteger(item.mergedDollarTotal) ? item.mergedDollarTotal : item.mergedDollarTotal.toFixed(2)}$`
+                                    : ''}
+                                </InfoTooltip>
+                              )}
+                            </>
                           )}
                         </td>
                         {/* จำนวน / เครดิต */}
