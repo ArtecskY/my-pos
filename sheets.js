@@ -15,7 +15,7 @@ function getClient() {
   })
 }
 
-// แปลง "2026-02-28T14:30" หรือ "2026-02-28 14:30" → "28/02/2569" (พ.ศ.)
+// แปลง timestamp → "dd/mm/พ.ศ." สำหรับชื่อ tab
 function toThaiDateTab(dateStr) {
   const date = dateStr ? new Date(dateStr.replace(' ', 'T')) : new Date()
   const d = date.getDate().toString().padStart(2, '0')
@@ -24,7 +24,7 @@ function toThaiDateTab(dateStr) {
   return `${d}/${m}/${y}`
 }
 
-// แปลง "2026-02-28T14:30" → "14:30"
+// แปลง timestamp → "HH:MM"
 function toTimeOnly(dateStr) {
   if (!dateStr) return ''
   const date = new Date(dateStr.replace(' ', 'T'))
@@ -38,13 +38,87 @@ async function ensureSheetTab(sheetsClient, spreadsheetId, tabName) {
   const meta = await sheetsClient.spreadsheets.get({ spreadsheetId })
   const existing = meta.data.sheets.find(s => s.properties.title === tabName)
   if (existing) return
-
   await sheetsClient.spreadsheets.batchUpdate({
     spreadsheetId,
     requestBody: {
       requests: [{ addSheet: { properties: { title: tabName } } }],
     },
   })
+}
+
+// ตรวจว่าเป็นประเภทที่ใช้ email (EMAIL, RAZER, custom) หรือเปล่า
+function isEmailLike(fill_type) {
+  if (!fill_type) return false
+  if (['EMAIL', 'OTHER_EMAIL', 'RAZER'].includes(fill_type)) return true
+  // custom types (ไม่ใช่ UID, ID_PASS)
+  if (!['UID', 'OTHER_UID', 'ID_PASS'].includes(fill_type)) return true
+  return false
+}
+
+// คำนวณข้อมูลต้นทุนต่อ item → { unitQty, cost, totalCost, note }
+// unitQty  = จำนวนเหรียญ/ต้นทุน (แสดงในคอลัมน์ที่ 5)
+// cost     = ต้นทุน (คอลัมน์ที่ 7)
+// totalCost = ต้นทุนรวม (คอลัมน์ที่ 8)
+// note     = หมายเหตุ (คอลัมน์ที่ 10)
+function computeItemData(item) {
+  const { fill_type, quantity, credit_deducted, email_cost,
+          lot_cost_used, price_usd_used, is_bundle, bundle_lot_info } = item
+
+  // Bundle: คำนวณต้นทุนจาก bundle_lot_info
+  if (is_bundle && bundle_lot_info) {
+    try {
+      const components = JSON.parse(bundle_lot_info)
+      let totalCost = 0
+      const parts = []
+      for (const c of components) {
+        const compCost = (c.cost ?? 0) * (c.price_usd ?? 1) * (c.qty ?? 1)
+        totalCost += compCost
+        if (c.cost) parts.push(`${c.name} ${compCost.toFixed(2)}฿`)
+      }
+      return {
+        unitQty: quantity,
+        cost: totalCost,
+        totalCost,
+        note: parts.join(' | '),
+      }
+    } catch {}
+  }
+
+  if (isEmailLike(fill_type)) {
+    // EMAIL / RAZER / custom: ต้นทุน = email_cost, ต้นทุนรวม = credit_deducted × email_cost
+    const ec = email_cost ?? 0
+    const qty = credit_deducted ?? quantity
+    return {
+      unitQty: qty,
+      cost: ec,
+      totalCost: qty * ec,
+      note: '',
+    }
+  }
+
+  if (fill_type === 'ID_PASS') {
+    // Stock77: ต้นทุน = lot_cost × price_usd × qty
+    const totalCost = (lot_cost_used ?? 0) * (price_usd_used ?? 1) * quantity
+    return {
+      unitQty: quantity,
+      cost: totalCost,
+      totalCost,
+      note: '',
+    }
+  }
+
+  // UID / OTHER_UID: ใช้ quantity เป็นตัวแทน (ไม่มีข้อมูลต้นทุนจริง)
+  return {
+    unitQty: quantity,
+    cost: quantity,
+    totalCost: quantity,
+    note: '',
+  }
+}
+
+function fmt(num) {
+  if (num === null || num === undefined || num === '') return ''
+  return Number(num).toFixed(2)
 }
 
 // export ออเดอร์แบบรายวัน — แต่ละวันไปอยู่ tab ชื่อวันที่พ.ศ.
@@ -63,29 +137,48 @@ async function exportDailyOrders(spreadsheetId, orders) {
   for (const [tabName, dayOrders] of Object.entries(byDay)) {
     await ensureSheetTab(sheets, spreadsheetId, tabName)
 
-    const rows = dayOrders.map(o => [
-      `#${o.order_id}`,
-      o.transfer_amount ?? '',
-      toTimeOnly(o.transfer_time),
-      o.products,
-    ])
+    const rows = []
+    for (const o of dayOrders) {
+      // รวมต้นทุนทั้งหมดของออเดอร์สำหรับคำนวณกำไร
+      let orderTotalCost = 0
+      const itemDataList = o.items.map(item => {
+        const d = computeItemData(item)
+        orderTotalCost += d.totalCost
+        return { item, data: d }
+      })
 
-    // ชื่อ tab มี "/" ต้องใส่ single quote ใน range notation
+      const profit = (o.transfer_amount ?? 0) - orderTotalCost
+      const time = toTimeOnly(o.transfer_time)
+
+      // สร้างแถวสำหรับแต่ละ item ในออเดอร์
+      itemDataList.forEach(({ item, data }, i) => {
+        rows.push([
+          i === 0 ? `#${o.order_id}` : '',             // No.
+          i === 0 ? (o.transfer_amount ?? '') : '',     // ยอดโอน (฿)
+          i === 0 ? time : '',                          // เวลาโอน
+          item.product_name,                            // รายการสินค้า
+          data.unitQty,                                 // จำนวนเหรียญ/ต้นทุน
+          item.email_used || '-',                       // Email ที่ใช้
+          fmt(data.cost),                               // ต้นทุน
+          fmt(data.totalCost),                          // ต้นทุนรวม
+          i === 0 ? fmt(profit) : '',                   // กำไร
+          data.note,                                    // หมายเหตุ
+        ])
+      })
+    }
+
     const range = `'${tabName}'!A1`
-
-    // clear ก่อนแล้ว write ใหม่ ป้องกัน duplicate
     await sheets.spreadsheets.values.clear({
       spreadsheetId,
-      range: `'${tabName}'!A:D`,
+      range: `'${tabName}'!A:J`,
     })
-
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
         values: [
-          ['เลขที่', 'ยอดโอน (฿)', 'เวลาโอน', 'รายการสินค้า'],
+          ['No.', 'ยอดโอน (฿)', 'เวลาโอน', 'รายการสินค้า', 'จำนวนเหรียญ/ต้นทุน', 'Email ที่ใช้', 'ต้นทุน', 'ต้นทุนรวม', 'กำไร', 'หมายเหตุ'],
           ...rows,
         ],
       },

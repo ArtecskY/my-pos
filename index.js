@@ -455,10 +455,10 @@ initDB().then(() => {
                   remaining -= deduct
                 }
               }
-              bundleComponents.push({ name: compName, cost: firstCost })
+              bundleComponents.push({ name: compName, cost: firstCost, price_usd: compPriceUsd ?? null, qty: bundleQty })
             } else {
               db.run('UPDATE products SET stock = stock - ? WHERE id=? AND stock != -1', [needed, compId])
-              bundleComponents.push({ name: compName, cost: null })
+              bundleComponents.push({ name: compName, cost: null, price_usd: compPriceUsd ?? null, qty: bundleQty })
             }
           }
         }
@@ -632,27 +632,41 @@ initDB().then(() => {
     const sheetId = result[0]?.values[0][0]
     if (!sheetId) return res.status(400).json({ error: 'ยังไม่ได้ตั้งค่า Sheet ID กรุณาตั้งค่าก่อน Export' })
 
-    const ordersRes = db.exec(`
-      SELECT o.id, o.transfer_amount, o.transfer_time,
-             GROUP_CONCAT(p.name || ' x' || oi.quantity, ', ') AS products
+    const itemsRes = db.exec(`
+      SELECT o.id, o.transfer_amount, COALESCE(o.transfer_time, o.created_at) AS ts,
+             p.name, oi.quantity, oi.credit_deducted, oi.price_usd_used,
+             e.email, e.cost AS email_cost,
+             oi.lot_cost_used, oi.bundle_lot_info,
+             c.fill_type, COALESCE(p.is_bundle, 0)
       FROM orders o
-      LEFT JOIN order_items oi ON oi.order_id = o.id
-      LEFT JOIN products p ON p.id = oi.product_id
-      GROUP BY o.id
-      ORDER BY o.id
+      JOIN order_items oi ON oi.order_id = o.id
+      JOIN products p ON p.id = oi.product_id
+      LEFT JOIN categories c ON c.id = p.category_id
+      LEFT JOIN emails e ON e.id = oi.email_id_used
+      ORDER BY ts, o.id, oi.id
     `)
 
-    if (!ordersRes[0] || ordersRes[0].values.length === 0) {
+    if (!itemsRes[0] || itemsRes[0].values.length === 0) {
       return res.status(400).json({ error: 'ไม่มีข้อมูลให้ export' })
     }
 
-    const orders = ordersRes[0].values.map(row => ({
-      order_id: row[0],
-      transfer_amount: row[1],
-      transfer_time: row[2],
-      products: row[3] || '',
-    }))
+    const orderMap = new Map()
+    for (const row of itemsRes[0].values) {
+      const [order_id, transfer_amount, ts,
+             product_name, quantity, credit_deducted, price_usd_used,
+             email_used, email_cost, lot_cost_used, bundle_lot_info,
+             fill_type, is_bundle] = row
+      if (!orderMap.has(order_id)) {
+        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, items: [] })
+      }
+      orderMap.get(order_id).items.push({
+        product_name, quantity, credit_deducted, price_usd_used,
+        email_used, email_cost, lot_cost_used, bundle_lot_info,
+        fill_type, is_bundle: is_bundle === 1,
+      })
+    }
 
+    const orders = Array.from(orderMap.values())
     try {
       const dayCount = await exportDailyOrders(sheetId, orders)
       res.json({ message: `Export สำเร็จ ${orders.length} รายการ (${dayCount} วัน)` })
