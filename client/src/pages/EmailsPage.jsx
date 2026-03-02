@@ -56,7 +56,6 @@ export default function EmailsPage() {
   const [showPass, setShowPass] = useState({})
   const [editModal, setEditModal] = useState(null)
   const [editShowPass, setEditShowPass] = useState(false)
-  const [otpModal, setOtpModal] = useState(null) // { label, url }
 
   // new type form
   const [showNewType, setShowNewType] = useState(false)
@@ -400,12 +399,14 @@ export default function EmailsPage() {
                       </td>
                       <td className="py-2.5 px-2 text-center">
                         {e.link_sms ? (
-                          <button
-                            onClick={() => setOtpModal({ label: e.fill_type === 'RAZER' ? 'Backup' : 'SMS', url: e.link_sms })}
-                            className="px-2.5 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-md text-xs font-medium cursor-pointer transition-colors"
+                          <a
+                            href={e.link_sms}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-block px-2.5 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-md text-xs font-medium cursor-pointer transition-colors"
                           >
                             {e.fill_type === 'RAZER' ? 'Backup' : 'SMS'}
-                          </button>
+                          </a>
                         ) : (
                           <span className="text-slate-300 text-xs">—</span>
                         )}
@@ -570,23 +571,7 @@ export default function EmailsPage() {
         </div>
       )}
 
-      {/* OTP / Backup popup */}
-      {otpModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setOtpModal(null)}>
-          <div className="bg-white rounded-xl shadow-xl p-5 w-[360px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <span className="font-semibold text-slate-700">{otpModal.label}</span>
-              <button onClick={() => setOtpModal(null)} className="text-slate-400 hover:text-slate-600 text-lg leading-none cursor-pointer">✕</button>
-            </div>
-            <iframe
-              src={otpModal.url}
-              className="w-full rounded-lg border border-slate-200"
-              style={{ height: '480px' }}
-              title={otpModal.label}
-            />
-          </div>
-        </div>
-      )}
+
     </div>
   )
 }
