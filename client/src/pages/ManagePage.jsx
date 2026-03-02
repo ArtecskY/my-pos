@@ -964,7 +964,7 @@ export default function ManagePage() {
                   <p className="text-center text-slate-400 py-8">ยังไม่มีสินค้าในหมวดหมู่นี้</p>
                 ) : (
                   <table className="w-full text-sm border-collapse">
-                    <thead>
+                    <thead className="sticky top-0 bg-white z-10">
                       <tr className="text-slate-500 text-left border-b-2 border-slate-200">
                         <th className="pb-2.5 px-3 font-medium whitespace-nowrap">ชื่อสินค้า</th>
                         <th className="pb-2.5 px-3 font-medium whitespace-nowrap">ราคา ฿</th>
