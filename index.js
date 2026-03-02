@@ -637,7 +637,7 @@ initDB().then(() => {
              p.name, oi.quantity, oi.credit_deducted, oi.price_usd_used,
              e.email, e.cost AS email_cost,
              oi.lot_cost_used, oi.bundle_lot_info,
-             c.fill_type, COALESCE(p.is_bundle, 0)
+             c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used
       FROM orders o
       JOIN order_items oi ON oi.order_id = o.id
       JOIN products p ON p.id = oi.product_id
@@ -655,14 +655,14 @@ initDB().then(() => {
       const [order_id, transfer_amount, ts,
              product_name, quantity, credit_deducted, price_usd_used,
              email_used, email_cost, lot_cost_used, bundle_lot_info,
-             fill_type, is_bundle] = row
+             fill_type, is_bundle, cost_used] = row
       if (!orderMap.has(order_id)) {
         orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, items: [] })
       }
       orderMap.get(order_id).items.push({
         product_name, quantity, credit_deducted, price_usd_used,
         email_used, email_cost, lot_cost_used, bundle_lot_info,
-        fill_type, is_bundle: is_bundle === 1,
+        fill_type, is_bundle: is_bundle === 1, cost_used,
       })
     }
 

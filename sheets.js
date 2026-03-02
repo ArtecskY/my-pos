@@ -56,13 +56,14 @@ function isEmailLike(fill_type) {
 }
 
 // คำนวณข้อมูลต้นทุนต่อ item → { unitQty, cost, totalCost, note }
-// unitQty  = จำนวนเหรียญ/ต้นทุน (แสดงในคอลัมน์ที่ 5)
-// cost     = ต้นทุน (คอลัมน์ที่ 7)
+// unitQty   = จำนวนเหรียญ/ต้นทุน (แสดงในคอลัมน์ที่ 5)
+// cost      = ต้นทุน (คอลัมน์ที่ 7)
 // totalCost = ต้นทุนรวม (คอลัมน์ที่ 8)
-// note     = หมายเหตุ (คอลัมน์ที่ 10)
+// note      = หมายเหตุ (คอลัมน์ที่ 10)
 function computeItemData(item) {
   const { fill_type, quantity, credit_deducted, email_cost,
-          lot_cost_used, price_usd_used, is_bundle, bundle_lot_info } = item
+          lot_cost_used, price_usd_used, cost_used,
+          is_bundle, bundle_lot_info } = item
 
   // Bundle: คำนวณต้นทุนจาก bundle_lot_info
   if (is_bundle && bundle_lot_info) {
@@ -97,21 +98,23 @@ function computeItemData(item) {
   }
 
   if (fill_type === 'ID_PASS') {
-    // Stock77: ต้นทุน = lot_cost × price_usd × qty
-    const totalCost = (lot_cost_used ?? 0) * (price_usd_used ?? 1) * quantity
+    // Stock77: จำนวนเหรียญ = price_usd_used, ต้นทุนรวม = price_usd_used × lot_cost_used
+    const coins = price_usd_used ?? quantity
+    const unitCost = lot_cost_used ?? 0
     return {
-      unitQty: quantity,
-      cost: totalCost,
-      totalCost,
+      unitQty: coins,
+      cost: unitCost,
+      totalCost: coins * unitCost,
       note: '',
     }
   }
 
-  // UID / OTHER_UID: ใช้ quantity เป็นตัวแทน (ไม่มีข้อมูลต้นทุนจริง)
+  // UID / OTHER_UID: จำนวนเหรียญ = cost_used, ต้นทุนรวม = cost_used
+  const uid_qty = cost_used ?? quantity
   return {
-    unitQty: quantity,
-    cost: quantity,
-    totalCost: quantity,
+    unitQty: uid_qty,
+    cost: uid_qty,
+    totalCost: uid_qty,
     note: '',
   }
 }
