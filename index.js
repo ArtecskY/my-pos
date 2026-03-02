@@ -637,7 +637,7 @@ initDB().then(() => {
              p.name, oi.quantity, oi.credit_deducted, oi.price_usd_used,
              e.email, e.cost AS email_cost,
              oi.lot_cost_used, oi.bundle_lot_info,
-             c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used
+             c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used, p.id AS product_id
       FROM orders o
       JOIN order_items oi ON oi.order_id = o.id
       JOIN products p ON p.id = oi.product_id
@@ -655,13 +655,41 @@ initDB().then(() => {
       const [order_id, transfer_amount, ts,
              product_name, quantity, credit_deducted, price_usd_used,
              email_used, email_cost, lot_cost_used, bundle_lot_info,
-             fill_type, is_bundle, cost_used] = row
+             fill_type, is_bundle, cost_used, product_id] = row
       if (!orderMap.has(order_id)) {
         orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, items: [] })
       }
+
+      // สำหรับ bundle ที่ component ไม่มี price_usd (order เก่า) ให้ดึงจาก products table
+      let enrichedBundleLotInfo = bundle_lot_info
+      if (is_bundle === 1 && bundle_lot_info) {
+        try {
+          const components = JSON.parse(bundle_lot_info)
+          const needsEnrich = components.some(c => c.price_usd == null)
+          if (needsEnrich) {
+            const compRows = db.exec(
+              'SELECT p.name, p.price_usd, pb.quantity FROM product_bundles pb JOIN products p ON p.id = pb.component_id WHERE pb.product_id=?',
+              [product_id]
+            )
+            if (compRows[0]) {
+              const priceMap = {}
+              for (const [cName, cPriceUsd, cQty] of compRows[0].values) {
+                priceMap[cName] = { price_usd: cPriceUsd, qty: cQty }
+              }
+              const enriched = components.map(c => ({
+                ...c,
+                price_usd: c.price_usd ?? priceMap[c.name]?.price_usd ?? null,
+                qty: c.qty ?? priceMap[c.name]?.qty ?? 1,
+              }))
+              enrichedBundleLotInfo = JSON.stringify(enriched)
+            }
+          }
+        } catch {}
+      }
+
       orderMap.get(order_id).items.push({
         product_name, quantity, credit_deducted, price_usd_used,
-        email_used, email_cost, lot_cost_used, bundle_lot_info,
+        email_used, email_cost, lot_cost_used, bundle_lot_info: enrichedBundleLotInfo,
         fill_type, is_bundle: is_bundle === 1, cost_used,
       })
     }

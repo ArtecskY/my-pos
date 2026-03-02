@@ -65,19 +65,22 @@ function computeItemData(item) {
           lot_cost_used, price_usd_used, cost_used,
           is_bundle, bundle_lot_info } = item
 
-  // Bundle: คำนวณต้นทุนจาก bundle_lot_info
+  // Bundle: คำนวณต้นทุนจาก bundle_lot_info (price_usd/qty ถูก enrich จาก products table ใน index.js)
   if (is_bundle && bundle_lot_info) {
     try {
       const components = JSON.parse(bundle_lot_info)
+      let totalCoins = 0
       let totalCost = 0
       const parts = []
       for (const c of components) {
-        const compCost = (c.cost ?? 0) * (c.price_usd ?? 1) * (c.qty ?? 1)
+        const coins = (c.price_usd ?? 0) * (c.qty ?? 1)
+        const compCost = (c.cost ?? 0) * coins
+        totalCoins += coins
         totalCost += compCost
-        if (c.cost) parts.push(`${c.name} ${compCost.toFixed(2)}฿`)
+        if (c.cost && coins) parts.push(`${c.name} ${compCost.toFixed(2)}฿`)
       }
       return {
-        unitQty: quantity,
+        unitQty: totalCoins || quantity,
         cost: totalCost,
         totalCost,
         note: parts.join(' | '),
