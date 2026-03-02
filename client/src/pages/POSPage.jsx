@@ -356,8 +356,13 @@ export default function POSPage() {
           ? <p className="text-slate-400 text-sm">ยังไม่มีสินค้า</p>
           : cart.map(i => (
             <div key={i.id} className="py-2.5 border-b border-slate-100">
-              <div className="flex justify-between items-center mb-1.5">
-                <span className="text-sm font-medium flex-1 mr-2">{i.name}</span>
+              <div className="flex justify-between items-start mb-1.5">
+                <div className="flex-1 mr-2">
+                  {i.category_name && (
+                    <p className="text-xs text-slate-400 mb-0.5">{i.category_name}</p>
+                  )}
+                  <span className="text-sm font-medium">{i.name}</span>
+                </div>
                 <button
                   onClick={() => removeFromCart(i.id)}
                   className="text-slate-300 hover:text-red-400 text-xl leading-none cursor-pointer"
