@@ -580,7 +580,7 @@ initDB().then(() => {
                 const firstLot = db.exec('SELECT id FROM product_lots WHERE product_id=? ORDER BY cost ASC LIMIT 1', [compId])
                 if (firstLot[0]) db.run('UPDATE product_lots SET stock = stock + ? WHERE id=?', [restoreQty, firstLot[0].values[0][0]])
               } else {
-                db.run('UPDATE products SET stock = stock + ? WHERE id=?', [restoreQty, compId])
+                db.run('UPDATE products SET stock = stock + ? WHERE id=? AND stock != -1', [restoreQty, compId])
               }
             }
           }
@@ -597,7 +597,7 @@ initDB().then(() => {
             if (category_id) restoreEmailCredits(category_id, credit_deducted)
           }
         } else {
-          db.run('UPDATE products SET stock = stock + ? WHERE id=?', [quantity, product_id])
+          db.run('UPDATE products SET stock = stock + ? WHERE id=? AND stock != -1', [quantity, product_id])
         }
       }
     }
@@ -605,6 +605,15 @@ initDB().then(() => {
     db.run('DELETE FROM orders WHERE id=?', [id])
     save()
     res.json({ message: 'ลบรายการสำเร็จ' })
+  })
+
+  app.patch('/orders/:id/transfer-time', requireLogin, (req, res) => {
+    const { id } = req.params
+    const { transfer_time } = req.body
+    if (!transfer_time) return res.status(400).json({ error: 'transfer_time required' })
+    db.run('UPDATE orders SET transfer_time=? WHERE id=?', [transfer_time, id])
+    save()
+    res.json({ message: 'อัปเดตเวลาสำเร็จ' })
   })
 
   app.get('/emails/available', requireLogin, (req, res) => {

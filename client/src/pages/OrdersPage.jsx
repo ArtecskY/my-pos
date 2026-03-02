@@ -93,6 +93,8 @@ export default function OrdersPage() {
   const [saveMsg, setSaveMsg] = useState('')
   const [exportMsg, setExportMsg] = useState('')
   const [exporting, setExporting] = useState(false)
+  const [editTimeOrderId, setEditTimeOrderId] = useState(null)
+  const [editTimeValue, setEditTimeValue] = useState('')
 
   useEffect(() => {
     fetch('/order-items').then(r => r.json()).then(setOrderItems)
@@ -194,6 +196,30 @@ export default function OrdersPage() {
     const res = await fetch(`/orders/${id}`, { method: 'DELETE' })
     if (!res.ok) { alert('ลบไม่สำเร็จ กรุณาลองใหม่'); return }
     setOrderItems(prev => prev.filter(i => i.order_id !== id))
+  }
+
+  function startEditTime(order) {
+    // แปลง transfer_time หรือ created_at เป็น "YYYY-MM-DDTHH:MM" สำหรับ input datetime-local
+    const raw = order.transfer_time || order.created_at || ''
+    const dt = raw ? raw.replace(' ', 'T').slice(0, 16) : ''
+    setEditTimeOrderId(order.order_id)
+    setEditTimeValue(dt)
+  }
+
+  async function saveEditTime(orderId) {
+    if (!editTimeValue) { setEditTimeOrderId(null); return }
+    // แปลง "YYYY-MM-DDTHH:MM" → "YYYY-MM-DD HH:MM:00"
+    const formatted = editTimeValue.replace('T', ' ') + ':00'
+    const res = await fetch(`/orders/${orderId}/transfer-time`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transfer_time: formatted }),
+    })
+    if (!res.ok) { alert('อัปเดตเวลาไม่สำเร็จ'); return }
+    setOrderItems(prev => prev.map(i =>
+      i.order_id === orderId ? { ...i, transfer_time: formatted } : i
+    ))
+    setEditTimeOrderId(null)
   }
 
   async function loadSheetConfig() {
@@ -352,7 +378,29 @@ export default function OrdersPage() {
                         {/* เวลา */}
                         {idx === 0 && (
                           <td rowSpan={order.items.length} className="py-3 px-3 align-top text-slate-500 whitespace-nowrap">
-                            <span className="font-mono">{formatTimeOnly(order.transfer_time)}</span>
+                            {editTimeOrderId === order.order_id ? (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="datetime-local"
+                                  value={editTimeValue}
+                                  onChange={e => setEditTimeValue(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveEditTime(order.order_id)
+                                    if (e.key === 'Escape') setEditTimeOrderId(null)
+                                  }}
+                                  className="border border-blue-400 rounded px-1 py-0.5 text-xs font-mono w-36 focus:outline-none"
+                                  autoFocus
+                                />
+                                <button onClick={() => saveEditTime(order.order_id)} className="text-green-500 hover:text-green-700 text-xs cursor-pointer">✓</button>
+                                <button onClick={() => setEditTimeOrderId(null)} className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer">✕</button>
+                              </div>
+                            ) : (
+                              <span
+                                className="font-mono cursor-pointer hover:text-blue-500 hover:underline"
+                                title="คลิกเพื่อแก้ไขเวลา"
+                                onClick={() => startEditTime(order)}
+                              >{formatTimeOnly(order.transfer_time)}</span>
+                            )}
                           </td>
                         )}
                         {/* ชื่อเกม — แสดงแถวแรกเท่านั้น */}
