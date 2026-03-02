@@ -83,6 +83,7 @@ export default function ManagePage() {
   const [newGameName, setNewGameName] = useState('')
   const [newGameTypeKey, setNewGameTypeKey] = useState('UID')
   const [newGameOtherStock, setNewGameOtherStock] = useState('UID')
+  const [newGameTemplate, setNewGameTemplate] = useState('')
   const [addGameError, setAddGameError] = useState('')
 
   // Edit game modal
@@ -116,9 +117,6 @@ export default function ManagePage() {
   // Feature 1: Drag & Drop
   const dragItem = useRef(null) // { catId, index }
 
-  // Feature 2: Copy modal
-  const [copyModal, setCopyModal] = useState(null) // cat.id | null
-  const [copySourceId, setCopySourceId] = useState('')
 
   async function loadAll() {
     const [p, c, et] = await Promise.all([
@@ -152,10 +150,19 @@ export default function ManagePage() {
     })
     const data = await res.json()
     if (!res.ok) { setAddGameError(data.error); return }
+    // ถ้าเลือก template ให้ copy สินค้าจากเกมนั้นมาอัตโนมัติ
+    if (newGameTemplate) {
+      await fetch(`/categories/${data.id}/copy-products`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_category_id: newGameTemplate }),
+      })
+    }
     setShowAddGame(false)
     setNewGameName('')
     setNewGameTypeKey('UID')
     setNewGameOtherStock('UID')
+    setNewGameTemplate('')
     loadAll()
   }
 
@@ -343,20 +350,6 @@ export default function ManagePage() {
     })
   }
 
-  // Feature 2: Copy products
-  async function copyProducts() {
-    if (!copySourceId) return
-    const res = await fetch(`/categories/${copyModal}/copy-products`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source_category_id: copySourceId }),
-    })
-    const data = await res.json()
-    setCopyModal(null)
-    setCopySourceId('')
-    if (res.ok) loadAll()
-    else alert(data.error || 'เกิดข้อผิดพลาด')
-  }
 
   async function saveLotEdit() {
     await fetch(`/product-lots/${dashEditLot.id}`, {
@@ -467,7 +460,7 @@ export default function ManagePage() {
       {/* Top bar */}
       <div className="flex justify-end">
         <button
-          onClick={() => { setShowAddGame(true); setAddGameError(''); setNewGameName(''); setNewGameTypeKey('UID'); setNewGameOtherStock('UID') }}
+          onClick={() => { setShowAddGame(true); setAddGameError(''); setNewGameName(''); setNewGameTypeKey('UID'); setNewGameOtherStock('UID'); setNewGameTemplate('') }}
           className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm cursor-pointer font-medium"
         >
           + เพิ่มเกมใหม่
@@ -554,12 +547,6 @@ export default function ManagePage() {
                       ดู Dashboard
                     </button>
                   )}
-                  <button
-                    onClick={() => { setCopyModal(cat.id); setCopySourceId('') }}
-                    className="px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg text-xs cursor-pointer"
-                  >
-                    Copy จากเกมอื่น
-                  </button>
                   <button
                     onClick={() => openEditGame(cat)}
                     className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs cursor-pointer"
@@ -892,6 +879,19 @@ export default function ManagePage() {
                 customTypes={customEmailTypes}
               />
             </div>
+            <div className="mb-5">
+              <label className="block text-sm text-slate-500 mb-1.5">Copy สินค้าจาก Template (ไม่บังคับ)</label>
+              <select
+                value={newGameTemplate}
+                onChange={e => setNewGameTemplate(e.target.value)}
+                className={`w-full ${inputCls}`}
+              >
+                <option value="">— ไม่ใช้ Template —</option>
+                {categories.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
             {addGameError && <p className="text-red-500 text-sm mb-3">{addGameError}</p>}
             <div className="flex gap-2.5">
               <button onClick={addGame} className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2.5 rounded-lg cursor-pointer font-medium">
@@ -934,39 +934,6 @@ export default function ManagePage() {
                 บันทึก
               </button>
               <button onClick={() => setEditGameModal(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-600 py-2.5 rounded-lg cursor-pointer">
-                ยกเลิก
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Copy Products Modal */}
-      {copyModal && (
-        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-            <h2 className="font-bold text-slate-800 mb-1">Copy สินค้าจากเกมอื่น</h2>
-            <p className="text-xs text-slate-400 mb-4">จะ copy ชื่อและราคาสินค้าทุกรายการ (ยกเว้น stock และรูป)</p>
-            <label className="block text-sm text-slate-500 mb-1.5">เลือกเกมต้นทาง</label>
-            <select
-              value={copySourceId}
-              onChange={e => setCopySourceId(e.target.value)}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm mb-5 focus:outline-none focus:border-blue-500"
-            >
-              <option value="">-- เลือกเกม --</option>
-              {categories.filter(c => c.id !== copyModal).map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-            <div className="flex gap-2.5">
-              <button
-                onClick={copyProducts}
-                disabled={!copySourceId}
-                className="flex-1 bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-200 disabled:text-slate-400 text-white py-2.5 rounded-lg cursor-pointer font-medium"
-              >
-                Copy
-              </button>
-              <button onClick={() => setCopyModal(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-600 py-2.5 rounded-lg cursor-pointer">
                 ยกเลิก
               </button>
             </div>
