@@ -101,8 +101,8 @@ function computeItemData(item) {
   }
 
   if (fill_type === 'ID_PASS') {
-    // Stock77: จำนวนเหรียญ = price_usd_used, ต้นทุนรวม = price_usd_used × lot_cost_used
-    const coins = price_usd_used ?? quantity
+    // Stock77: price_usd_used คือราคาต่อหน่วย ต้องคูณ quantity
+    const coins = (price_usd_used ?? 0) * quantity
     const unitCost = lot_cost_used ?? 0
     return {
       unitQty: coins,

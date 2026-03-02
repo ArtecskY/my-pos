@@ -394,7 +394,13 @@ export default function OrdersPage() {
                 </tr>
               </thead>
               {filteredOrders.map((order, orderIdx) => {
-                const orderUsdTotal = order.items.reduce((s, i) => s + (i.price_usd_used != null ? Number(i.price_usd_used) : 0), 0)
+                const orderUsdTotal = order.items.reduce((s, i) => {
+                  if (i.price_usd_used == null) return s
+                  // bundle: price_usd_used ถูก * quantity ไว้แล้วตอนบันทึก
+                  // ID_PASS: price_usd_used คือราคาต่อหน่วย ต้องคูณ quantity
+                  const qty = i.bundle_lot_info ? 1 : Number(i.quantity)
+                  return s + Number(i.price_usd_used) * qty
+                }, 0)
                 const hasUsd = orderUsdTotal > 0
                 const orderCostTotal = order.items.reduce((s, i) => s + (i.cost_used != null && Number(i.cost_used) > 0 ? Number(i.cost_used) * i.quantity : 0), 0)
                 const hasCost = !hasUsd && orderCostTotal > 0
