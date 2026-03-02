@@ -967,7 +967,7 @@ export default function ManagePage() {
                     <thead className="sticky top-0 z-10">
                       <tr className="text-slate-500 text-left bg-white">
 
-                        <th className="pb-2.5 px-3 font-medium whitespace-nowrap bg-white border-b-2 border-slate-200">ชื่อสินค้า</th>
+                        <th className="pb-2.5 px-3 font-medium whitespace-nowrap bg-white border-b-2 border-slate-200 sticky left-0 z-20">ชื่อสินค้า</th>
                         <th className="pb-2.5 px-3 font-medium whitespace-nowrap bg-white border-b-2 border-slate-200">ราคา ฿</th>
                         <th className="pb-2.5 px-3 font-medium whitespace-nowrap bg-white border-b-2 border-slate-200">ราคา $</th>
                         {uniqueCosts.map(cost => (
@@ -1003,7 +1003,7 @@ export default function ManagePage() {
                     <tbody>
                       {products.map(product => (
                         <tr key={product.id} className="border-t border-slate-100 hover:bg-slate-50">
-                          <td className="py-3 px-3 font-medium text-slate-800 whitespace-nowrap">{product.name}</td>
+                          <td className="py-3 px-3 font-medium text-slate-800 whitespace-nowrap sticky left-0 bg-white z-10">{product.name}</td>
                           <td className="py-3 px-3 text-slate-600 whitespace-nowrap">฿{product.price}</td>
                           {/* ราคา $ — คลิกเพื่อแก้ไข */}
                           <td className="py-3 px-3">
