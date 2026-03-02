@@ -1,5 +1,24 @@
 import { useState, useEffect, useMemo } from 'react'
 
+const FILL_TYPE_BADGE = {
+  'UID':        { label: 'UID',      cls: 'bg-slate-100 text-slate-600' },
+  'EMAIL':      { label: 'Apple ID', cls: 'bg-blue-100 text-blue-700' },
+  'RAZER':      { label: 'Razer',    cls: 'bg-green-100 text-green-700' },
+  'ID_PASS':    { label: 'Stock77',  cls: 'bg-yellow-100 text-yellow-700' },
+  'OTHER_UID':  { label: 'UID',      cls: 'bg-slate-100 text-slate-600' },
+  'OTHER_EMAIL':{ label: 'Email',    cls: 'bg-purple-100 text-purple-700' },
+}
+
+function FillBadge({ fill_type, customTypes = [] }) {
+  if (!fill_type) return <span className="text-slate-200 text-xs">—</span>
+  const cfg = FILL_TYPE_BADGE[fill_type]
+  if (cfg) return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${cfg.cls}`}>{cfg.label}</span>
+  // custom type
+  const ct = customTypes.find(t => t.key === fill_type)
+  if (ct) return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ct.color || 'bg-sky-100 text-sky-700'}`}>{ct.label}</span>
+  return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">{fill_type}</span>
+}
+
 function formatThaiDate(dateStr) {
   if (!dateStr) return '—'
   const date = new Date(dateStr.replace(' ', 'T'))
@@ -63,6 +82,7 @@ function buildProductName(item) {
 
 export default function OrdersPage() {
   const [orderItems, setOrderItems] = useState([])
+  const [customTypes, setCustomTypes] = useState([])
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedGame, setSelectedGame] = useState('')
 
@@ -76,6 +96,7 @@ export default function OrdersPage() {
 
   useEffect(() => {
     fetch('/order-items').then(r => r.json()).then(setOrderItems)
+    fetch('/email-types').then(r => r.json()).then(setCustomTypes)
   }, [])
 
   const groupedByDate = useMemo(() => {
@@ -298,6 +319,7 @@ export default function OrdersPage() {
                   <th className="pb-3 pt-4 px-3 font-medium text-right">จำนวน / เครดิต</th>
                   <th className="pb-3 pt-4 px-3 font-medium">Email ที่ใช้</th>
                   <th className="pb-3 pt-4 px-3 font-medium">ช่องทาง</th>
+                  <th className="pb-3 pt-4 px-3 font-medium">ประเภท</th>
                   <th className="pb-3 pt-4 px-2"></th>
                 </tr>
               </thead>
@@ -414,6 +436,10 @@ export default function OrdersPage() {
                             )}
                           </td>
                         )}
+                        {/* ประเภท */}
+                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          <FillBadge fill_type={item.fill_type} customTypes={customTypes} />
+                        </td>
                         {/* ปุ่มลบ */}
                         {idx === 0 && (
                           <td rowSpan={order.items.length} className="py-3 px-2 align-top">

@@ -665,7 +665,7 @@ initDB().then(() => {
     const result = db.exec(`
       SELECT o.id, o.transfer_time, o.created_at, o.transfer_amount, o.total,
              p.name, oi.quantity, oi.price, oi.credit_deducted, e.email, oi.price_usd_used, c.name, oi.cost_used,
-             COALESCE(oi.lot_cost_used, pl.cost) as lot_cost_used, oi.bundle_lot_info, o.channel
+             COALESCE(oi.lot_cost_used, pl.cost) as lot_cost_used, oi.bundle_lot_info, o.channel, c.fill_type
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       JOIN products p ON p.id = oi.product_id
@@ -681,7 +681,7 @@ initDB().then(() => {
       credit_deducted: row[8], email_used: row[9] || null,
       price_usd_used: row[10] ?? null, category_name: row[11] || null,
       cost_used: row[12] ?? null, lot_cost_used: row[13] ?? null,
-      bundle_lot_info: row[14] ?? null, channel: row[15] || null,
+      bundle_lot_info: row[14] ?? null, channel: row[15] || null, fill_type: row[16] || null,
     })) : []
     res.json(items)
   })
