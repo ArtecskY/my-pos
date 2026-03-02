@@ -75,6 +75,8 @@ export default function ManagePage() {
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [customEmailTypes, setCustomEmailTypes] = useState([])
+  const [search, setSearch] = useState('')
+  const [selectedFillType, setSelectedFillType] = useState('')
 
   // Add game modal
   const [showAddGame, setShowAddGame] = useState(false)
@@ -380,10 +382,15 @@ export default function ManagePage() {
 
   const inputCls = 'border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500'
 
-  const grouped = categories.map(c => ({
-    ...c,
-    items: products.filter(p => p.category_id === c.id),
-  }))
+  const activeFillTypes = [...new Set(categories.map(c => c.fill_type).filter(Boolean))]
+
+  const grouped = categories
+    .filter(c => !selectedFillType || c.fill_type === selectedFillType)
+    .filter(c => !search || c.name.toLowerCase().includes(search.toLowerCase()))
+    .map(c => ({
+      ...c,
+      items: products.filter(p => p.category_id === c.id),
+    }))
 
   return (
     <div className="space-y-4">
@@ -395,6 +402,48 @@ export default function ManagePage() {
         >
           + เพิ่มเกมใหม่
         </button>
+      </div>
+
+      {/* Filter bar */}
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="ค้นหาเกม..."
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white flex-1"
+          />
+          {(search || selectedFillType) && (
+            <button
+              onClick={() => { setSearch(''); setSelectedFillType('') }}
+              className="px-3 py-2 text-sm text-slate-400 hover:text-slate-600 cursor-pointer whitespace-nowrap"
+            >
+              ล้าง ×
+            </button>
+          )}
+        </div>
+        {activeFillTypes.length > 1 && (
+          <div className="flex flex-wrap gap-1.5">
+            {activeFillTypes.map(ft => {
+              const cfg = allTypeConfig[ft]
+              const label = cfg?.label || ft
+              return (
+                <button
+                  key={ft}
+                  onClick={() => setSelectedFillType(prev => prev === ft ? '' : ft)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer border transition-colors ${
+                    selectedFillType === ft
+                      ? 'bg-blue-500 text-white border-transparent'
+                      : 'bg-white text-slate-500 border-slate-300 hover:border-slate-400'
+                  }`}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Game cards */}
