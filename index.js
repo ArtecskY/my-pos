@@ -700,7 +700,8 @@ initDB().then(() => {
              p.name, oi.quantity, oi.credit_deducted, oi.price_usd_used,
              e.email, e.cost AS email_cost,
              oi.lot_cost_used, oi.bundle_lot_info,
-             c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used, p.id AS product_id
+             c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used, p.id AS product_id,
+             c.name AS category_name
       FROM orders o
       JOIN order_items oi ON oi.order_id = o.id
       JOIN products p ON p.id = oi.product_id
@@ -718,9 +719,9 @@ initDB().then(() => {
       const [order_id, transfer_amount, ts,
              product_name, quantity, credit_deducted, price_usd_used,
              email_used, email_cost, lot_cost_used, bundle_lot_info,
-             fill_type, is_bundle, cost_used, product_id] = row
+             fill_type, is_bundle, cost_used, product_id, category_name] = row
       if (!orderMap.has(order_id)) {
-        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, items: [] })
+        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, category_name: category_name || '', items: [] })
       }
 
       // สำหรับ bundle ที่ component ไม่มี price_usd (order เก่า) ให้ดึงจาก products table

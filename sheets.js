@@ -175,6 +175,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
           i === 0 ? `#${orderIdx + 1}` : '',           // No. (sequential ตามเวลา)
           i === 0 ? (o.transfer_amount ?? '') : '',     // ยอดโอน (฿)
           i === 0 ? time : '',                          // เวลาโอน
+          i === 0 ? (o.category_name || '') : '',       // ชื่อเกม
           item.product_name,                            // รายการสินค้า
           data.unitQty,                                 // จำนวนเหรียญ/ต้นทุน
           item.email_used || '-',                       // Email ที่ใช้
@@ -189,7 +190,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
     const range = `'${tabName}'!A1`
     await sheets.spreadsheets.values.clear({
       spreadsheetId,
-      range: `'${tabName}'!A:J`,
+      range: `'${tabName}'!A:K`,
     })
     await sheets.spreadsheets.values.update({
       spreadsheetId,
@@ -197,7 +198,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
       valueInputOption: 'USER_ENTERED',
       requestBody: {
         values: [
-          ['No.', 'ยอดโอน (฿)', 'เวลาโอน', 'รายการสินค้า', 'จำนวนเหรียญ/ต้นทุน', 'Email ที่ใช้', 'ต้นทุน', 'ต้นทุนรวม', 'กำไร', 'หมายเหตุ'],
+          ['No.', 'ยอดโอน (฿)', 'เวลาโอน', 'ชื่อเกม', 'รายการสินค้า', 'จำนวนเหรียญ/ต้นทุน', 'Email ที่ใช้', 'ต้นทุน', 'ต้นทุนรวม', 'กำไร', 'หมายเหตุ'],
           ...rows,
         ],
       },
