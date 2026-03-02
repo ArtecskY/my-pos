@@ -66,20 +66,15 @@ function computeItemData(item) {
           is_bundle, bundle_lot_info } = item
 
   // Bundle: คำนวณต้นทุนจาก bundle_lot_info
-  // component.cost = ต้นทุน USD ต่อ lot, price_usd_used = อัตราแลกเปลี่ยน ฿/$
   if (is_bundle && bundle_lot_info) {
     try {
       const components = JSON.parse(bundle_lot_info)
-      const rate = price_usd_used ?? 1
       let totalCost = 0
       const parts = []
       for (const c of components) {
-        const compQty = c.qty ?? 1
-        // ถ้า component มี price_usd เป็นของตัวเอง (order ใหม่) ใช้ของตัวเอง ไม่งั้นใช้ rate ระดับ order
-        const compRate = c.price_usd ?? rate
-        const compCostTHB = (c.cost ?? 0) * compRate * compQty
-        totalCost += compCostTHB
-        if (c.cost) parts.push(`${c.name} ${compCostTHB.toFixed(2)}฿`)
+        const compCost = (c.cost ?? 0) * (c.price_usd ?? 1) * (c.qty ?? 1)
+        totalCost += compCost
+        if (c.cost) parts.push(`${c.name} ${compCost.toFixed(2)}฿`)
       }
       return {
         unitQty: quantity,
