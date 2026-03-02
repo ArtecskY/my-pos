@@ -350,8 +350,8 @@ export default function OrdersPage() {
                   <th className="pb-3 pt-4 px-3 font-medium">ชื่อสินค้า</th>
                   <th className="pb-3 pt-4 px-3 font-medium text-right">จำนวน / เครดิต</th>
                   <th className="pb-3 pt-4 px-3 font-medium">Email ที่ใช้</th>
-                  <th className="pb-3 pt-4 px-3 font-medium">ช่องทาง</th>
-                  <th className="pb-3 pt-4 px-3 font-medium">ประเภท</th>
+                  <th className="pb-3 pt-4 px-3 font-medium text-center">ช่องทาง</th>
+                  <th className="pb-3 pt-4 px-3 font-medium text-center">ประเภท</th>
                   <th className="pb-3 pt-4 px-2"></th>
                 </tr>
               </thead>
@@ -476,7 +476,7 @@ export default function OrdersPage() {
                         </td>
                         {/* ช่องทาง */}
                         {idx === 0 && (
-                          <td rowSpan={order.items.length} className="py-3 px-3 align-top whitespace-nowrap">
+                          <td rowSpan={order.items.length} className="py-3 px-3 align-middle text-center whitespace-nowrap">
                             {order.channel ? (
                               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                                 order.channel === 'หน้าบ้าน'
@@ -491,9 +491,11 @@ export default function OrdersPage() {
                           </td>
                         )}
                         {/* ประเภท */}
-                        <td className="py-2.5 px-3 whitespace-nowrap">
-                          <FillBadge fill_type={item.fill_type} customTypes={customTypes} />
-                        </td>
+                        {idx === 0 && (
+                          <td rowSpan={order.items.length} className="py-2.5 px-3 align-middle text-center whitespace-nowrap">
+                            <FillBadge fill_type={item.fill_type} customTypes={customTypes} />
+                          </td>
+                        )}
                         {/* ปุ่มลบ */}
                         {idx === 0 && (
                           <td rowSpan={order.items.length} className="py-3 px-2 align-top">
