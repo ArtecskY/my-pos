@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 
 const FILL_TYPE_BADGE = {
   'UID':        { label: 'UID',      cls: 'bg-slate-100 text-slate-600' },
@@ -53,11 +53,25 @@ function getDateKey(dateStr) {
 
 function InfoTooltip({ children, label = 'ⓘ' }) {
   const [show, setShow] = useState(false)
+  const [above, setAbove] = useState(false)
+  const ref = useRef(null)
+
+  function handleMouseEnter() {
+    if (ref.current) {
+      const rect = ref.current.getBoundingClientRect()
+      setAbove(window.innerHeight - rect.bottom < 160)
+    }
+    setShow(true)
+  }
+
   return (
-    <span className="relative inline-block ml-1" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+    <span ref={ref} className="relative inline-block ml-1" onMouseEnter={handleMouseEnter} onMouseLeave={() => setShow(false)}>
       <span className="text-slate-300 hover:text-blue-400 cursor-help text-xs select-none">{label}</span>
       {show && (
-        <div className="absolute left-5 top-1/2 -translate-y-1/2 z-50 bg-slate-800 text-white text-xs rounded-lg px-3 py-2.5 shadow-xl pointer-events-none whitespace-pre" style={{ minWidth: '180px' }}>
+        <div
+          className={`absolute left-5 z-50 bg-slate-800 text-white text-xs rounded-lg px-3 py-2.5 shadow-xl pointer-events-none whitespace-pre ${above ? 'bottom-full mb-1' : 'top-1/2 -translate-y-1/2'}`}
+          style={{ minWidth: '180px' }}
+        >
           {children}
         </div>
       )}
