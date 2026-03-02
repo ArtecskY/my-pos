@@ -182,7 +182,7 @@ export default function OrdersPage() {
     return [...orders].sort((a, b) => {
       const ta = (a.transfer_time || a.created_at || '').replace(' ', 'T')
       const tb = (b.transfer_time || b.created_at || '').replace(' ', 'T')
-      return ta < tb ? -1 : ta > tb ? 1 : 0
+      return ta > tb ? -1 : ta < tb ? 1 : 0
     })
   }, [currentGroup, selectedGame])
 
@@ -368,7 +368,7 @@ export default function OrdersPage() {
                         {idx === 0 && (
                           <td rowSpan={order.items.length} className="py-3 px-4 align-top">
                             <span className="font-mono text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">
-                              #{orderIdx + 1}
+                              #{filteredOrders.length - orderIdx}
                             </span>
                           </td>
                         )}
