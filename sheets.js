@@ -149,8 +149,15 @@ async function exportDailyOrders(spreadsheetId, orders) {
   for (const [tabName, dayOrders] of Object.entries(byDay)) {
     await ensureSheetTab(sheets, spreadsheetId, tabName)
 
+    // เรียงตามเวลาจากเช้าไปสาย (เหมือนหน้าบันทึกรายการ)
+    dayOrders.sort((a, b) => {
+      const ta = (a.transfer_time || a.ts || '').replace(' ', 'T')
+      const tb = (b.transfer_time || b.ts || '').replace(' ', 'T')
+      return ta < tb ? -1 : ta > tb ? 1 : 0
+    })
+
     const rows = []
-    for (const o of dayOrders) {
+    for (const [orderIdx, o] of dayOrders.entries()) {
       // รวมต้นทุนทั้งหมดของออเดอร์สำหรับคำนวณกำไร
       let orderTotalCost = 0
       const itemDataList = o.items.map(item => {
@@ -165,7 +172,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
       // สร้างแถวสำหรับแต่ละ item ในออเดอร์
       itemDataList.forEach(({ item, data }, i) => {
         rows.push([
-          i === 0 ? `#${o.order_id}` : '',             // No.
+          i === 0 ? `#${orderIdx + 1}` : '',           // No. (sequential ตามเวลา)
           i === 0 ? (o.transfer_amount ?? '') : '',     // ยอดโอน (฿)
           i === 0 ? time : '',                          // เวลาโอน
           item.product_name,                            // รายการสินค้า
