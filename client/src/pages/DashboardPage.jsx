@@ -105,18 +105,6 @@ export default function DashboardPage() {
       .sort((a, b) => a.dateKey.localeCompare(b.dateKey))
       .slice(-30)
 
-    // ยอดโอนแยก channel (หน้าบ้าน / หลังบ้าน / ไม่ระบุ)
-    function channelBreakdown(orderList) {
-      const map = {}
-      for (const o of orderList) {
-        const ch = o.channel || 'ไม่ระบุ'
-        if (!map[ch]) map[ch] = { revenue: 0, count: 0 }
-        map[ch].revenue += o.transfer_amount
-        map[ch].count++
-      }
-      return map
-    }
-
     return {
       todayOrders: todayOrders.length,
       todayRevenue,
@@ -126,8 +114,6 @@ export default function DashboardPage() {
       totalRevenue,
       gameStats,
       dailyStats,
-      todayChannel: channelBreakdown(todayOrders),
-      monthChannel: channelBreakdown(monthOrders),
     }
   }, [orderItems, todayKey, thisMonthKey])
 
@@ -161,38 +147,6 @@ export default function DashboardPage() {
           sub={`${stats.totalOrders} รายการรวม`}
           color="purple"
         />
-      </div>
-
-      {/* Channel breakdown */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {[
-          { label: 'ยอดโอนวันนี้ แยกช่องทาง', data: stats.todayChannel },
-          { label: `ยอดโอนเดือนนี้ แยกช่องทาง`, data: stats.monthChannel },
-        ].map(({ label, data }) => (
-          <div key={label} className="bg-white rounded-xl shadow-sm p-5">
-            <p className="text-sm font-semibold text-slate-700 mb-3">{label}</p>
-            {Object.keys(data).length === 0
-              ? <p className="text-xs text-slate-400">ยังไม่มีข้อมูล</p>
-              : (
-                <div className="space-y-2">
-                  {['หน้าบ้าน', 'หลังบ้าน', 'ไม่ระบุ'].filter(ch => data[ch]).map(ch => (
-                    <div key={ch} className="flex items-center justify-between">
-                      <span className={`text-xs font-medium px-2.5 py-0.5 rounded-full ${
-                        ch === 'หน้าบ้าน' ? 'bg-emerald-100 text-emerald-700'
-                        : ch === 'หลังบ้าน' ? 'bg-purple-100 text-purple-700'
-                        : 'bg-slate-100 text-slate-500'
-                      }`}>{ch}</span>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-slate-400">{data[ch].count} ออเดอร์</span>
-                        <span className="text-sm font-bold text-slate-700">฿{data[ch].revenue.toLocaleString()}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )
-            }
-          </div>
-        ))}
       </div>
 
       {/* Daily bar chart */}
