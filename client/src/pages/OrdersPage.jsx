@@ -67,7 +67,14 @@ function InfoTooltip({ children, label = 'ⓘ' }) {
 
 
 function buildProductName(item) {
-  if (item.merged) return item.mergedName ?? '—'
+  if (item.merged) {
+    if (item.mergedName) return item.mergedName
+    // ชื่อสินค้าไม่มี $ — แสดงชื่อทุก item ที่ merge กัน
+    if (item.mergedItems?.length) {
+      return item.mergedItems.map(mi => mi.name + (mi.qty > 1 ? ` ×${mi.qty}` : '')).join(' + ')
+    }
+    return item.product_name
+  }
   if (item.cost_used != null && Number(item.cost_used) > 0) {
     return `${item.product_name} x${item.quantity}`
   }
