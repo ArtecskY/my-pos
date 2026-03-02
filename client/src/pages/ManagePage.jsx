@@ -13,7 +13,6 @@ const TYPE_BUTTONS = [
   { key: 'UID',     label: 'เติมผ่าน UID',      activeCls: 'bg-slate-600 text-white border-transparent' },
   { key: 'EMAIL',   label: 'เติมผ่าน Apple ID',   activeCls: 'bg-blue-500 text-white border-transparent' },
   { key: 'RAZER',   label: 'เติมผ่าน Razer',     activeCls: 'bg-green-500 text-white border-transparent' },
-  { key: 'OTHER',   label: 'อื่นๆ',               activeCls: 'bg-orange-500 text-white border-transparent' },
   { key: 'ID_PASS', label: 'ID-PASS (Stock 77)', activeCls: 'bg-yellow-500 text-white border-transparent' },
 ]
 

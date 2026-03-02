@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 
 const BUILTIN_TYPES = {
-  'EMAIL':       { label: 'Apple ID',       color: 'bg-blue-100 text-blue-700' },
-  'RAZER':       { label: 'Razer',          color: 'bg-green-100 text-green-700' },
-  'OTHER_EMAIL': { label: 'อื่นๆ · Email', color: 'bg-purple-100 text-purple-700' },
+  'EMAIL': { label: 'Apple ID', color: 'bg-blue-100 text-blue-700' },
+  'RAZER': { label: 'Razer',    color: 'bg-green-100 text-green-700' },
 }
 
 const CUSTOM_COLORS = [
