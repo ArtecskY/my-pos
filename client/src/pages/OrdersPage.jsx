@@ -356,7 +356,7 @@ export default function OrdersPage() {
                         {hasUsd ? (
                           idx === 0 ? (
                             <td rowSpan={order.items.length} className="py-2.5 px-3 text-right align-middle whitespace-nowrap">
-                              <span className="text-green-600 font-bold text-base">
+                              <span className="text-slate-700 font-semibold text-sm">
                                 ${Number.isInteger(orderUsdTotal) ? orderUsdTotal : orderUsdTotal.toFixed(2)}
                               </span>
                               {/* ⓘ ID-PASS — แสดงต้นทุน lot */}
@@ -378,7 +378,7 @@ export default function OrdersPage() {
                         ) : hasCost ? (
                           idx === 0 ? (
                             <td rowSpan={order.items.length} className="py-2.5 px-3 text-right align-middle whitespace-nowrap">
-                              <span className="text-amber-700 font-bold text-base">
+                              <span className="text-slate-700 font-semibold text-sm">
                                 ฿{Number.isInteger(orderCostTotal) ? orderCostTotal : orderCostTotal.toFixed(2)}
                               </span>
                             </td>
@@ -386,11 +386,11 @@ export default function OrdersPage() {
                         ) : (
                           <td className="py-2.5 px-3 text-right whitespace-nowrap">
                             {item.credit_deducted != null ? (
-                              <span className="text-blue-600 font-semibold">
+                              <span className="text-slate-700 font-semibold text-sm">
                                 {Number(item.credit_deducted).toFixed(2)}
                               </span>
                             ) : (
-                              <span className="text-slate-500">×{item.quantity}</span>
+                              <span className="text-slate-700 font-semibold text-sm">×{item.quantity}</span>
                             )}
                           </td>
                         )}
