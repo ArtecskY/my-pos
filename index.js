@@ -101,6 +101,7 @@ initDB().then(() => {
         p.price_usd, p.cost
       FROM products p
       LEFT JOIN categories c ON c.id = p.category_id
+      ORDER BY p.sort_order ASC, p.id ASC
     `)
     const products = result[0] ? result[0].values.map(row => {
       const fill_type = row[7] || 'UID'
@@ -174,6 +175,50 @@ initDB().then(() => {
     }
     save()
     res.json({ message: 'อัปเดตสำเร็จ' })
+  })
+
+  // Feature 1: เรียงลำดับสินค้า
+  app.put('/products/reorder', requireLogin, (req, res) => {
+    const items = req.body // [{ id, sort_order }, ...]
+    for (const { id, sort_order } of items) {
+      db.run('UPDATE products SET sort_order=? WHERE id=?', [sort_order, id])
+    }
+    save()
+    res.json({ message: 'บันทึกลำดับสำเร็จ' })
+  })
+
+  // Feature 2: Copy สินค้าจากเกมอื่น
+  app.post('/categories/:id/copy-products', requireLogin, (req, res) => {
+    const { source_category_id } = req.body
+    const targetId = req.params.id
+    if (!source_category_id) return res.status(400).json({ error: 'กรุณาระบุเกมต้นทาง' })
+    const srcProds = db.exec(
+      'SELECT name, price, price_usd FROM products WHERE category_id=? AND (is_bundle IS NULL OR is_bundle=0) ORDER BY sort_order ASC, id ASC',
+      [source_category_id]
+    )
+    if (!srcProds[0] || srcProds[0].values.length === 0) return res.status(400).json({ error: 'ไม่มีสินค้าในเกมต้นทาง' })
+    let count = 0
+    // หาลำดับสูงสุดของ target
+    const maxOrd = db.exec('SELECT COALESCE(MAX(sort_order), 0) FROM products WHERE category_id=?', [targetId])
+    let nextOrder = (maxOrd[0]?.values[0][0] || 0) + 1
+    for (const [name, price, price_usd] of srcProds[0].values) {
+      db.run('INSERT INTO products (name, price, stock, category_id, price_usd, sort_order) VALUES (?,?,0,?,?,?)',
+        [name, price, targetId, price_usd ?? null, nextOrder++])
+      count++
+    }
+    save()
+    res.json({ message: `Copy สินค้าสำเร็จ ${count} รายการ`, count })
+  })
+
+  // Feature 3: เปลี่ยนชื่อต้นทุน lot ทั้ง category
+  app.put('/product-lots/rename-cost', requireLogin, (req, res) => {
+    const { category_id, old_cost, new_cost } = req.body
+    db.run(
+      'UPDATE product_lots SET cost=? WHERE cost=? AND product_id IN (SELECT id FROM products WHERE category_id=?)',
+      [new_cost, old_cost, category_id]
+    )
+    save()
+    res.json({ message: 'อัปเดตต้นทุนสำเร็จ' })
   })
 
   app.post('/products/:id/image', requireLogin, upload.single('image'), (req, res) => {

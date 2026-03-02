@@ -99,6 +99,7 @@ async function initDB() {
   try { db.run('ALTER TABLE order_items ADD COLUMN bundle_lot_info TEXT') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE orders ADD COLUMN channel TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE products ADD COLUMN sort_order INTEGER DEFAULT 0') } catch (e) { /* column exists */ }
   db.run(`CREATE TABLE IF NOT EXISTS email_types (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     key TEXT NOT NULL UNIQUE,

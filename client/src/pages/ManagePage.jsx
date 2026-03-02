@@ -111,6 +111,14 @@ export default function ManagePage() {
   const [dashEditLot, setDashEditLot] = useState(null)   // { id, cost, stock }
   const [dashEditUsd, setDashEditUsd] = useState(null)   // { productId, value }
   const [dashNewLot, setDashNewLot] = useState(null)     // { productId, cost, stock }
+  const [dashEditCost, setDashEditCost] = useState(null) // { old_cost, value }
+
+  // Feature 1: Drag & Drop
+  const dragItem = useRef(null) // { catId, index }
+
+  // Feature 2: Copy modal
+  const [copyModal, setCopyModal] = useState(null) // cat.id | null
+  const [copySourceId, setCopySourceId] = useState('')
 
   async function loadAll() {
     const [p, c, et] = await Promise.all([
@@ -286,6 +294,68 @@ export default function ManagePage() {
   async function reloadDashboard(catId) {
     const data = await fetch(`/id-pass-dashboard/${catId || dashboardCat?.id}`).then(r => r.json())
     setDashboardData(data)
+  }
+
+  // Feature 3: แก้ไขต้นทุน lot header
+  async function saveDashCost() {
+    const newCost = parseFloat(dashEditCost.value)
+    if (isNaN(newCost) || newCost <= 0) return
+    await fetch('/product-lots/rename-cost', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category_id: dashboardCat.id, old_cost: dashEditCost.old_cost, new_cost: newCost }),
+    })
+    setDashEditCost(null)
+    reloadDashboard()
+  }
+
+  // Feature 1: Drag & Drop handlers
+  function handleDragStart(catId, index) {
+    dragItem.current = { catId, index }
+  }
+
+  function handleDragOver(e, catId, index) {
+    e.preventDefault()
+    if (!dragItem.current || dragItem.current.catId !== catId) return
+    if (dragItem.current.index === index) return
+    setProducts(prev => {
+      const updated = [...prev]
+      const catItems = updated.filter(p => p.category_id === catId)
+      const others = updated.filter(p => p.category_id !== catId)
+      const fromIdx = dragItem.current.index
+      const toIdx = index
+      const moved = catItems.splice(fromIdx, 1)[0]
+      catItems.splice(toIdx, 0, moved)
+      dragItem.current = { catId, index: toIdx }
+      return [...others, ...catItems]
+    })
+  }
+
+  async function handleDrop(catId) {
+    if (!dragItem.current || dragItem.current.catId !== catId) return
+    dragItem.current = null
+    const catItems = products.filter(p => p.category_id === catId)
+    const payload = catItems.map((p, i) => ({ id: p.id, sort_order: i }))
+    await fetch('/products/reorder', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+  }
+
+  // Feature 2: Copy products
+  async function copyProducts() {
+    if (!copySourceId) return
+    const res = await fetch(`/categories/${copyModal}/copy-products`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_category_id: copySourceId }),
+    })
+    const data = await res.json()
+    setCopyModal(null)
+    setCopySourceId('')
+    if (res.ok) loadAll()
+    else alert(data.error || 'เกิดข้อผิดพลาด')
   }
 
   async function saveLotEdit() {
@@ -485,6 +555,12 @@ export default function ManagePage() {
                     </button>
                   )}
                   <button
+                    onClick={() => { setCopyModal(cat.id); setCopySourceId('') }}
+                    className="px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg text-xs cursor-pointer"
+                  >
+                    Copy จากเกมอื่น
+                  </button>
+                  <button
                     onClick={() => openEditGame(cat)}
                     className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs cursor-pointer"
                   >
@@ -505,8 +581,16 @@ export default function ManagePage() {
                   <div className="mb-4 overflow-x-auto">
                     <table className="w-full text-sm">
                       <tbody>
-                        {cat.items.map(p => (
-                          <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
+                        {cat.items.map((p, idx) => (
+                          <tr
+                            key={p.id}
+                            className="border-b border-slate-100 hover:bg-slate-50"
+                            draggable
+                            onDragStart={() => handleDragStart(cat.id, idx)}
+                            onDragOver={e => handleDragOver(e, cat.id, idx)}
+                            onDrop={() => handleDrop(cat.id)}
+                          >
+                            <td className="py-2 px-1 w-6 text-slate-300 cursor-grab active:cursor-grabbing text-center select-none">⠿</td>
                             <td className="py-2 px-2 w-12">
                               {p.image
                                 ? <img src={p.image} alt={p.name} className="w-10 h-10 object-cover rounded-lg" />
@@ -857,6 +941,39 @@ export default function ManagePage() {
         </div>
       )}
 
+      {/* Copy Products Modal */}
+      {copyModal && (
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <h2 className="font-bold text-slate-800 mb-1">Copy สินค้าจากเกมอื่น</h2>
+            <p className="text-xs text-slate-400 mb-4">จะ copy ชื่อและราคาสินค้าทุกรายการ (ยกเว้น stock และรูป)</p>
+            <label className="block text-sm text-slate-500 mb-1.5">เลือกเกมต้นทาง</label>
+            <select
+              value={copySourceId}
+              onChange={e => setCopySourceId(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm mb-5 focus:outline-none focus:border-blue-500"
+            >
+              <option value="">-- เลือกเกม --</option>
+              {categories.filter(c => c.id !== copyModal).map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <div className="flex gap-2.5">
+              <button
+                onClick={copyProducts}
+                disabled={!copySourceId}
+                className="flex-1 bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-200 disabled:text-slate-400 text-white py-2.5 rounded-lg cursor-pointer font-medium"
+              >
+                Copy
+              </button>
+              <button onClick={() => setCopyModal(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-600 py-2.5 rounded-lg cursor-pointer">
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ID-PASS Dashboard Modal */}
       {dashboardCat && (() => {
         const { products = [], uniqueCosts = [] } = dashboardData || {}
@@ -866,7 +983,7 @@ export default function ManagePage() {
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
                 <div>
                   <h2 className="font-bold text-slate-800">Dashboard สต็อก — {dashboardCat.name}</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">คลิกเซลล์เพื่อแก้ไข · ต้นทุนเรียงจากน้อยไปมาก</p>
+                  <p className="text-xs text-slate-400 mt-0.5">คลิกเซลล์เพื่อแก้ไข · คลิกต้นทุนที่หัวตารางเพื่อแก้ไข</p>
                 </div>
                 <button
                   onClick={() => setDashboardCat(null)}
@@ -886,7 +1003,31 @@ export default function ManagePage() {
                         <th className="pb-2.5 px-3 font-medium whitespace-nowrap">ราคา ฿</th>
                         <th className="pb-2.5 px-3 font-medium whitespace-nowrap">ราคา $</th>
                         {uniqueCosts.map(cost => (
-                          <th key={cost} className="pb-2.5 px-3 font-medium whitespace-nowrap text-right">฿{cost}</th>
+                          <th key={cost} className="pb-2.5 px-3 font-medium whitespace-nowrap text-right">
+                            {dashEditCost?.old_cost === cost ? (
+                              <div className="flex items-center gap-1 justify-end">
+                                <span className="text-slate-400 text-xs">฿</span>
+                                <input
+                                  type="number" step="0.01" min="0"
+                                  value={dashEditCost.value}
+                                  onChange={e => setDashEditCost(p => ({ ...p, value: e.target.value }))}
+                                  onKeyDown={e => { if (e.key === 'Enter') saveDashCost(); if (e.key === 'Escape') setDashEditCost(null) }}
+                                  className="w-20 border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:border-yellow-500"
+                                  autoFocus
+                                />
+                                <button onClick={saveDashCost} className="text-green-600 hover:text-green-800 cursor-pointer">✓</button>
+                                <button onClick={() => setDashEditCost(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">✕</button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => { setDashEditCost({ old_cost: cost, value: cost }); setDashEditLot(null); setDashEditUsd(null) }}
+                                className="hover:bg-yellow-50 rounded px-2 py-0.5 cursor-pointer text-yellow-700"
+                                title="คลิกเพื่อแก้ไขต้นทุน"
+                              >
+                                ฿{cost}
+                              </button>
+                            )}
+                          </th>
                         ))}
                         <th className="pb-2.5 px-2"></th>
                       </tr>
