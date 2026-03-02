@@ -278,8 +278,46 @@ initDB().then(() => {
   })
 
   function usesEmailCredits(fill_type) {
-    return ['EMAIL', 'RAZER', 'OTHER_EMAIL'].includes(fill_type)
+    if (['EMAIL', 'RAZER', 'OTHER_EMAIL'].includes(fill_type)) return true
+    const r = db.exec('SELECT COUNT(*) FROM email_types WHERE key=?', [fill_type])
+    return (r[0]?.values[0][0] || 0) > 0
   }
+
+  function getCustomEmailBehavior(fill_type) {
+    const r = db.exec('SELECT behavior FROM email_types WHERE key=?', [fill_type])
+    return r[0]?.values[0][0] || 'EMAIL'
+  }
+
+  // --- Email Types (custom) ---
+  app.get('/email-types', requireLogin, (req, res) => {
+    const result = db.exec('SELECT id, key, label, color, behavior FROM email_types ORDER BY id ASC')
+    const types = result[0] ? result[0].values.map(row => ({
+      id: row[0], key: row[1], label: row[2], color: row[3], behavior: row[4] || 'EMAIL',
+    })) : []
+    res.json(types)
+  })
+
+  app.post('/email-types', requireLogin, (req, res) => {
+    const { key, label, color, behavior } = req.body
+    if (!label?.trim()) return res.status(400).json({ error: 'กรุณากรอกชื่อประเภท' })
+    const k = key?.trim() || label.trim()
+    const beh = behavior === 'RAZER' ? 'RAZER' : 'EMAIL'
+    try {
+      db.run('INSERT INTO email_types (key, label, color, behavior) VALUES (?,?,?,?)',
+        [k, label.trim(), color || 'bg-slate-100 text-slate-700', beh])
+      const r = db.exec('SELECT last_insert_rowid()')
+      save()
+      res.json({ id: r[0].values[0][0], key: k, label: label.trim(), color: color || 'bg-slate-100 text-slate-700', behavior: beh })
+    } catch {
+      res.status(400).json({ error: 'ชื่อประเภทนี้มีอยู่แล้ว' })
+    }
+  })
+
+  app.delete('/email-types/:id', requireLogin, (req, res) => {
+    db.run('DELETE FROM email_types WHERE id=?', [req.params.id])
+    save()
+    res.json({ message: 'ลบประเภทสำเร็จ' })
+  })
 
   // คำนวณเครดิตต่อชิ้นจากชื่อสินค้า เช่น "50$" หรือ "แพ็ก 50$" → 50
   // ถ้าไม่พบ pattern ใช้ราคา ฿ แทน
@@ -303,7 +341,7 @@ initDB().then(() => {
   }
 
   app.post('/orders', requireLogin, (req, res) => {
-    const { items, transfer_amount, transfer_time } = req.body
+    const { items, transfer_amount, transfer_time, channel } = req.body
 
     // Validate stock before proceeding
     const emailPendingDeductions = {} // track total deductions per email_id in this order
@@ -343,9 +381,14 @@ initDB().then(() => {
             return res.status(400).json({ error: `สินค้า "${name}" มีสต็อกไม่พอ (เหลือ ${totalStock} ชิ้น)` })
         } else if (usesEmailCredits(fill_type)) {
           if (!item.email_id) return res.status(400).json({ error: `กรุณาเลือก Email สำหรับ "${name}"` })
-          if (fill_type === 'RAZER' && !item.credit_amount)
+          const isCustom = !['EMAIL', 'RAZER', 'OTHER_EMAIL'].includes(fill_type)
+          const customBehavior = isCustom ? getCustomEmailBehavior(fill_type) : null
+          const isRazerLike = fill_type === 'RAZER' || customBehavior === 'RAZER'
+          if (isRazerLike && !item.credit_amount)
             return res.status(400).json({ error: `กรุณากรอกจำนวนเครดิตสำหรับ "${name}"` })
-          const needed = fill_type === 'RAZER' ? (item.credit_amount || 0) : parseCreditPerUnit(name, price) * item.quantity
+          const needed = isRazerLike ? (item.credit_amount || 0)
+            : isCustom ? item.quantity  // custom type: 1 credit per fill
+            : parseCreditPerUnit(name, price) * item.quantity
           const emailRes = db.exec('SELECT credits FROM emails WHERE id=? AND fill_type=?', [item.email_id, fill_type])
           if (!emailRes[0]) return res.status(400).json({ error: `ไม่พบ Email ที่เลือกสำหรับ "${name}"` })
           const emailCredits = emailRes[0].values[0][0]
@@ -366,8 +409,8 @@ initDB().then(() => {
       total += result[0].values[0][0] * item.quantity
     }
 
-    db.run('INSERT INTO orders (total, transfer_amount, transfer_time) VALUES (?, ?, ?)',
-      [total, transfer_amount || null, transfer_time || null])
+    db.run('INSERT INTO orders (total, transfer_amount, transfer_time, channel) VALUES (?, ?, ?, ?)',
+      [total, transfer_amount || null, transfer_time || null, channel || null])
     const orderResult = db.exec('SELECT last_insert_rowid()')
     const orderId = orderResult[0].values[0][0]
 
@@ -439,7 +482,12 @@ initDB().then(() => {
             }
           }
         } else if (usesEmailCredits(fill_type)) {
-          creditDeducted = fill_type === 'RAZER' ? item.credit_amount : parseCreditPerUnit(productName, price) * item.quantity
+          const isCustom = !['EMAIL', 'RAZER', 'OTHER_EMAIL'].includes(fill_type)
+          const customBehavior = isCustom ? getCustomEmailBehavior(fill_type) : null
+          const isRazerLike = fill_type === 'RAZER' || customBehavior === 'RAZER'
+          creditDeducted = isRazerLike ? item.credit_amount
+            : isCustom ? item.quantity  // custom type: 1 credit per fill
+            : parseCreditPerUnit(productName, price) * item.quantity
           emailIdUsed = item.email_id
           deductFromEmail(item.email_id, creditDeducted)
         } else {
@@ -458,10 +506,10 @@ initDB().then(() => {
   })
 
   app.get('/orders', requireLogin, (req, res) => {
-    const result = db.exec('SELECT id, total, created_at, transfer_amount, transfer_time FROM orders ORDER BY transfer_time DESC NULLS LAST, id DESC')
+    const result = db.exec('SELECT id, total, created_at, transfer_amount, transfer_time, channel FROM orders ORDER BY transfer_time DESC NULLS LAST, id DESC')
     const orders = result[0] ? result[0].values.map(row => ({
       id: row[0], total: row[1], created_at: row[2],
-      transfer_amount: row[3], transfer_time: row[4]
+      transfer_amount: row[3], transfer_time: row[4], channel: row[5] || null
     })) : []
     res.json(orders)
   })
@@ -619,7 +667,7 @@ initDB().then(() => {
     const result = db.exec(`
       SELECT o.id, o.transfer_time, o.created_at, o.transfer_amount, o.total,
              p.name, oi.quantity, oi.price, oi.credit_deducted, e.email, oi.price_usd_used, c.name, oi.cost_used,
-             COALESCE(oi.lot_cost_used, pl.cost) as lot_cost_used, oi.bundle_lot_info
+             COALESCE(oi.lot_cost_used, pl.cost) as lot_cost_used, oi.bundle_lot_info, o.channel
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       JOIN products p ON p.id = oi.product_id
@@ -635,7 +683,7 @@ initDB().then(() => {
       credit_deducted: row[8], email_used: row[9] || null,
       price_usd_used: row[10] ?? null, category_name: row[11] || null,
       cost_used: row[12] ?? null, lot_cost_used: row[13] ?? null,
-      bundle_lot_info: row[14] ?? null,
+      bundle_lot_info: row[14] ?? null, channel: row[15] || null,
     })) : []
     res.json(items)
   })

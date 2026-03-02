@@ -11,14 +11,15 @@ const TYPE_CONFIG = {
 
 const TYPE_BUTTONS = [
   { key: 'UID',     label: 'เติมผ่าน UID',      activeCls: 'bg-slate-600 text-white border-transparent' },
-  { key: 'EMAIL',   label: 'เติมผ่าน Email',     activeCls: 'bg-blue-500 text-white border-transparent' },
+  { key: 'EMAIL',   label: 'เติมผ่าน Apple ID',   activeCls: 'bg-blue-500 text-white border-transparent' },
   { key: 'RAZER',   label: 'เติมผ่าน Razer',     activeCls: 'bg-green-500 text-white border-transparent' },
   { key: 'OTHER',   label: 'อื่นๆ',               activeCls: 'bg-orange-500 text-white border-transparent' },
   { key: 'ID_PASS', label: 'ID-PASS (Stock 77)', activeCls: 'bg-yellow-500 text-white border-transparent' },
 ]
 
-function usesEmailCredits(fill_type) {
-  return ['EMAIL', 'RAZER', 'OTHER_EMAIL'].includes(fill_type)
+function usesEmailCredits(fill_type, customTypes = []) {
+  if (['EMAIL', 'RAZER', 'OTHER_EMAIL'].includes(fill_type)) return true
+  return customTypes.some(t => t.key === fill_type)
 }
 
 function isIDPass(fill_type) {
@@ -30,7 +31,7 @@ function computedFillType(typeKey, otherStock) {
   return typeKey
 }
 
-function TypeButtons({ typeKey, onTypeKey, otherStock, onOtherStock }) {
+function TypeButtons({ typeKey, onTypeKey, otherStock, onOtherStock, customTypes = [] }) {
   return (
     <>
       <div className="flex flex-wrap gap-1.5">
@@ -41,6 +42,15 @@ function TypeButtons({ typeKey, onTypeKey, otherStock, onOtherStock }) {
             className={`px-3 py-1.5 rounded-lg text-sm cursor-pointer border transition-colors ${typeKey === key ? activeCls : 'bg-white text-slate-500 border-slate-300 hover:border-slate-400'}`}
           >
             {label}
+          </button>
+        ))}
+        {customTypes.map(ct => (
+          <button
+            key={ct.key}
+            onClick={() => onTypeKey(ct.key)}
+            className={`px-3 py-1.5 rounded-lg text-sm cursor-pointer border transition-colors ${typeKey === ct.key ? 'bg-sky-500 text-white border-transparent' : 'bg-white text-slate-500 border-slate-300 hover:border-slate-400'}`}
+          >
+            เติมผ่าน {ct.label}
           </button>
         ))}
       </div>
@@ -65,6 +75,7 @@ function TypeButtons({ typeKey, onTypeKey, otherStock, onOtherStock }) {
 export default function ManagePage() {
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
+  const [customEmailTypes, setCustomEmailTypes] = useState([])
 
   // Add game modal
   const [showAddGame, setShowAddGame] = useState(false)
@@ -101,13 +112,23 @@ export default function ManagePage() {
   const [dashNewLot, setDashNewLot] = useState(null)     // { productId, cost, stock }
 
   async function loadAll() {
-    const [p, c] = await Promise.all([
+    const [p, c, et] = await Promise.all([
       fetch('/products').then(r => r.json()),
       fetch('/categories').then(r => r.json()),
+      fetch('/email-types').then(r => r.json()),
     ])
     setProducts(p)
     setCategories(c)
+    setCustomEmailTypes(et)
   }
+
+  const allTypeConfig = useMemo(() => {
+    const result = { ...TYPE_CONFIG }
+    customEmailTypes.forEach(t => {
+      result[t.key] = { label: t.label, cls: t.color || 'bg-sky-100 text-sky-700' }
+    })
+    return result
+  }, [customEmailTypes])
 
   useEffect(() => { loadAll() }, [])
 
@@ -178,7 +199,7 @@ export default function ManagePage() {
     if (Number(form.price) < 0) { err('ราคาต้องไม่ติดลบ'); return }
 
     const isIDPassCat = isIDPass(cat.fill_type)
-    const needsStock = !usesEmailCredits(cat.fill_type) && !isIDPassCat
+    const needsStock = !usesEmailCredits(cat.fill_type, customEmailTypes) && !isIDPassCat
     if (needsStock && !form.unlimitedStock && form.stock === '') { err('กรุณากรอกสต็อก'); return }
     if (needsStock && !form.unlimitedStock && Number(form.stock) < 0) { err('สต็อกต้องไม่ติดลบ'); return }
 
@@ -228,7 +249,7 @@ export default function ManagePage() {
     const { id, name, price, stock, category_id, fill_type, price_usd, cost } = editModal
     if (!name || price === '') return
 
-    const needsStock = !usesEmailCredits(fill_type) && !isIDPass(fill_type)
+    const needsStock = !usesEmailCredits(fill_type, customEmailTypes) && !isIDPass(fill_type)
     await fetch(`/products/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -386,8 +407,8 @@ export default function ManagePage() {
           </div>
         )
         : grouped.map(cat => {
-          const fillConfig = TYPE_CONFIG[cat.fill_type] || TYPE_CONFIG['UID']
-          const needsStock = !usesEmailCredits(cat.fill_type)
+          const fillConfig = allTypeConfig[cat.fill_type] || allTypeConfig['UID']
+          const needsStock = !usesEmailCredits(cat.fill_type, customEmailTypes)
           const form = getAddForm(cat.id)
           const isExpanded = expandedCard === cat.id
 
@@ -736,6 +757,7 @@ export default function ManagePage() {
               <TypeButtons
                 typeKey={newGameTypeKey} onTypeKey={setNewGameTypeKey}
                 otherStock={newGameOtherStock} onOtherStock={setNewGameOtherStock}
+                customTypes={customEmailTypes}
               />
             </div>
             {addGameError && <p className="text-red-500 text-sm mb-3">{addGameError}</p>}
@@ -772,6 +794,7 @@ export default function ManagePage() {
               <TypeButtons
                 typeKey={editGameTypeKey} onTypeKey={setEditGameTypeKey}
                 otherStock={editGameOtherStock} onOtherStock={setEditGameOtherStock}
+                customTypes={customEmailTypes}
               />
             </div>
             <div className="flex gap-2.5">
@@ -956,7 +979,7 @@ export default function ManagePage() {
                 className={`w-full ${inputCls}`}
               />
             </div>
-            {!usesEmailCredits(editModal.fill_type) && !isIDPass(editModal.fill_type) && !editModal.is_bundle && (
+            {!usesEmailCredits(editModal.fill_type, customEmailTypes) && !isIDPass(editModal.fill_type) && !editModal.is_bundle && (
               <div className="mb-3.5">
                 <label className="block text-sm text-slate-500 mb-1.5">ราคาทุน (฿)</label>
                 <input
@@ -968,7 +991,7 @@ export default function ManagePage() {
                 />
               </div>
             )}
-            {!usesEmailCredits(editModal.fill_type) && !isIDPass(editModal.fill_type) && (
+            {!usesEmailCredits(editModal.fill_type, customEmailTypes) && !isIDPass(editModal.fill_type) && (
               <div className="mb-3.5">
                 <label className="block text-sm text-slate-500 mb-1.5">สต็อก</label>
                 <div className="flex items-center gap-2">
@@ -991,7 +1014,7 @@ export default function ManagePage() {
                 </div>
               </div>
             )}
-            {!usesEmailCredits(editModal.fill_type) && (
+            {!usesEmailCredits(editModal.fill_type, customEmailTypes) && (
               <div className="mb-3.5">
                 <label className="block text-sm text-slate-500 mb-1.5">ราคา $ (ราคาขายในหน่วย USD)</label>
                 <input

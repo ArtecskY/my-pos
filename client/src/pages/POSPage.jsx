@@ -6,8 +6,9 @@ function nowLocalTime() {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-function usesEmailCredits(fill_type) {
-  return ['EMAIL', 'RAZER', 'OTHER_EMAIL'].includes(fill_type)
+function usesEmailCredits(fill_type, customTypes = []) {
+  if (['EMAIL', 'RAZER', 'OTHER_EMAIL'].includes(fill_type)) return true
+  return customTypes.some(t => t.key === fill_type)
 }
 
 // คำนวณเครดิตต่อชิ้นจากชื่อสินค้า เช่น "50$" หรือ "แพ็ก 50$" → 50
@@ -16,6 +17,22 @@ function creditPerUnit(item) {
   const m = /(\d+(?:\.\d+)?)\$/.exec(item.name)
   return m ? Number(m[1]) : item.price
 }
+
+function isRazerBehavior(fill_type, emailTypes = []) {
+  if (fill_type === 'RAZER') return true
+  const et = emailTypes.find(t => t.key === fill_type)
+  return et?.behavior === 'RAZER'
+}
+
+// custom type (ไม่ใช่ built-in) ใช้ 1 credit ต่อ 1 fill
+// built-in EMAIL/OTHER_EMAIL ใช้ creditPerUnit (ตาม $X หรือราคา)
+const EMAIL_BUILTINS = ['EMAIL', 'OTHER_EMAIL']
+function creditsNeeded(item, emailTypes, qty) {
+  const q = qty ?? item.quantity
+  if (EMAIL_BUILTINS.includes(item.fill_type)) return creditPerUnit(item) * q
+  return q // custom type: 1 credit per fill
+}
+
 
 let splitCounter = 0
 function newSplitKey(itemId) {
@@ -40,12 +57,15 @@ export default function POSPage() {
 
   // { [itemId]: [{splitKey, quantity}] } — null / ไม่มี key = ยังไม่ split
   const [splitState, setSplitState] = useState({})
+  const [channel, setChannel] = useState(null)
+  const [emailTypes, setEmailTypes] = useState([])
 
   useEffect(() => {
     Promise.all([
       fetch('/products').then(r => r.json()),
       fetch('/categories').then(r => r.json()),
-    ]).then(([p, c]) => { setProducts(p); setCategories(c) })
+      fetch('/email-types').then(r => r.json()),
+    ]).then(([p, c, et]) => { setProducts(p); setCategories(c); setEmailTypes(et) })
   }, [])
 
   const grouped = categories
@@ -86,7 +106,7 @@ export default function POSPage() {
 
   // ---- Split helpers ----
   async function fetchEmailsFor(key, fill_type, needed) {
-    const data = await fetch(`/emails/available?fill_type=${fill_type}&needed=${needed}`).then(r => r.json())
+    const data = await fetch(`/emails/available?fill_type=${encodeURIComponent(fill_type)}&needed=${needed}`).then(r => r.json())
     setAvailableEmails(prev => ({ ...prev, [key]: data }))
     if (data.length === 1) setSelectedEmails(prev => ({ ...prev, [key]: String(data[0].id) }))
   }
@@ -101,8 +121,8 @@ export default function POSPage() {
     ]
     setSplitState(prev => ({ ...prev, [item.id]: splits }))
     splits.forEach(s => {
-      if (item.fill_type !== 'RAZER') {
-        fetchEmailsFor(s.splitKey, item.fill_type, creditPerUnit(item) * s.quantity)
+      if (!isRazerBehavior(item.fill_type, emailTypes)) {
+        fetchEmailsFor(s.splitKey, item.fill_type, creditsNeeded(item, emailTypes, s.quantity))
       }
     })
   }
@@ -117,8 +137,8 @@ export default function POSPage() {
       ...prev,
       [item.id]: [...prev[item.id], { splitKey, quantity: 1 }],
     }))
-    if (item.fill_type !== 'RAZER') {
-      fetchEmailsFor(splitKey, item.fill_type, creditPerUnit(item) * 1)
+    if (!isRazerBehavior(item.fill_type, emailTypes)) {
+      fetchEmailsFor(splitKey, item.fill_type, creditsNeeded(item, emailTypes, 1))
     }
     // clear selected email for new entry
     setSelectedEmails(prev => { const n = { ...prev }; delete n[splitKey]; return n })
@@ -145,9 +165,9 @@ export default function POSPage() {
     }))
     // re-fetch emails ด้วย quantity ใหม่ และล้าง email ที่เลือกไว้
     const item = cart.find(i => i.id === itemId)
-    if (item && item.fill_type !== 'RAZER') {
+    if (item && !isRazerBehavior(item.fill_type, emailTypes)) {
       setSelectedEmails(prev => { const n = { ...prev }; delete n[splitKey]; return n })
-      fetchEmailsFor(splitKey, item.fill_type, creditPerUnit(item) * newQty)
+      fetchEmailsFor(splitKey, item.fill_type, creditsNeeded(item, emailTypes, newQty))
     }
   }
 
@@ -163,8 +183,8 @@ export default function POSPage() {
     setShowPayModal(true)
     // pre-fetch สำหรับ EMAIL/OTHER_EMAIL (ก่อน split)
     for (const item of cart) {
-      if (['EMAIL', 'OTHER_EMAIL'].includes(item.fill_type)) {
-        fetchEmailsFor(item.id, item.fill_type, creditPerUnit(item) * item.quantity)
+      if (usesEmailCredits(item.fill_type, emailTypes) && !isRazerBehavior(item.fill_type, emailTypes)) {
+        fetchEmailsFor(item.id, item.fill_type, creditsNeeded(item, emailTypes))
       }
     }
   }
@@ -173,12 +193,12 @@ export default function POSPage() {
     const orderItems = []
 
     for (const item of cart) {
-      if (usesEmailCredits(item.fill_type)) {
+      if (usesEmailCredits(item.fill_type, emailTypes)) {
         const splits = splitState[item.id]
         if (splits && splits.length > 0) {
           // validate + build split entries
           for (const s of splits) {
-            if (item.fill_type === 'RAZER' && (!razerAmounts[s.splitKey] || Number(razerAmounts[s.splitKey]) <= 0)) {
+            if (isRazerBehavior(item.fill_type, emailTypes) && (!razerAmounts[s.splitKey] || Number(razerAmounts[s.splitKey]) <= 0)) {
               alert(`กรุณากรอกจำนวนเครดิตสำหรับ "${item.name}"`); return
             }
             if (!selectedEmails[s.splitKey]) {
@@ -188,12 +208,12 @@ export default function POSPage() {
               product_id: item.id,
               quantity: s.quantity,
               email_id: Number(selectedEmails[s.splitKey]),
-              ...(item.fill_type === 'RAZER' ? { credit_amount: Number(razerAmounts[s.splitKey]) } : {}),
+              ...(isRazerBehavior(item.fill_type, emailTypes) ? { credit_amount: Number(razerAmounts[s.splitKey]) } : {}),
             })
           }
         } else {
           // ไม่ split — ใช้ item.id เป็น key เหมือนเดิม
-          if (item.fill_type === 'RAZER' && (!razerAmounts[item.id] || Number(razerAmounts[item.id]) <= 0)) {
+          if (isRazerBehavior(item.fill_type, emailTypes) && (!razerAmounts[item.id] || Number(razerAmounts[item.id]) <= 0)) {
             alert(`กรุณากรอกจำนวนเครดิตที่จะตัดสำหรับ "${item.name}"`); return
           }
           if (!selectedEmails[item.id]) {
@@ -203,7 +223,7 @@ export default function POSPage() {
             product_id: item.id,
             quantity: item.quantity,
             email_id: Number(selectedEmails[item.id]),
-            ...(item.fill_type === 'RAZER' ? { credit_amount: Number(razerAmounts[item.id]) } : {}),
+            ...(isRazerBehavior(item.fill_type, emailTypes) ? { credit_amount: Number(razerAmounts[item.id]) } : {}),
           })
         }
       } else {
@@ -218,6 +238,7 @@ export default function POSPage() {
         items: orderItems,
         transfer_amount: transferAmount ? Number(transferAmount) : null,
         transfer_time: transferTime || null,
+        channel: channel || null,
       }),
     })
     const order = await res.json()
@@ -225,6 +246,7 @@ export default function POSPage() {
     setShowPayModal(false)
     setReceipt(order)
     setCart([])
+    setChannel(null)
     fetch('/products').then(r => r.json()).then(setProducts)
   }
 
@@ -356,6 +378,28 @@ export default function POSPage() {
         {cart.length > 0 && (
           <div className="text-right font-bold text-blue-900 mt-3 text-lg">รวม ฿{total}</div>
         )}
+        {cart.length > 0 && (
+          <div className="mt-3">
+            <p className="text-xs text-slate-400 mb-1.5">ช่องทาง</p>
+            <div className="flex gap-2">
+              {['หน้าบ้าน', 'หลังบ้าน'].map(ch => (
+                <button
+                  key={ch}
+                  onClick={() => setChannel(prev => prev === ch ? null : ch)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium cursor-pointer border transition-colors ${
+                    channel === ch
+                      ? ch === 'หน้าบ้าน'
+                        ? 'bg-emerald-500 text-white border-emerald-500'
+                        : 'bg-purple-500 text-white border-purple-500'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  {ch}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <button
           onClick={openPayModal}
           className="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg cursor-pointer font-medium"
@@ -386,9 +430,9 @@ export default function POSPage() {
             </div>
 
             {/* Email-credit items */}
-            {cart.some(i => usesEmailCredits(i.fill_type)) && (
+            {cart.some(i => usesEmailCredits(i.fill_type, emailTypes)) && (
               <div className="mb-6 space-y-3">
-                {cart.filter(i => usesEmailCredits(i.fill_type)).map(item => {
+                {cart.filter(i => usesEmailCredits(i.fill_type, emailTypes)).map(item => {
                   const splits = splitState[item.id]
                   return (
                     <div key={item.id} className="border border-blue-200 rounded-xl p-4 bg-blue-50 space-y-3">
@@ -445,7 +489,7 @@ export default function POSPage() {
                               </div>
 
                               {/* Razer credit input per split */}
-                              {item.fill_type === 'RAZER' && (
+                              {isRazerBehavior(item.fill_type, emailTypes) && (
                                 <div className="mb-2">
                                   <input type="number" step="0.01" min="0"
                                     value={razerAmounts[s.splitKey] || ''}
@@ -463,11 +507,11 @@ export default function POSPage() {
                                 </div>
                               )}
 
-                              {(item.fill_type !== 'RAZER' || Number(razerAmounts[s.splitKey]) > 0) && (
+                              {(!isRazerBehavior(item.fill_type, emailTypes) || Number(razerAmounts[s.splitKey]) > 0) && (
                                 <EmailSelector
                                   stateKey={s.splitKey}
                                   fill_type={item.fill_type}
-                                  neededLabel={item.fill_type !== 'RAZER' ? `${(creditPerUnit(item) * s.quantity).toFixed(2)} เครดิต` : null}
+                                  neededLabel={!isRazerBehavior(item.fill_type, emailTypes) ? `${creditsNeeded(item, emailTypes, s.quantity).toFixed(2)} เครดิต` : null}
                                 />
                               )}
                             </div>
@@ -484,7 +528,7 @@ export default function POSPage() {
                       ) : (
                         /* --- Non-split mode --- */
                         <>
-                          {item.fill_type === 'RAZER' && (
+                          {isRazerBehavior(item.fill_type, emailTypes) && (
                             <div>
                               <label className="block text-xs text-slate-500 mb-1">จำนวนเครดิตที่จะตัด</label>
                               <input type="number" step="0.01" min="0"
@@ -502,11 +546,11 @@ export default function POSPage() {
                               />
                             </div>
                           )}
-                          {(item.fill_type !== 'RAZER' || Number(razerAmounts[item.id]) > 0) && (
+                          {(!isRazerBehavior(item.fill_type, emailTypes) || Number(razerAmounts[item.id]) > 0) && (
                             <EmailSelector
                               stateKey={item.id}
                               fill_type={item.fill_type}
-                              neededLabel={item.fill_type !== 'RAZER' ? `${(creditPerUnit(item) * item.quantity).toFixed(2)} เครดิต` : null}
+                              neededLabel={!isRazerBehavior(item.fill_type, emailTypes) ? `${creditsNeeded(item, emailTypes, item.quantity).toFixed(2)} เครดิต` : null}
                             />
                           )}
                         </>

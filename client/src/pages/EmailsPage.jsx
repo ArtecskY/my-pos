@@ -1,23 +1,27 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 
-const FILL_TYPE_CONFIG = {
-  'EMAIL':       { label: 'Apple ID',       cls: 'bg-blue-100 text-blue-700' },
-  'RAZER':       { label: 'Razer',          cls: 'bg-green-100 text-green-700' },
-  'OTHER_EMAIL': { label: 'อื่นๆ · Email', cls: 'bg-purple-100 text-purple-700' },
+const BUILTIN_TYPES = {
+  'EMAIL':       { label: 'Apple ID',       color: 'bg-blue-100 text-blue-700' },
+  'RAZER':       { label: 'Razer',          color: 'bg-green-100 text-green-700' },
+  'OTHER_EMAIL': { label: 'อื่นๆ · Email', color: 'bg-purple-100 text-purple-700' },
 }
 
-const FILTER_TYPES = [
-  { key: '',            label: 'ทั้งหมด' },
-  { key: 'EMAIL',       label: 'Apple ID' },
-  { key: 'RAZER',       label: 'Razer' },
-  { key: 'OTHER_EMAIL', label: 'อื่นๆ · Email' },
+const CUSTOM_COLORS = [
+  'bg-orange-100 text-orange-700',
+  'bg-teal-100 text-teal-700',
+  'bg-pink-100 text-pink-700',
+  'bg-indigo-100 text-indigo-700',
+  'bg-amber-100 text-amber-700',
+  'bg-cyan-100 text-cyan-700',
+  'bg-rose-100 text-rose-700',
+  'bg-lime-100 text-lime-700',
 ]
 
-function FillTypeBadge({ fill_type }) {
-  const cfg = FILL_TYPE_CONFIG[fill_type]
+function FillTypeBadge({ fill_type, allTypes }) {
+  const cfg = allTypes[fill_type]
   if (!cfg) return null
   return (
-    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${cfg.cls}`}>
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${cfg.color}`}>
       {cfg.label}
     </span>
   )
@@ -47,11 +51,18 @@ function CopyCell({ value, masked, maskChar = '••••••••' }) {
 
 export default function EmailsPage() {
   const [emails, setEmails] = useState([])
+  const [customTypes, setCustomTypes] = useState([])
   const [form, setForm] = useState({ email: '', password: '', link_sms: '', credits: '', cost: '', fill_type: '', note: '' })
   const [formError, setFormError] = useState('')
   const [showPass, setShowPass] = useState({})
   const [editModal, setEditModal] = useState(null)
   const [editShowPass, setEditShowPass] = useState(false)
+
+  // new type form
+  const [showNewType, setShowNewType] = useState(false)
+  const [newTypeLabel, setNewTypeLabel] = useState('')
+  const [newTypeBehavior, setNewTypeBehavior] = useState('EMAIL')
+  const [newTypeError, setNewTypeError] = useState('')
 
   // Filter state
   const [hideZero, setHideZero] = useState(false)
@@ -59,10 +70,24 @@ export default function EmailsPage() {
   const [search, setSearch] = useState('')
 
   async function loadAll() {
-    setEmails(await fetch('/emails').then(r => r.json()))
+    const [emailData, typeData] = await Promise.all([
+      fetch('/emails').then(r => r.json()),
+      fetch('/email-types').then(r => r.json()),
+    ])
+    setEmails(emailData)
+    setCustomTypes(typeData)
   }
 
   useEffect(() => { loadAll() }, [])
+
+  // allTypes = builtin + custom รวมกัน
+  const allTypes = useMemo(() => {
+    const combined = { ...BUILTIN_TYPES }
+    customTypes.forEach((t, idx) => {
+      combined[t.key] = { label: t.label, color: t.color || CUSTOM_COLORS[idx % CUSTOM_COLORS.length] }
+    })
+    return combined
+  }, [customTypes])
 
   // Filtered email list
   const filtered = useMemo(() => emails.filter(e => {
@@ -72,11 +97,15 @@ export default function EmailsPage() {
     return true
   }), [emails, hideZero, filterType, search])
 
-  // Filter types present in the data
-  const presentTypes = useMemo(() => {
-    const types = new Set(emails.map(e => e.fill_type).filter(Boolean))
-    return FILTER_TYPES.filter(f => f.key === '' || types.has(f.key))
-  }, [emails])
+  // Filter tabs — ประเภทที่มีอยู่จริงในข้อมูล + ทั้งหมด
+  const presentFilterTypes = useMemo(() => {
+    const used = new Set(emails.map(e => e.fill_type).filter(Boolean))
+    const tabs = [{ key: '', label: 'ทั้งหมด' }]
+    Object.entries(allTypes).forEach(([key, cfg]) => {
+      if (used.has(key)) tabs.push({ key, label: cfg.label })
+    })
+    return tabs
+  }, [emails, allTypes])
 
   async function addEmail() {
     setFormError('')
@@ -127,7 +156,60 @@ export default function EmailsPage() {
     loadAll()
   }
 
+  async function createType() {
+    setNewTypeError('')
+    if (!newTypeLabel.trim()) { setNewTypeError('กรุณากรอกชื่อประเภท'); return }
+    const colorIdx = customTypes.length % CUSTOM_COLORS.length
+    const res = await fetch('/email-types', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        key: newTypeLabel.trim(),
+        label: newTypeLabel.trim(),
+        color: CUSTOM_COLORS[colorIdx],
+        behavior: newTypeBehavior,
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setNewTypeError(data.error); return }
+    setNewTypeLabel('')
+    setNewTypeBehavior('EMAIL')
+    setShowNewType(false)
+    loadAll()
+  }
+
+  async function deleteType(id, key) {
+    if (!confirm(`ลบประเภท "${key}"? Email ที่ใช้ประเภทนี้อยู่จะไม่ถูกกระทบ`)) return
+    await fetch(`/email-types/${id}`, { method: 'DELETE' })
+    loadAll()
+  }
+
   const inputCls = 'border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500'
+
+  function TypeSelect({ value, onChange, className }) {
+    return (
+      <div className="relative flex gap-1.5">
+        <select
+          className={`flex-1 ${inputCls} text-slate-600 ${className ?? ''}`}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+        >
+          <option value="">— เลือกประเภท Email —</option>
+          {Object.entries(allTypes).map(([key, cfg]) => (
+            <option key={key} value={key}>{cfg.label}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => { setShowNewType(true); setNewTypeLabel(''); setNewTypeError('') }}
+          className="px-3 py-2.5 border border-dashed border-slate-300 rounded-lg text-slate-400 hover:border-blue-400 hover:text-blue-500 text-sm cursor-pointer whitespace-nowrap transition-colors"
+          title="สร้างประเภทใหม่"
+        >
+          + ประเภท
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5">
@@ -171,16 +253,7 @@ export default function EmailsPage() {
             value={form.link_sms}
             onChange={e => setForm(f => ({ ...f, link_sms: e.target.value }))}
           />
-          <select
-            className={`${inputCls} text-slate-600`}
-            value={form.fill_type}
-            onChange={e => setForm(f => ({ ...f, fill_type: e.target.value }))}
-          >
-            <option value="">— เลือกประเภท Email —</option>
-            {Object.entries(FILL_TYPE_CONFIG).map(([key, cfg]) => (
-              <option key={key} value={key}>{cfg.label}</option>
-            ))}
-          </select>
+          <TypeSelect value={form.fill_type} onChange={v => setForm(f => ({ ...f, fill_type: v }))} />
           <textarea
             className={`col-span-2 ${inputCls} resize-none`}
             placeholder="หมายเหตุ (ไม่บังคับ)"
@@ -198,6 +271,25 @@ export default function EmailsPage() {
         </button>
       </div>
 
+      {/* Custom type tags */}
+      {customTypes.length > 0 && (
+        <div className="bg-white rounded-xl px-6 py-4 shadow-sm">
+          <p className="text-xs text-slate-400 font-medium uppercase tracking-wide mb-3">ประเภทที่สร้างเอง</p>
+          <div className="flex flex-wrap gap-2">
+            {customTypes.map((t, idx) => (
+              <span key={t.id} className={`inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full text-xs font-medium ${t.color || CUSTOM_COLORS[idx % CUSTOM_COLORS.length]}`}>
+                {t.label}
+                <button
+                  onClick={() => deleteType(t.id, t.label)}
+                  className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black/10 cursor-pointer transition-colors text-[10px] leading-none"
+                  title="ลบประเภทนี้"
+                >×</button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Email list */}
       <div className="bg-white rounded-xl p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -211,7 +303,6 @@ export default function EmailsPage() {
 
         {/* Filter bar */}
         <div className="flex flex-wrap gap-2 mb-4">
-          {/* Search */}
           <input
             type="text"
             placeholder="ค้นหา Email..."
@@ -220,7 +311,6 @@ export default function EmailsPage() {
             className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 min-w-[180px]"
           />
 
-          {/* ซ่อน 0 เครดิต toggle */}
           <button
             onClick={() => setHideZero(v => !v)}
             className={`px-3 py-1.5 rounded-lg text-sm border cursor-pointer transition-colors ${
@@ -232,9 +322,8 @@ export default function EmailsPage() {
             ซ่อน 0 เครดิต
           </button>
 
-          {/* กรองตามประเภท */}
           <div className="flex rounded-lg border border-slate-300 overflow-hidden">
-            {presentTypes.map(t => (
+            {presentFilterTypes.map((t, i) => (
               <button
                 key={t.key}
                 onClick={() => setFilterType(t.key)}
@@ -242,14 +331,13 @@ export default function EmailsPage() {
                   filterType === t.key
                     ? 'bg-blue-500 text-white'
                     : 'bg-white text-slate-500 hover:bg-slate-50'
-                } ${t.key !== presentTypes[presentTypes.length - 1].key ? 'border-r border-slate-300' : ''}`}
+                } ${i < presentFilterTypes.length - 1 ? 'border-r border-slate-300' : ''}`}
               >
                 {t.label}
               </button>
             ))}
           </div>
 
-          {/* ล้าง filter */}
           {(hideZero || filterType || search) && (
             <button
               onClick={() => { setHideZero(false); setFilterType(''); setSearch('') }}
@@ -282,23 +370,18 @@ export default function EmailsPage() {
                 <tbody>
                   {filtered.map(e => (
                     <tr key={e.id} className={`border-b border-slate-100 hover:bg-slate-50 ${Number(e.credits) === 0 ? 'opacity-50' : ''}`}>
-                      {/* ประเภท */}
                       <td className="py-2.5 px-2">
-                        {e.fill_type ? <FillTypeBadge fill_type={e.fill_type} /> : <span className="text-slate-300 text-xs">—</span>}
+                        {e.fill_type ? <FillTypeBadge fill_type={e.fill_type} allTypes={allTypes} /> : <span className="text-slate-300 text-xs">—</span>}
                       </td>
-                      {/* ต้นทุน */}
                       <td className="py-2.5 px-2 text-right font-semibold text-slate-600 whitespace-nowrap">
                         ฿{Number(e.cost).toFixed(2)}
                       </td>
-                      {/* เครดิต */}
                       <td className={`py-2.5 px-2 text-right font-semibold whitespace-nowrap ${Number(e.credits) === 0 ? 'text-slate-300' : 'text-blue-700'}`}>
                         {Number(e.credits).toFixed(2)}
                       </td>
-                      {/* Email */}
                       <td className="py-2.5 px-2 text-slate-700 relative">
                         <CopyCell value={e.email} />
                       </td>
-                      {/* Password */}
                       <td className="py-2.5 px-2">
                         <div className="flex items-center gap-1.5">
                           <span className="relative">
@@ -312,11 +395,9 @@ export default function EmailsPage() {
                           </button>
                         </div>
                       </td>
-                      {/* หมายเหตุ */}
                       <td className="py-2.5 px-2 text-xs text-slate-500 max-w-[140px] truncate">
                         {e.note || <span className="text-slate-300">—</span>}
                       </td>
-                      {/* Link SMS */}
                       <td className="py-2.5 px-2 text-center">
                         {e.link_sms ? (
                           <a
@@ -331,7 +412,6 @@ export default function EmailsPage() {
                           <span className="text-slate-300 text-xs">—</span>
                         )}
                       </td>
-                      {/* Actions */}
                       <td className="py-2.5 px-2 text-right whitespace-nowrap">
                         <button
                           onClick={() => { setEditModal({ ...e }); setEditShowPass(false) }}
@@ -355,6 +435,65 @@ export default function EmailsPage() {
         }
       </div>
 
+      {/* New Type Modal */}
+      {showNewType && (
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
+          <div className="bg-white rounded-2xl p-6 w-[360px]">
+            <h3 className="font-bold text-slate-800 mb-4">สร้างประเภท Email ใหม่</h3>
+            <div className="mb-3">
+              <label className="block text-xs text-slate-500 mb-1.5">ชื่อประเภท</label>
+              <input
+                autoFocus
+                className={`w-full ${inputCls}`}
+                placeholder="เช่น Google, Microsoft, 1+"
+                value={newTypeLabel}
+                onChange={e => { setNewTypeLabel(e.target.value); setNewTypeError('') }}
+                onKeyDown={e => e.key === 'Enter' && createType()}
+              />
+            </div>
+            <div className="mb-4">
+              <label className="block text-xs text-slate-500 mb-2">ทำงานเหมือน</label>
+              <div className="flex gap-2">
+                {[
+                  { v: 'EMAIL', label: 'Apple ID', desc: 'ตัดเครดิตตามชื่อ ($) หรือราคา' },
+                  { v: 'RAZER', label: 'Razer', desc: 'กรอกจำนวนเครดิตเองตอนชำระ' },
+                ].map(({ v, label, desc }) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setNewTypeBehavior(v)}
+                    className={`flex-1 p-3 rounded-xl border-2 text-left cursor-pointer transition-colors ${
+                      newTypeBehavior === v
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <p className={`text-sm font-semibold ${newTypeBehavior === v ? 'text-blue-700' : 'text-slate-700'}`}>{label}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {newTypeError && <p className="text-red-500 text-xs mb-2">{newTypeError}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={createType}
+                disabled={!newTypeLabel.trim()}
+                className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:opacity-40 text-white py-2.5 rounded-lg text-sm cursor-pointer"
+              >
+                สร้าง
+              </button>
+              <button
+                onClick={() => { setShowNewType(false); setNewTypeLabel(''); setNewTypeBehavior('EMAIL'); setNewTypeError('') }}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-2.5 rounded-lg text-sm cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit modal */}
       {editModal && (
         <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
@@ -363,16 +502,10 @@ export default function EmailsPage() {
             <div className="space-y-3.5">
               <div>
                 <label className="block text-sm text-slate-500 mb-1.5">ประเภท Email</label>
-                <select
-                  className={`w-full ${inputCls} text-slate-600`}
+                <TypeSelect
                   value={editModal.fill_type ?? ''}
-                  onChange={e => setEditModal(m => ({ ...m, fill_type: e.target.value || null }))}
-                >
-                  <option value="">— ไม่ระบุ —</option>
-                  {Object.entries(FILL_TYPE_CONFIG).map(([key, cfg]) => (
-                    <option key={key} value={key}>{cfg.label}</option>
-                  ))}
-                </select>
+                  onChange={v => setEditModal(m => ({ ...m, fill_type: v || null }))}
+                />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

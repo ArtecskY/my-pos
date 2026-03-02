@@ -95,6 +95,7 @@ export default function OrdersPage() {
           created_at: item.created_at,
           transfer_amount: item.transfer_amount,
           total: item.total,
+          channel: item.channel || null,
           items: [],
         }
         dateGroup.orderMap[item.order_id] = g
@@ -296,6 +297,7 @@ export default function OrdersPage() {
                   <th className="pb-3 pt-4 px-3 font-medium">ชื่อสินค้า</th>
                   <th className="pb-3 pt-4 px-3 font-medium text-right">จำนวน / เครดิต</th>
                   <th className="pb-3 pt-4 px-3 font-medium">Email ที่ใช้</th>
+                  <th className="pb-3 pt-4 px-3 font-medium">ช่องทาง</th>
                   <th className="pb-3 pt-4 px-2"></th>
                 </tr>
               </thead>
@@ -396,6 +398,22 @@ export default function OrdersPage() {
                         <td className="py-2.5 px-3 font-mono text-xs text-slate-400">
                           {item.email_used || <span className="text-slate-200">—</span>}
                         </td>
+                        {/* ช่องทาง */}
+                        {idx === 0 && (
+                          <td rowSpan={order.items.length} className="py-3 px-3 align-top whitespace-nowrap">
+                            {order.channel ? (
+                              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                                order.channel === 'หน้าบ้าน'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'bg-purple-100 text-purple-700'
+                              }`}>
+                                {order.channel}
+                              </span>
+                            ) : (
+                              <span className="text-slate-200">—</span>
+                            )}
+                          </td>
+                        )}
                         {/* ปุ่มลบ */}
                         {idx === 0 && (
                           <td rowSpan={order.items.length} className="py-3 px-2 align-top">

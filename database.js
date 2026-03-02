@@ -98,10 +98,17 @@ async function initDB() {
   try { db.run('ALTER TABLE order_items ADD COLUMN lot_cost_used REAL') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE order_items ADD COLUMN bundle_lot_info TEXT') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE orders ADD COLUMN channel TEXT') } catch (e) { /* column exists */ }
+  db.run(`CREATE TABLE IF NOT EXISTS email_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT 'bg-slate-100 text-slate-700',
+    behavior TEXT NOT NULL DEFAULT 'EMAIL'
+  )`)
+  try { db.run("ALTER TABLE email_types ADD COLUMN behavior TEXT NOT NULL DEFAULT 'EMAIL'") } catch (e) { /* column exists */ }
   // ผู้ใช้คนแรกเป็น admin เสมอ
   db.run('UPDATE users SET is_admin=1 WHERE id=(SELECT MIN(id) FROM users)')
-  // migrate old ID_PASS → EMAIL
-  db.run('UPDATE categories SET fill_type="EMAIL" WHERE fill_type="ID_PASS"')
 
   console.log('✅ เชื่อมต่อฐานข้อมูลสำเร็จ')
   return db
