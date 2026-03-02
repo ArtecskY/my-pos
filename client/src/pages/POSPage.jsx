@@ -60,6 +60,7 @@ export default function POSPage() {
   const [splitState, setSplitState] = useState({})
   const [channel, setChannel] = useState(null)
   const [emailTypes, setEmailTypes] = useState([])
+  const [selectedFillType, setSelectedFillType] = useState('')
 
   useEffect(() => {
     Promise.all([
@@ -69,8 +70,26 @@ export default function POSPage() {
     ]).then(([p, c, et]) => { setProducts(p); setCategories(c); setEmailTypes(et) })
   }, [])
 
+  const FILL_TYPE_LABELS = {
+    'UID': 'UID', 'EMAIL': 'Apple ID', 'RAZER': 'Razer',
+    'ID_PASS': 'Stock77', 'OTHER_UID': 'อื่นๆ (UID)', 'OTHER_EMAIL': 'อื่นๆ (Email)',
+  }
+  function fillTypeLabel(ft) {
+    if (FILL_TYPE_LABELS[ft]) return FILL_TYPE_LABELS[ft]
+    return emailTypes.find(t => t.key === ft)?.label || ft
+  }
+
+  // fill types ที่มีสินค้า (stock > 0 หรือ -1) อยู่จริง
+  const activeFillTypes = [...new Set(
+    categories
+      .filter(cat => products.some(p => p.category_id === cat.id && (p.stock > 0 || p.stock === -1)))
+      .map(cat => cat.fill_type)
+      .filter(Boolean)
+  )]
+
   const grouped = categories
     .filter(cat => !selectedCat || String(cat.id) === selectedCat)
+    .filter(cat => !selectedFillType || cat.fill_type === selectedFillType)
     .map(cat => {
       const searchLower = search.toLowerCase()
       const catMatch = !search || cat.name.toLowerCase().includes(searchLower)
@@ -290,30 +309,50 @@ export default function POSPage() {
     <div className="flex gap-6">
       <div className="flex-[2] space-y-5">
         {/* Filter bar */}
-        <div className="flex gap-2">
-          <input
-            type="text" value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="ค้นหาสินค้า..."
-            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white flex-1"
-          />
-          <select
-            value={selectedCat}
-            onChange={e => setSelectedCat(e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white"
-          >
-            <option value="">ทุกหมวดหมู่</option>
-            {categories.map(c => (
-              <option key={c.id} value={String(c.id)}>{c.name}</option>
-            ))}
-          </select>
-          {(selectedCat || search) && (
-            <button
-              onClick={() => { setSelectedCat(''); setSearch('') }}
-              className="px-3 py-2 text-sm text-slate-400 hover:text-slate-600 cursor-pointer whitespace-nowrap"
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <input
+              type="text" value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="ค้นหาสินค้า..."
+              className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white flex-1"
+            />
+            <select
+              value={selectedCat}
+              onChange={e => { setSelectedCat(e.target.value); setSelectedFillType('') }}
+              className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white"
             >
-              ล้าง ×
-            </button>
+              <option value="">ทุกหมวดหมู่</option>
+              {categories.map(c => (
+                <option key={c.id} value={String(c.id)}>{c.name}</option>
+              ))}
+            </select>
+            {(selectedCat || selectedFillType || search) && (
+              <button
+                onClick={() => { setSelectedCat(''); setSelectedFillType(''); setSearch('') }}
+                className="px-3 py-2 text-sm text-slate-400 hover:text-slate-600 cursor-pointer whitespace-nowrap"
+              >
+                ล้าง ×
+              </button>
+            )}
+          </div>
+          {/* Fill type filter */}
+          {activeFillTypes.length > 1 && (
+            <div className="flex flex-wrap gap-1.5">
+              {activeFillTypes.map(ft => (
+                <button
+                  key={ft}
+                  onClick={() => { setSelectedFillType(prev => prev === ft ? '' : ft); setSelectedCat('') }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer border transition-colors ${
+                    selectedFillType === ft
+                      ? 'bg-blue-500 text-white border-transparent'
+                      : 'bg-white text-slate-500 border-slate-300 hover:border-slate-400'
+                  }`}
+                >
+                  {fillTypeLabel(ft)}
+                </button>
+              ))}
+            </div>
           )}
         </div>
 
