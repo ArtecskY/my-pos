@@ -392,7 +392,7 @@ export default function POSPage() {
       </div>
 
       {/* Cart */}
-      <div className="flex-1 bg-white rounded-xl p-4 lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto">
+      <div className="flex-1 bg-white rounded-xl p-4 lg:sticky lg:top-[120px] lg:self-start lg:max-h-[calc(100vh-130px)] lg:overflow-y-auto">
         <h2 className="font-semibold text-slate-800 mb-3">ตะกร้า</h2>
         {cart.length === 0
           ? <p className="text-slate-400 text-sm">ยังไม่มีสินค้า</p>
