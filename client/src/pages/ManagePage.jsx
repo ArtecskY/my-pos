@@ -1196,9 +1196,11 @@ export default function ManagePage() {
                 </div>
               </div>
             )}
-            {!usesEmailCredits(editModal.fill_type, customEmailTypes) && (
+            {(!usesEmailCredits(editModal.fill_type, customEmailTypes) || editModal.fill_type === 'EMAIL') && !isIDPass(editModal.fill_type) && (
               <div className="mb-3.5">
-                <label className="block text-sm text-slate-500 mb-1.5">ราคา $ (ราคาขายในหน่วย USD)</label>
+                <label className="block text-sm text-slate-500 mb-1.5">
+                  {editModal.fill_type === 'EMAIL' ? 'เครดิต Apple ID ($)' : 'ราคา $ (ราคาขายในหน่วย USD)'}
+                </label>
                 <input
                   type="number" step="0.01" min="0"
                   value={editModal.price_usd ?? ''}
