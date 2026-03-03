@@ -1083,7 +1083,10 @@ export default function ManagePage() {
                                     onClick={() => { setDashEditLot({ id: lot.id, cost: lot.cost, stock: lot.stock }); setDashEditUsd(null) }}
                                     className="hover:bg-slate-100 rounded px-2 py-1 cursor-pointer whitespace-nowrap"
                                   >
-                                    <span className="text-slate-700 font-medium">{lot.stock} ชิ้น</span>
+                                    {lot.stock > 0
+                                      ? <span className="text-slate-700 font-medium">{lot.stock} ชิ้น</span>
+                                      : <span className="text-slate-300">—</span>
+                                    }
                                   </button>
                                 )}
                               </td>
