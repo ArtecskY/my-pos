@@ -339,15 +339,12 @@ export default function ManagePage() {
   async function handleDrop(catId) {
     if (!dragItem.current || dragItem.current.catId !== catId) return
     dragItem.current = null
-    setProducts(prev => {
-      const catItems = prev.filter(p => p.category_id === catId)
-      const payload = catItems.map((p, i) => ({ id: p.id, sort_order: i }))
-      fetch('/products/reorder', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      return prev
+    const catItems = products.filter(p => p.category_id === catId)
+    const payload = catItems.map((p, i) => ({ id: p.id, sort_order: i }))
+    fetch('/products/reorder', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     })
   }
 

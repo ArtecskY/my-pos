@@ -160,6 +160,16 @@ initDB().then(() => {
     res.json({ id, message: 'เพิ่มสินค้าสำเร็จ' })
   })
 
+  // Feature 1: เรียงลำดับสินค้า (ต้องอยู่ก่อน /products/:id เสมอ)
+  app.put('/products/reorder', requireLogin, (req, res) => {
+    const items = req.body // [{ id, sort_order }, ...]
+    for (const { id, sort_order } of items) {
+      db.run('UPDATE products SET sort_order=? WHERE id=?', [sort_order, id])
+    }
+    save()
+    res.json({ message: 'บันทึกลำดับสำเร็จ' })
+  })
+
   app.put('/products/:id', requireLogin, (req, res) => {
     const { name, price, stock, category_id, price_usd, cost } = req.body
     db.run('UPDATE products SET name=?, price=?, stock=?, category_id=?, price_usd=?, cost=? WHERE id=?',
@@ -175,16 +185,6 @@ initDB().then(() => {
     }
     save()
     res.json({ message: 'อัปเดตสำเร็จ' })
-  })
-
-  // Feature 1: เรียงลำดับสินค้า
-  app.put('/products/reorder', requireLogin, (req, res) => {
-    const items = req.body // [{ id, sort_order }, ...]
-    for (const { id, sort_order } of items) {
-      db.run('UPDATE products SET sort_order=? WHERE id=?', [sort_order, id])
-    }
-    save()
-    res.json({ message: 'บันทึกลำดับสำเร็จ' })
   })
 
   // Feature 2: Copy สินค้าจากเกมอื่น
