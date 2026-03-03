@@ -458,7 +458,7 @@ export default function POSPage() {
                 <span className={`w-4 h-4 rounded border flex items-center justify-center text-xs font-bold transition-colors ${tw ? 'bg-white border-white text-sky-500' : 'border-slate-300'}`}>
                   {tw ? '✓' : ''}
                 </span>
-                TW
+                True Wallet
               </button>
             </div>
           </div>

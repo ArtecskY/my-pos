@@ -605,6 +605,7 @@ export default function ManagePage() {
                                         ? <span className="text-emerald-600 font-medium">ไม่จำกัด</span>
                                         : `สต็อก ${p.stock}`}
                                       {p.price_usd != null && <span className="ml-1.5 text-green-600 text-xs font-medium">${p.price_usd}</span>}
+                                      {p.cost != null && Number(p.cost) > 0 && <span className="ml-1.5 text-orange-500 text-xs font-medium">ทุน ฿{p.cost}</span>}
                                     </td>
                                   : <td className="py-2.5 px-2 text-slate-400 text-xs">เครดิต {Number(p.stock).toFixed(2)}</td>
                             }
