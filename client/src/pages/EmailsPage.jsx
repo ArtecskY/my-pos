@@ -63,6 +63,9 @@ export default function EmailsPage() {
   const [newTypeBehavior, setNewTypeBehavior] = useState('EMAIL')
   const [newTypeError, setNewTypeError] = useState('')
 
+  // Inline note editing
+  const [inlineNote, setInlineNote] = useState(null) // { id, value }
+
   // Filter state
   const [hideZero, setHideZero] = useState(false)
   const [filterType, setFilterType] = useState('')
@@ -146,6 +149,23 @@ export default function EmailsPage() {
     })
     setEditModal(null)
     setEditShowPass(false)
+    loadAll()
+  }
+
+  async function saveInlineNote(email, newNote) {
+    await fetch(`/emails/${email.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: email.email,
+        password: email.password,
+        link_sms: email.link_sms || null,
+        credits: Number(email.credits) || 0,
+        cost: Number(email.cost) || 0,
+        fill_type: email.fill_type || null,
+        note: newNote.trim() || null,
+      }),
+    })
     loadAll()
   }
 
@@ -394,8 +414,29 @@ export default function EmailsPage() {
                           </button>
                         </div>
                       </td>
-                      <td className="py-2.5 px-2 text-xs text-slate-500 max-w-[140px] truncate">
-                        {e.note || <span className="text-slate-300">—</span>}
+                      <td className="py-2.5 px-2 text-xs text-slate-500 max-w-[160px]">
+                        {inlineNote?.id === e.id ? (
+                          <textarea
+                            autoFocus
+                            className="w-full border border-blue-300 rounded px-1.5 py-1 text-xs resize-none focus:outline-none focus:border-blue-500 bg-blue-50"
+                            rows={2}
+                            value={inlineNote.value}
+                            onChange={ev => setInlineNote(n => ({ ...n, value: ev.target.value }))}
+                            onBlur={() => { saveInlineNote(e, inlineNote.value); setInlineNote(null) }}
+                            onKeyDown={ev => {
+                              if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); saveInlineNote(e, inlineNote.value); setInlineNote(null) }
+                              if (ev.key === 'Escape') setInlineNote(null)
+                            }}
+                          />
+                        ) : (
+                          <span
+                            onClick={() => setInlineNote({ id: e.id, value: e.note || '' })}
+                            className="cursor-pointer hover:bg-slate-100 rounded px-1 -mx-1 block truncate"
+                            title={e.note ? e.note : 'คลิกเพื่อแก้ไขหมายเหตุ'}
+                          >
+                            {e.note || <span className="text-slate-300">—</span>}
+                          </span>
+                        )}
                       </td>
                       <td className="py-2.5 px-2 text-center">
                         {e.link_sms ? (
