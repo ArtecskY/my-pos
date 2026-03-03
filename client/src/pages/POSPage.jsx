@@ -309,8 +309,8 @@ export default function POSPage() {
   }
 
   return (
-    <div className="flex gap-6">
-      <div className="flex-[2] space-y-5">
+    <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
+      <div className="flex-[2] min-w-0 space-y-5">
         {/* Filter bar */}
         <div className="space-y-2">
           <div className="flex gap-2">
@@ -392,7 +392,7 @@ export default function POSPage() {
       </div>
 
       {/* Cart */}
-      <div className="flex-1 bg-white rounded-xl p-4 sticky top-6 self-start max-h-[calc(100vh-5rem)] overflow-y-auto">
+      <div className="flex-1 bg-white rounded-xl p-4 lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto">
         <h2 className="font-semibold text-slate-800 mb-3">ตะกร้า</h2>
         {cart.length === 0
           ? <p className="text-slate-400 text-sm">ยังไม่มีสินค้า</p>
@@ -473,8 +473,8 @@ export default function POSPage() {
 
       {/* Payment modal */}
       {showPayModal && (
-        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-8 w-[400px] max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-end sm:items-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl p-5 sm:p-8 w-full sm:max-w-[400px] max-h-[92vh] overflow-y-auto">
             <h2 className="text-blue-900 font-bold text-lg mb-5">รายละเอียดการชำระเงิน</h2>
             <div className="text-center text-2xl font-bold text-blue-900 mb-5">รวม ฿{total}</div>
 
@@ -653,8 +653,8 @@ export default function POSPage() {
 
       {/* Receipt modal */}
       {receipt && (
-        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
-          <div className="bg-white rounded-2xl p-8 min-w-[300px] text-center">
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-[340px] text-center">
             <h2 className="text-green-500 font-bold text-xl mb-4">ชำระเงินสำเร็จ!</h2>
             <p className="text-slate-500 mb-2">ขอบคุณที่ใช้บริการ</p>
             <div className="text-3xl font-bold text-blue-900 my-3">฿{receipt.total}</div>

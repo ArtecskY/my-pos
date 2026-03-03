@@ -36,14 +36,14 @@ export default function App() {
   if (!user) return <AuthScreen onLogin={setUser} />
 
   return (
-    <div className="p-6 bg-slate-100 min-h-screen">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold text-blue-900">Wisdom Order</h1>
-        <div className="flex items-center gap-3 text-sm text-slate-500">
-          <span>{user.username}</span>
+    <div className="p-3 sm:p-6 bg-slate-100 min-h-screen">
+      <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
+        <h1 className="text-xl sm:text-2xl font-bold text-blue-900">Wisdom Order</h1>
+        <div className="flex items-center gap-2 text-sm text-slate-500">
+          <span className="hidden sm:inline">{user.username}</span>
           <button
             onClick={logout}
-            className="px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg cursor-pointer"
+            className="px-3 py-1.5 sm:px-4 sm:py-2 bg-slate-200 hover:bg-slate-300 rounded-lg cursor-pointer text-xs sm:text-sm"
           >
             ออกจากระบบ
           </button>

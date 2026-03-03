@@ -305,11 +305,11 @@ export default function OrdersPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-2">
         <h2 className="font-semibold text-slate-800 text-lg">ประวัติการทำรายการ</h2>
         <button
           onClick={openExport}
-          className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm cursor-pointer"
+          className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-xs sm:text-sm cursor-pointer"
         >
           <img src="https://www.gstatic.com/images/branding/product/1x/sheets_2020q4_32dp.png" className="w-4 h-4" />
           Export to Google Sheets
@@ -614,8 +614,8 @@ export default function OrdersPage() {
 
       {/* Export Modal */}
       {showExport && (
-        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
-          <div className="bg-white rounded-2xl p-8 w-[440px]">
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-end sm:items-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl p-6 sm:p-8 w-full sm:max-w-[440px]">
             <h2 className="font-bold text-slate-800 mb-1">Export to Google Sheets</h2>
             <p className="text-sm text-slate-400 mb-5">ข้อมูลจะแยกตาม Tab วันที่ (พ.ศ.) โดยอัตโนมัติ</p>
             <div className="mb-5">

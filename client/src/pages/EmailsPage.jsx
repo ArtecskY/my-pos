@@ -436,8 +436,8 @@ export default function EmailsPage() {
 
       {/* New Type Modal */}
       {showNewType && (
-        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-[360px]">
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-end sm:items-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl p-6 w-full sm:max-w-[360px]">
             <h3 className="font-bold text-slate-800 mb-4">สร้างประเภท Email ใหม่</h3>
             <div className="mb-3">
               <label className="block text-xs text-slate-500 mb-1.5">ชื่อประเภท</label>
@@ -495,8 +495,8 @@ export default function EmailsPage() {
 
       {/* Edit modal */}
       {editModal && (
-        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
-          <div className="bg-white rounded-2xl p-8 w-[460px] max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-end sm:items-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl p-6 sm:p-8 w-full sm:max-w-[460px] max-h-[92vh] overflow-y-auto">
             <h2 className="text-blue-900 font-bold mb-5">แก้ไข Email</h2>
             <div className="space-y-3.5">
               <div>

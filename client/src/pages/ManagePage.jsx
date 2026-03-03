@@ -528,15 +528,15 @@ export default function ManagePage() {
           return (
             <div key={cat.id} className="bg-white rounded-xl shadow-sm overflow-hidden">
               {/* Card header */}
-              <div className="flex items-center gap-3 px-6 py-4 bg-slate-50 border-b border-slate-100">
-                <div className="flex-1 flex items-center gap-2 flex-wrap">
+              <div className="flex flex-wrap items-center gap-3 px-4 sm:px-6 py-4 bg-slate-50 border-b border-slate-100">
+                <div className="flex-1 flex items-center gap-2 flex-wrap min-w-0">
                   <h3 className="font-semibold text-slate-800 text-base">{cat.name}</h3>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${fillConfig.cls}`}>
                     {fillConfig.label}
                   </span>
                   <span className="text-xs text-slate-400">{cat.items.length} สินค้า</span>
                 </div>
-                <div className="flex gap-1.5 shrink-0">
+                <div className="flex flex-wrap gap-1.5 justify-end">
                   {isIDPass(cat.fill_type) && (
                     <button
                       onClick={() => openDashboard(cat)}
@@ -854,8 +854,8 @@ export default function ManagePage() {
 
       {/* Add Game Modal */}
       {showAddGame && (
-        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
-          <div className="bg-white rounded-2xl p-8 w-[440px]">
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-end sm:items-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl p-6 sm:p-8 w-full sm:max-w-[440px] max-h-[92vh] overflow-y-auto">
             <h2 className="text-blue-900 font-bold text-lg mb-5">เพิ่มเกมใหม่</h2>
             <div className="mb-4">
               <label className="block text-sm text-slate-500 mb-1.5">ชื่อเกม</label>
@@ -905,8 +905,8 @@ export default function ManagePage() {
 
       {/* Edit Game Modal */}
       {editGameModal && (
-        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
-          <div className="bg-white rounded-2xl p-8 w-[440px]">
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-end sm:items-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl p-6 sm:p-8 w-full sm:max-w-[440px] max-h-[92vh] overflow-y-auto">
             <h2 className="text-blue-900 font-bold text-lg mb-5">แก้ไขเกม</h2>
             <div className="mb-4">
               <label className="block text-sm text-slate-500 mb-1.5">ชื่อเกม</label>
@@ -1131,8 +1131,8 @@ export default function ManagePage() {
 
       {/* Edit Product Modal */}
       {editModal && (
-        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
-          <div className="bg-white rounded-2xl p-8 w-[420px] max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-end sm:items-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl p-6 sm:p-8 w-full sm:max-w-[420px] max-h-[92vh] overflow-y-auto">
             <h2 className="text-blue-900 font-bold mb-5">แก้ไขสินค้า</h2>
             {(editPreview || editModal.image) && (
               <img
