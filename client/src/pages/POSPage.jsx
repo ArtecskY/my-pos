@@ -487,9 +487,22 @@ export default function POSPage() {
             </div>
             <div className="mb-6">
               <label className="block text-sm text-slate-500 mb-1.5">เวลาโอน</label>
-              <input type="datetime-local" value={transferTime}
-                onChange={e => setTransferTime(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" />
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={transferTime ? transferTime.slice(0, 10) : ''}
+                  onChange={e => setTransferTime(`${e.target.value}T${transferTime ? transferTime.slice(11, 16) : '00:00'}`)}
+                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+                />
+                <input
+                  type="text"
+                  value={transferTime ? transferTime.slice(11, 16) : ''}
+                  onChange={e => setTransferTime(`${transferTime ? transferTime.slice(0, 10) : new Date().toISOString().slice(0, 10)}T${e.target.value}`)}
+                  placeholder="HH:MM"
+                  maxLength={5}
+                  className="w-24 border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 font-mono text-center"
+                />
+              </div>
             </div>
 
             {/* Email-credit items */}

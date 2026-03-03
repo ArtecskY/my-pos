@@ -456,18 +456,21 @@ export default function OrdersPage() {
                             {editTimeOrderId === order.order_id ? (
                               <div className="flex flex-col gap-1">
                                 <input
-                                  type="time"
+                                  type="text"
                                   value={editTimeValue}
                                   onChange={e => setEditTimeValue(e.target.value)}
-                                  className="border border-blue-400 rounded px-1 py-0.5 text-xs font-mono w-24 focus:outline-none"
+                                  placeholder="HH:MM"
+                                  maxLength={5}
+                                  className="border border-blue-400 rounded px-1 py-0.5 text-xs font-mono w-20 focus:outline-none"
                                   autoFocus
                                 />
                                 <input
-                                  type="time"
+                                  type="text"
                                   value={editTimeValue2}
                                   onChange={e => setEditTimeValue2(e.target.value)}
-                                  className="border border-slate-300 rounded px-1 py-0.5 text-xs font-mono w-24 focus:outline-none"
-                                  placeholder="เวลา 2"
+                                  placeholder="HH:MM"
+                                  maxLength={5}
+                                  className="border border-slate-300 rounded px-1 py-0.5 text-xs font-mono w-20 focus:outline-none"
                                 />
                                 <div className="flex gap-1">
                                   <button onClick={() => saveEditTime(order.order_id)} className="text-green-500 hover:text-green-700 text-xs cursor-pointer">✓</button>
