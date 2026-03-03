@@ -137,6 +137,7 @@ export default function OrdersPage() {
           transfer_amount: item.transfer_amount,
           total: item.total,
           channel: item.channel || null,
+          tw: item.tw || false,
           items: [],
         }
         dateGroup.orderMap[item.order_id] = g
@@ -474,14 +475,19 @@ export default function OrdersPage() {
                                 </div>
                               </div>
                             ) : (
-                              <span
-                                className="font-mono cursor-pointer hover:text-blue-500 hover:underline"
-                                title="คลิกเพื่อแก้ไขเวลา"
-                                onClick={() => startEditTime(order)}
-                              >
-                                {formatTimeOnly(order.transfer_time)}
-                                {order.transfer_time2 && `+${formatTimeOnly(order.transfer_time2)}`}
-                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className="font-mono cursor-pointer hover:text-blue-500 hover:underline"
+                                  title="คลิกเพื่อแก้ไขเวลา"
+                                  onClick={() => startEditTime(order)}
+                                >
+                                  {formatTimeOnly(order.transfer_time)}
+                                  {order.transfer_time2 && `+${formatTimeOnly(order.transfer_time2)}`}
+                                </span>
+                                {order.tw && (
+                                  <span className="text-xs font-bold px-1.5 py-0.5 bg-sky-100 text-sky-600 rounded">TW</span>
+                                )}
+                              </div>
                             )}
                           </td>
                         )}

@@ -59,6 +59,7 @@ export default function POSPage() {
   // { [itemId]: [{splitKey, quantity}] } — null / ไม่มี key = ยังไม่ split
   const [splitState, setSplitState] = useState({})
   const [channel, setChannel] = useState(null)
+  const [tw, setTw] = useState(false)
   const [emailTypes, setEmailTypes] = useState([])
   const [selectedFillType, setSelectedFillType] = useState('')
 
@@ -259,6 +260,7 @@ export default function POSPage() {
         transfer_amount: transferAmount ? Number(transferAmount) : null,
         transfer_time: transferTime || null,
         channel: channel || null,
+        tw: tw ? 1 : 0,
       }),
     })
     const order = await res.json()
@@ -267,6 +269,7 @@ export default function POSPage() {
     setReceipt(order)
     setCart([])
     setChannel(null)
+    setTw(false)
     fetch('/products').then(r => r.json()).then(setProducts)
   }
 
@@ -389,7 +392,7 @@ export default function POSPage() {
       </div>
 
       {/* Cart */}
-      <div className="flex-1 bg-white rounded-xl p-4 h-fit">
+      <div className="flex-1 bg-white rounded-xl p-4 sticky top-6 self-start max-h-[calc(100vh-5rem)] overflow-y-auto">
         <h2 className="font-semibold text-slate-800 mb-3">ตะกร้า</h2>
         {cart.length === 0
           ? <p className="text-slate-400 text-sm">ยังไม่มีสินค้า</p>
@@ -442,6 +445,21 @@ export default function POSPage() {
                   {ch}
                 </button>
               ))}
+            </div>
+            <div className="mt-2">
+              <button
+                onClick={() => setTw(prev => !prev)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm cursor-pointer border transition-colors ${
+                  tw
+                    ? 'bg-sky-500 text-white border-sky-500'
+                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <span className={`w-4 h-4 rounded border flex items-center justify-center text-xs font-bold transition-colors ${tw ? 'bg-white border-white text-sky-500' : 'border-slate-300'}`}>
+                  {tw ? '✓' : ''}
+                </span>
+                TW
+              </button>
             </div>
           </div>
         )}
