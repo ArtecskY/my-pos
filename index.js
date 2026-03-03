@@ -364,9 +364,9 @@ initDB().then(() => {
     res.json({ message: 'ลบประเภทสำเร็จ' })
   })
 
-  // คำนวณเครดิตต่อชิ้นจากชื่อสินค้า เช่น "50$" หรือ "แพ็ก 50$" → 50
-  // ถ้าไม่พบ pattern ใช้ราคา ฿ แทน
-  function parseCreditPerUnit(name, price) {
+  // คำนวณเครดิตต่อชิ้น: ถ้ามี price_usd ใช้เลย, ไม่งั้น parse $ จากชื่อ, ไม่งั้นใช้ราคา ฿
+  function parseCreditPerUnit(name, price, price_usd) {
+    if (price_usd != null) return Number(price_usd)
     const m = /(\d+(?:\.\d+)?)\$/.exec(name)
     return m ? Number(m[1]) : price
   }
@@ -391,9 +391,9 @@ initDB().then(() => {
     // Validate stock before proceeding
     const emailPendingDeductions = {} // track total deductions per email_id in this order
     for (const item of items) {
-      const pRes = db.exec('SELECT stock, name, category_id, price, is_bundle FROM products WHERE id=?', [item.product_id])
+      const pRes = db.exec('SELECT stock, name, category_id, price, is_bundle, price_usd FROM products WHERE id=?', [item.product_id])
       if (!pRes[0]) return res.status(400).json({ error: 'ไม่พบสินค้า' })
-      const [stock, name, category_id, price, is_bundle] = pRes[0].values[0]
+      const [stock, name, category_id, price, is_bundle, price_usd_val] = pRes[0].values[0]
 
       if (is_bundle) {
         // ตรวจสอบ stock ของ components
@@ -432,7 +432,7 @@ initDB().then(() => {
           if (isRazerLike && !item.credit_amount)
             return res.status(400).json({ error: `กรุณากรอกจำนวนเครดิตสำหรับ "${name}"` })
           const needed = isRazerLike ? (item.credit_amount || 0)
-            : parseCreditPerUnit(name, price) * item.quantity
+            : parseCreditPerUnit(name, price, price_usd_val) * item.quantity
           const emailRes = db.exec('SELECT credits FROM emails WHERE id=? AND fill_type=?', [item.email_id, fill_type])
           if (!emailRes[0]) return res.status(400).json({ error: `ไม่พบ Email ที่เลือกสำหรับ "${name}"` })
           const emailCredits = emailRes[0].values[0][0]
@@ -530,7 +530,7 @@ initDB().then(() => {
           const customBehavior = isCustom ? getCustomEmailBehavior(fill_type) : null
           const isRazerLike = fill_type === 'RAZER' || customBehavior === 'RAZER'
           creditDeducted = isRazerLike ? item.credit_amount
-            : parseCreditPerUnit(productName, price) * item.quantity
+            : parseCreditPerUnit(productName, price, price_usd) * item.quantity
           emailIdUsed = item.email_id
           deductFromEmail(item.email_id, creditDeducted)
         } else {

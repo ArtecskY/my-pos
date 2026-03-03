@@ -11,9 +11,9 @@ function usesEmailCredits(fill_type, customTypes = []) {
   return customTypes.some(t => t.key === fill_type)
 }
 
-// คำนวณเครดิตต่อชิ้นจากชื่อสินค้า เช่น "50$" หรือ "แพ็ก 50$" → 50
-// ถ้าไม่พบ pattern ใช้ราคา ฿ แทน
+// คำนวณเครดิตต่อชิ้น: ถ้ามี price_usd ใช้เลย, ไม่งั้น parse $ จากชื่อ, ไม่งั้นใช้ราคา ฿
 function creditPerUnit(item) {
+  if (item.price_usd != null) return Number(item.price_usd)
   const m = /(\d+(?:\.\d+)?)\$/.exec(item.name)
   return m ? Number(m[1]) : item.price
 }
