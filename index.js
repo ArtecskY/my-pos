@@ -386,7 +386,7 @@ initDB().then(() => {
   }
 
   app.post('/orders', requireLogin, (req, res) => {
-    const { items, transfer_amount, transfer_time, channel, tw, reservation_id } = req.body
+    const { items, manualItems = [], transfer_amount, transfer_time, channel, tw, reservation_id } = req.body
 
     // Validate stock before proceeding
     const emailPendingDeductions = {} // track total deductions per email_id in this order
@@ -542,6 +542,18 @@ initDB().then(() => {
       }
       db.run('UPDATE order_items SET credit_deducted=?, email_id_used=?, lot_id_used=?, price_usd_used=?, cost_used=?, lot_cost_used=?, bundle_lot_info=? WHERE id=?',
         [creditDeducted, emailIdUsed, lotIdUsed, priceUsdUsed, costUsed, lotCostUsed, bundleLotInfo, orderItemId])
+    }
+
+    for (const mi of manualItems) {
+      if (!mi.product_name) continue
+      const manualData = JSON.stringify({
+        game_name: mi.game_name || '',
+        product_name: mi.product_name || '',
+        cost: mi.cost || 0,
+        supplier_name: mi.supplier_name || '',
+      })
+      db.run('INSERT INTO order_items (order_id, product_id, quantity, price, cost_used, credit_deducted, manual_data) VALUES (?,0,1,0,?,?,?)',
+        [orderId, mi.cost || null, mi.credits || null, manualData])
     }
 
     if (reservation_id) {

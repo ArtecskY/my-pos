@@ -65,7 +65,7 @@ export default function POSPage() {
 
   // Manual order
   const [showManualOrder, setShowManualOrder] = useState(false)
-  const [manualForm, setManualForm] = useState({ transfer_amount: '', transfer_time: '', game_name: '', product_name: '', cost: '', supplier_name: '', channel: null })
+  const [manualForm, setManualForm] = useState({ game_name: '', product_name: '', credits: '', cost: '', supplier_name: '' })
   const [manualError, setManualError] = useState('')
 
   // ระบบจอง
@@ -239,8 +239,16 @@ export default function POSPage() {
 
   async function confirmCheckout() {
     const orderItems = []
+    const manualItems = cart.filter(i => i.isManual).map(i => ({
+      game_name: i.game_name,
+      product_name: i.product_name,
+      credits: i.credits,
+      cost: i.cost,
+      supplier_name: i.supplier_name,
+    }))
 
     for (const item of cart) {
+      if (item.isManual) continue
       if (usesEmailCredits(item.fill_type, emailTypes)) {
         const splits = splitState[item.id]
         if (splits && splits.length > 0) {
@@ -284,6 +292,7 @@ export default function POSPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         items: orderItems,
+        manualItems,
         transfer_amount: transferAmount ? Number(transferAmount) : null,
         transfer_time: transferTime || null,
         channel: channel || null,
@@ -316,7 +325,7 @@ export default function POSPage() {
         transfer_amount: reserveAmount ? Number(reserveAmount) : null,
         reserve_time: reserveTime || null,
         channel: reserveChannel || null,
-        items: cart.map(i => ({ product_id: i.id, quantity: i.quantity })),
+        items: cart.filter(i => !i.isManual).map(i => ({ product_id: i.id, quantity: i.quantity })),
       }),
     })
     const data = await res.json()
@@ -350,34 +359,32 @@ export default function POSPage() {
   }
 
   function openManualOrder() {
-    setManualForm({ transfer_amount: '', transfer_time: nowLocalTime(), game_name: '', product_name: '', cost: '', supplier_name: '', channel: null })
+    setManualForm({ game_name: '', product_name: '', credits: '', cost: '', supplier_name: '' })
     setManualError('')
     setShowManualOrder(true)
   }
 
-  async function submitManualOrder() {
+  function submitManualOrder() {
     setManualError('')
     if (!manualForm.product_name.trim()) { setManualError('กรุณากรอกชื่อสินค้า'); return }
-    const res = await fetch('/manual-orders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        transfer_amount: manualForm.transfer_amount ? Number(manualForm.transfer_amount) : null,
-        transfer_time: manualForm.transfer_time || null,
-        game_name: manualForm.game_name || null,
-        product_name: manualForm.product_name,
-        cost: manualForm.cost ? Number(manualForm.cost) : null,
-        supplier_name: manualForm.supplier_name || null,
-        channel: manualForm.channel || null,
-      }),
-    })
-    const data = await res.json()
-    if (!res.ok) { setManualError(data.error); return }
+    const item = {
+      id: `manual-${Date.now()}`,
+      isManual: true,
+      game_name: manualForm.game_name.trim(),
+      product_name: manualForm.product_name.trim(),
+      credits: Number(manualForm.credits) || 0,
+      cost: Number(manualForm.cost) || 0,
+      supplier_name: manualForm.supplier_name.trim(),
+      price: 0,
+      quantity: 1,
+      fill_type: null,
+      category_id: null,
+    }
+    setCart(prev => [...prev, item])
     setShowManualOrder(false)
-    setReceipt({ total: manualForm.transfer_amount || 0, manual: true })
   }
 
-  const total = cart.reduce((sum, i) => sum + i.price * i.quantity, 0)
+  const total = cart.filter(i => !i.isManual).reduce((sum, i) => sum + i.price * i.quantity, 0)
 
   // ---- Email selector component ----
   function EmailSelector({ stateKey, fill_type, neededLabel }) {
@@ -545,32 +552,55 @@ export default function POSPage() {
 
           {cart.length === 0
             ? <p className="text-slate-400 text-sm">ยังไม่มีสินค้า</p>
-            : cart.map(i => (
-              <div key={i.id} className="py-2.5 border-b border-slate-100">
-                <div className="flex justify-between items-start mb-1.5">
-                  <div className="flex-1 mr-2">
-                    {i.category_name && (
-                      <p className="text-xs text-slate-400 mb-0.5">{i.category_name}</p>
+            : (() => {
+                // Group items by game name
+                const groups = []
+                for (const item of cart) {
+                  const gameName = item.isManual
+                    ? (item.game_name || '')
+                    : (categories.find(c => c.id === item.category_id)?.name || item.category_name || '')
+                  const existing = groups.find(g => g.name === gameName)
+                  if (existing) existing.items.push(item)
+                  else groups.push({ name: gameName, items: [item] })
+                }
+                return groups.map(group => (
+                  <div key={group.name || '__no_game__'}>
+                    {group.name && (
+                      <p className="text-xs font-semibold text-slate-400 mt-2.5 mb-1 uppercase tracking-wide">{group.name}</p>
                     )}
-                    <span className="text-sm font-medium">{i.name}</span>
+                    {group.items.map(i => (
+                      i.isManual ? (
+                        <div key={i.id} className="py-2 border-b border-slate-100 flex items-start justify-between">
+                          <div className="flex-1 mr-2">
+                            <span className="text-sm font-medium">{i.product_name}</span>
+                            <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                              {i.supplier_name && <span className="text-xs px-1.5 py-0.5 bg-violet-100 text-violet-700 rounded-md">{i.supplier_name}</span>}
+                              {i.credits > 0 && <span className="text-xs text-amber-600">{i.credits} เครดิต</span>}
+                              {i.cost > 0 && <span className="text-xs text-slate-400">ต้นทุน ฿{i.cost}</span>}
+                            </div>
+                          </div>
+                          <button onClick={() => removeFromCart(i.id)} className="text-slate-300 hover:text-red-400 text-xl leading-none cursor-pointer flex-shrink-0">×</button>
+                        </div>
+                      ) : (
+                        <div key={i.id} className="py-2.5 border-b border-slate-100">
+                          <div className="flex justify-between items-start mb-1.5">
+                            <span className="text-sm font-medium flex-1 mr-2">{i.name}</span>
+                            <button onClick={() => removeFromCart(i.id)} className="text-slate-300 hover:text-red-400 text-xl leading-none cursor-pointer">×</button>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => changeQty(i.id, -1)} className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold cursor-pointer">−</button>
+                              <span className="w-7 text-center text-sm font-medium">{i.quantity}</span>
+                              <button onClick={() => changeQty(i.id, 1)} className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold cursor-pointer">+</button>
+                            </div>
+                            <span className="text-sm font-semibold text-slate-700">฿{i.price * i.quantity}</span>
+                          </div>
+                        </div>
+                      )
+                    ))}
                   </div>
-                  <button
-                    onClick={() => removeFromCart(i.id)}
-                    className="text-slate-300 hover:text-red-400 text-xl leading-none cursor-pointer"
-                  >×</button>
-                </div>
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => changeQty(i.id, -1)}
-                      className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold cursor-pointer">−</button>
-                    <span className="w-7 text-center text-sm font-medium">{i.quantity}</span>
-                    <button onClick={() => changeQty(i.id, 1)}
-                      className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold cursor-pointer">+</button>
-                  </div>
-                  <span className="text-sm font-semibold text-slate-700">฿{i.price * i.quantity}</span>
-                </div>
-              </div>
-            ))
+                ))
+              })()
           }
 
           {cart.length > 0 && (
@@ -751,21 +781,9 @@ export default function POSPage() {
       {showManualOrder && (
         <div className="fixed inset-0 bg-black/50 flex justify-center items-end sm:items-center z-50 p-0 sm:p-4">
           <div className="bg-white rounded-t-2xl sm:rounded-2xl p-5 sm:p-8 w-full sm:max-w-[400px] max-h-[92vh] overflow-y-auto">
-            <h2 className="text-green-700 font-bold text-lg mb-5">สร้าง Order เอง</h2>
+            <h2 className="text-green-700 font-bold text-lg mb-1">เพิ่มรายการ Manual</h2>
+            <p className="text-xs text-slate-400 mb-5">จะรวมในตะกร้าและชำระพร้อมกัน</p>
             <div className="space-y-3.5">
-              <div>
-                <label className="block text-sm text-slate-500 mb-1.5">ยอดโอน (฿)</label>
-                <input type="number" value={manualForm.transfer_amount}
-                  onChange={e => setManualForm(f => ({ ...f, transfer_amount: e.target.value }))}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500"
-                  placeholder="0.00" />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-500 mb-1.5">เวลา</label>
-                <input type="datetime-local" value={manualForm.transfer_time}
-                  onChange={e => setManualForm(f => ({ ...f, transfer_time: e.target.value }))}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500" />
-              </div>
               <div>
                 <label className="block text-sm text-slate-500 mb-1.5">ชื่อเกม</label>
                 <input type="text" value={manualForm.game_name}
@@ -781,6 +799,13 @@ export default function POSPage() {
                   placeholder="เช่น 648 Crystals" />
               </div>
               <div>
+                <label className="block text-sm text-slate-500 mb-1.5">จำนวนเครดิต</label>
+                <input type="number" value={manualForm.credits}
+                  onChange={e => setManualForm(f => ({ ...f, credits: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500"
+                  placeholder="0" />
+              </div>
+              <div>
                 <label className="block text-sm text-slate-500 mb-1.5">ต้นทุน (฿)</label>
                 <input type="number" value={manualForm.cost}
                   onChange={e => setManualForm(f => ({ ...f, cost: e.target.value }))}
@@ -794,26 +819,12 @@ export default function POSPage() {
                   className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500"
                   placeholder="เช่น มิตร, ร้าน A" />
               </div>
-              <div>
-                <label className="block text-sm text-slate-500 mb-1.5">ช่องทาง</label>
-                <div className="flex gap-2">
-                  {['หน้าบ้าน', 'หลังบ้าน'].map(ch => (
-                    <button key={ch}
-                      onClick={() => setManualForm(f => ({ ...f, channel: f.channel === ch ? null : ch }))}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium cursor-pointer border transition-colors ${
-                        manualForm.channel === ch
-                          ? ch === 'หน้าบ้าน' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-purple-500 text-white border-purple-500'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                      }`}>{ch}</button>
-                  ))}
-                </div>
-              </div>
             </div>
             {manualError && <p className="text-red-500 text-sm mt-3">{manualError}</p>}
             <div className="flex gap-2.5 mt-5">
               <button onClick={submitManualOrder}
                 className="flex-1 bg-green-500 hover:bg-green-600 text-white py-3 rounded-lg cursor-pointer font-medium">
-                บันทึก
+                เพิ่มลงตะกร้า
               </button>
               <button onClick={() => setShowManualOrder(false)}
                 className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-600 py-3 rounded-lg cursor-pointer">
