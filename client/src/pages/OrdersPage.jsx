@@ -408,8 +408,11 @@ export default function OrdersPage() {
                   return s + Number(i.price_usd_used) * qty
                 }, 0)
                 const hasUsd = orderUsdTotal > 0
-                const orderCostTotal = order.items.reduce((s, i) => s + (i.cost_used != null && Number(i.cost_used) > 0 ? Number(i.cost_used) * i.quantity : 0), 0)
-                const hasCost = !hasUsd && orderCostTotal > 0
+                const orderCostTotal = order.items.reduce((s, i) => {
+                  if (i.manual_data || i.credit_deducted != null) return s
+                  return s + (i.cost_used != null && Number(i.cost_used) > 0 ? Number(i.cost_used) * i.quantity : 0)
+                }, 0)
+                const hasCost = !hasUsd && !order.items.some(i => i.manual_data || i.credit_deducted != null) && orderCostTotal > 0
                 return (
                   <tbody key={order.order_id} className="border-t border-slate-100">
                     {order.items.map((item, idx) => (
@@ -496,9 +499,9 @@ export default function OrdersPage() {
                             )}
                           </td>
                         )}
-                        {/* ชื่อเกม — แสดงแถวแรกเท่านั้น */}
+                        {/* ชื่อเกม — แสดงทุกแถว */}
                         <td className="py-2.5 px-3 text-slate-400 text-xs whitespace-nowrap">
-                          {idx === 0 ? (item.category_name || <span className="text-slate-200">—</span>) : null}
+                          {item.category_name || <span className="text-slate-200">—</span>}
                         </td>
                         {/* ชื่อสินค้า + ⓘ */}
                         <td className="py-2.5 px-3 text-slate-800 font-medium">
@@ -559,7 +562,11 @@ export default function OrdersPage() {
                           ) : null
                         ) : (
                           <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                            {item.credit_deducted != null ? (
+                            {item.manual_data ? (
+                              item.cost_used != null && Number(item.cost_used) > 0
+                                ? <span className="text-slate-700 font-semibold text-sm">฿{Number(item.cost_used).toLocaleString()}</span>
+                                : <span className="text-slate-200">—</span>
+                            ) : item.credit_deducted != null ? (
                               <span className="text-slate-700 font-semibold text-sm">
                                 {Number(item.credit_deducted).toFixed(2)}
                               </span>
@@ -588,21 +595,19 @@ export default function OrdersPage() {
                             )}
                           </td>
                         )}
-                        {/* ประเภท */}
-                        {idx === 0 && (
-                          <td rowSpan={order.items.length} className="py-2.5 px-3 align-middle text-center whitespace-nowrap">
-                            {item.manual_data ? (() => {
-                              try {
-                                const md = JSON.parse(item.manual_data)
-                                return md.supplier_name
-                                  ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700">{md.supplier_name}</span>
-                                  : <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">Manual</span>
-                              } catch { return null }
-                            })() : (
-                              <FillBadge fill_type={item.fill_type} customTypes={customTypes} />
-                            )}
-                          </td>
-                        )}
+                        {/* ประเภท — แสดงทุกแถว */}
+                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                          {item.manual_data ? (() => {
+                            try {
+                              const md = JSON.parse(item.manual_data)
+                              return md.supplier_name
+                                ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700">{md.supplier_name}</span>
+                                : <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">Manual</span>
+                            } catch { return null }
+                          })() : (
+                            <FillBadge fill_type={item.fill_type} customTypes={customTypes} />
+                          )}
+                        </td>
                         {/* ปุ่มลบ */}
                         {idx === 0 && (
                           <td rowSpan={order.items.length} className="py-3 px-2 align-top">

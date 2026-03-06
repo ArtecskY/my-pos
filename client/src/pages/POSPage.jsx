@@ -65,7 +65,7 @@ export default function POSPage() {
 
   // Manual order
   const [showManualOrder, setShowManualOrder] = useState(false)
-  const [manualForm, setManualForm] = useState({ game_name: '', product_name: '', credits: '', cost: '', supplier_name: '' })
+  const [manualForm, setManualForm] = useState({ game_select: '', game_name: '', product_name: '', cost: '', supplier_name: '' })
   const [manualError, setManualError] = useState('')
 
   // ระบบจอง
@@ -242,7 +242,6 @@ export default function POSPage() {
     const manualItems = cart.filter(i => i.isManual).map(i => ({
       game_name: i.game_name,
       product_name: i.product_name,
-      credits: i.credits,
       cost: i.cost,
       supplier_name: i.supplier_name,
     }))
@@ -359,7 +358,7 @@ export default function POSPage() {
   }
 
   function openManualOrder() {
-    setManualForm({ game_name: '', product_name: '', credits: '', cost: '', supplier_name: '' })
+    setManualForm({ game_select: '', game_name: '', product_name: '', cost: '', supplier_name: '' })
     setManualError('')
     setShowManualOrder(true)
   }
@@ -367,12 +366,12 @@ export default function POSPage() {
   function submitManualOrder() {
     setManualError('')
     if (!manualForm.product_name.trim()) { setManualError('กรุณากรอกชื่อสินค้า'); return }
+    const gameName = manualForm.game_select === 'อื่นๆ' ? manualForm.game_name.trim() : manualForm.game_select
     const item = {
       id: `manual-${Date.now()}`,
       isManual: true,
-      game_name: manualForm.game_name.trim(),
+      game_name: gameName,
       product_name: manualForm.product_name.trim(),
-      credits: Number(manualForm.credits) || 0,
       cost: Number(manualForm.cost) || 0,
       supplier_name: manualForm.supplier_name.trim(),
       price: 0,
@@ -785,11 +784,20 @@ export default function POSPage() {
             <p className="text-xs text-slate-400 mb-5">จะรวมในตะกร้าและชำระพร้อมกัน</p>
             <div className="space-y-3.5">
               <div>
-                <label className="block text-sm text-slate-500 mb-1.5">ชื่อเกม</label>
-                <input type="text" value={manualForm.game_name}
-                  onChange={e => setManualForm(f => ({ ...f, game_name: e.target.value }))}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500"
-                  placeholder="เช่น Genshin Impact" />
+                <label className="block text-sm text-slate-500 mb-1.5">เกม</label>
+                <select value={manualForm.game_select}
+                  onChange={e => setManualForm(f => ({ ...f, game_select: e.target.value, game_name: e.target.value !== 'อื่นๆ' ? e.target.value : '' }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500 bg-white">
+                  <option value="">-- เลือกเกม --</option>
+                  {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  <option value="อื่นๆ">อื่นๆ (กรอกเอง)</option>
+                </select>
+                {manualForm.game_select === 'อื่นๆ' && (
+                  <input type="text" value={manualForm.game_name}
+                    onChange={e => setManualForm(f => ({ ...f, game_name: e.target.value }))}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500 mt-2"
+                    placeholder="ชื่อเกม" autoFocus />
+                )}
               </div>
               <div>
                 <label className="block text-sm text-slate-500 mb-1.5">ชื่อสินค้า <span className="text-red-400">*</span></label>
@@ -797,13 +805,6 @@ export default function POSPage() {
                   onChange={e => setManualForm(f => ({ ...f, product_name: e.target.value }))}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500"
                   placeholder="เช่น 648 Crystals" />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-500 mb-1.5">จำนวนเครดิต</label>
-                <input type="number" value={manualForm.credits}
-                  onChange={e => setManualForm(f => ({ ...f, credits: e.target.value }))}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500"
-                  placeholder="0" />
               </div>
               <div>
                 <label className="block text-sm text-slate-500 mb-1.5">ต้นทุน (฿)</label>

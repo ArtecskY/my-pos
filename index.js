@@ -909,7 +909,6 @@ initDB().then(() => {
           const md = JSON.parse(item.manual_data)
           item.product_name = md.product_name || item.product_name || '(manual)'
           item.category_name = md.game_name || item.category_name
-          item.email_used = md.supplier_name || item.email_used
           item.cost_used = md.cost != null ? Number(md.cost) : item.cost_used
         } catch {}
       }
