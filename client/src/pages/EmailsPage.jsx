@@ -279,15 +279,36 @@ export default function EmailsPage() {
           <div className="col-span-2">
             <TypeSelect value={form.fill_type} onChange={v => setForm(f => ({ ...f, fill_type: v }))} />
           </div>
+
           {isCreditsForm ? (
-            <input
-              className={`col-span-2 ${inputCls}`}
-              placeholder="ชื่อ Supplier"
-              type="text"
-              value={form.email}
-              onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-            />
+            /* --- Credits type: แค่ Supplier + เครดิต + ต้นทุน --- */
+            <>
+              <input
+                className={`col-span-2 ${inputCls}`}
+                placeholder="ชื่อ Supplier *"
+                type="text"
+                value={form.email}
+                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+              />
+              <input
+                className={inputCls}
+                placeholder="เครดิต"
+                type="number"
+                step="0.01"
+                value={form.credits}
+                onChange={e => setForm(f => ({ ...f, credits: e.target.value }))}
+              />
+              <input
+                className={inputCls}
+                placeholder="ต้นทุน (฿/เครดิต)"
+                type="number"
+                step="0.01"
+                value={form.cost}
+                onChange={e => setForm(f => ({ ...f, cost: e.target.value }))}
+              />
+            </>
           ) : (
+            /* --- ประเภทอื่น: ฟอร์มปกติ --- */
             <>
               <input
                 className={inputCls}
@@ -303,48 +324,44 @@ export default function EmailsPage() {
                 value={form.password}
                 onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
               />
+              <input
+                className={inputCls}
+                placeholder="เครดิต (เช่น 211.11)"
+                type="number"
+                step="0.01"
+                value={form.credits}
+                onChange={e => setForm(f => ({ ...f, credits: e.target.value }))}
+              />
+              <input
+                className={inputCls}
+                placeholder="ต้นทุน (เช่น 150.00)"
+                type="number"
+                step="0.01"
+                value={form.cost}
+                onChange={e => setForm(f => ({ ...f, cost: e.target.value }))}
+              />
+              <input
+                className={inputCls}
+                placeholder="Link SMS (ไม่บังคับ)"
+                value={form.link_sms}
+                onChange={e => setForm(f => ({ ...f, link_sms: e.target.value }))}
+              />
+              <input
+                className={inputCls}
+                type="date"
+                title="วันที่บันทึก"
+                value={form.created_date}
+                onChange={e => setForm(f => ({ ...f, created_date: e.target.value }))}
+              />
+              <textarea
+                className={`col-span-2 ${inputCls} resize-none`}
+                placeholder="หมายเหตุ (ไม่บังคับ)"
+                rows={2}
+                value={form.note}
+                onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
+              />
             </>
           )}
-          <input
-            className={inputCls}
-            placeholder="เครดิต (เช่น 211.11)"
-            type="number"
-            step="0.01"
-            value={form.credits}
-            onChange={e => setForm(f => ({ ...f, credits: e.target.value }))}
-          />
-          <input
-            className={inputCls}
-            placeholder="ต้นทุน (เช่น 150.00)"
-            type="number"
-            step="0.01"
-            value={form.cost}
-            onChange={e => setForm(f => ({ ...f, cost: e.target.value }))}
-          />
-          {!isCreditsForm && (
-            <input
-              className={inputCls}
-              placeholder="Link SMS (ไม่บังคับ)"
-              value={form.link_sms}
-              onChange={e => setForm(f => ({ ...f, link_sms: e.target.value }))}
-            />
-          )}
-          <div className={isCreditsForm ? 'col-span-2' : ''}>
-            <input
-              className={`w-full ${inputCls}`}
-              type="date"
-              title="วันที่บันทึก"
-              value={form.created_date}
-              onChange={e => setForm(f => ({ ...f, created_date: e.target.value }))}
-            />
-          </div>
-          <textarea
-            className={`col-span-2 ${inputCls} resize-none`}
-            placeholder="หมายเหตุ (ไม่บังคับ)"
-            rows={2}
-            value={form.note}
-            onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
-          />
         </div>
         {formError && <p className="text-red-500 text-sm mb-2">{formError}</p>}
         <button
@@ -640,76 +657,107 @@ export default function EmailsPage() {
                   onChange={v => setEditModal(m => ({ ...m, fill_type: v || null }))}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm text-slate-500 mb-1.5">ต้นทุน (฿)</label>
-                  <input
-                    type="number" step="0.01" className={`w-full ${inputCls}`}
-                    value={editModal.cost ?? 0}
-                    onChange={e => setEditModal(m => ({ ...m, cost: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-500 mb-1.5">เครดิต</label>
-                  <input
-                    type="number" step="0.01" className={`w-full ${inputCls}`}
-                    value={editModal.credits}
-                    onChange={e => setEditModal(m => ({ ...m, credits: e.target.value }))}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm text-slate-500 mb-1.5">
-                  {isCreditsEdit ? 'ชื่อ Supplier' : 'Email'}
-                </label>
-                <input
-                  type={isCreditsEdit ? 'text' : 'email'} className={`w-full ${inputCls}`}
-                  value={editModal.email}
-                  onChange={e => setEditModal(m => ({ ...m, email: e.target.value }))}
-                />
-              </div>
-              {!isCreditsEdit && (
-                <div>
-                  <label className="block text-sm text-slate-500 mb-1.5">Password</label>
-                  <div className="flex gap-2">
+
+              {isCreditsEdit ? (
+                /* --- Credits type: เฉพาะ Supplier + เครดิต + ต้นทุน --- */
+                <>
+                  <div>
+                    <label className="block text-sm text-slate-500 mb-1.5">ชื่อ Supplier</label>
                     <input
-                      type={editShowPass ? 'text' : 'password'} className={`flex-1 ${inputCls}`}
-                      value={editModal.password}
-                      onChange={e => setEditModal(m => ({ ...m, password: e.target.value }))}
+                      type="text" className={`w-full ${inputCls}`}
+                      value={editModal.email}
+                      onChange={e => setEditModal(m => ({ ...m, email: e.target.value }))}
                     />
-                    <button onClick={() => setEditShowPass(p => !p)} className="px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-500 cursor-pointer hover:border-slate-400">
-                      {editShowPass ? 'ซ่อน' : 'แสดง'}
-                    </button>
                   </div>
-                </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm text-slate-500 mb-1.5">เครดิต</label>
+                      <input
+                        type="number" step="0.01" className={`w-full ${inputCls}`}
+                        value={editModal.credits}
+                        onChange={e => setEditModal(m => ({ ...m, credits: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-slate-500 mb-1.5">ต้นทุน (฿/เครดิต)</label>
+                      <input
+                        type="number" step="0.01" className={`w-full ${inputCls}`}
+                        value={editModal.cost ?? 0}
+                        onChange={e => setEditModal(m => ({ ...m, cost: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* --- ประเภทอื่น: ฟอร์มปกติ --- */
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm text-slate-500 mb-1.5">ต้นทุน (฿)</label>
+                      <input
+                        type="number" step="0.01" className={`w-full ${inputCls}`}
+                        value={editModal.cost ?? 0}
+                        onChange={e => setEditModal(m => ({ ...m, cost: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-slate-500 mb-1.5">เครดิต</label>
+                      <input
+                        type="number" step="0.01" className={`w-full ${inputCls}`}
+                        value={editModal.credits}
+                        onChange={e => setEditModal(m => ({ ...m, credits: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-500 mb-1.5">Email</label>
+                    <input
+                      type="email" className={`w-full ${inputCls}`}
+                      value={editModal.email}
+                      onChange={e => setEditModal(m => ({ ...m, email: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-500 mb-1.5">Password</label>
+                    <div className="flex gap-2">
+                      <input
+                        type={editShowPass ? 'text' : 'password'} className={`flex-1 ${inputCls}`}
+                        value={editModal.password}
+                        onChange={e => setEditModal(m => ({ ...m, password: e.target.value }))}
+                      />
+                      <button onClick={() => setEditShowPass(p => !p)} className="px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-500 cursor-pointer hover:border-slate-400">
+                        {editShowPass ? 'ซ่อน' : 'แสดง'}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-500 mb-1.5">Link SMS (ไม่บังคับ)</label>
+                    <input
+                      className={`w-full ${inputCls}`}
+                      value={editModal.link_sms || ''}
+                      onChange={e => setEditModal(m => ({ ...m, link_sms: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-500 mb-1.5">วันที่บันทึก</label>
+                    <input
+                      type="date" className={`w-full ${inputCls}`}
+                      value={editModal.created_date || ''}
+                      onChange={e => setEditModal(m => ({ ...m, created_date: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-500 mb-1.5">หมายเหตุ</label>
+                    <textarea
+                      className={`w-full ${inputCls} resize-none`}
+                      rows={2}
+                      value={editModal.note || ''}
+                      onChange={e => setEditModal(m => ({ ...m, note: e.target.value }))}
+                    />
+                  </div>
+                </>
               )}
-              {!isCreditsEdit && (
-                <div>
-                  <label className="block text-sm text-slate-500 mb-1.5">Link SMS (ไม่บังคับ)</label>
-                  <input
-                    className={`w-full ${inputCls}`}
-                    value={editModal.link_sms || ''}
-                    onChange={e => setEditModal(m => ({ ...m, link_sms: e.target.value }))}
-                  />
-                </div>
-              )}
-              <div>
-                <label className="block text-sm text-slate-500 mb-1.5">วันที่บันทึก</label>
-                <input
-                  type="date" className={`w-full ${inputCls}`}
-                  value={editModal.created_date || ''}
-                  onChange={e => setEditModal(m => ({ ...m, created_date: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-500 mb-1.5">หมายเหตุ</label>
-                <textarea
-                  className={`w-full ${inputCls} resize-none`}
-                  rows={2}
-                  value={editModal.note || ''}
-                  onChange={e => setEditModal(m => ({ ...m, note: e.target.value }))}
-                />
-              </div>
+
               <div className="flex items-center gap-3 pt-1">
                 <label className="text-sm text-slate-500">สถานะ</label>
                 <button
