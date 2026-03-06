@@ -569,7 +569,21 @@ export default function OrdersPage() {
                               item.cost_used != null && Number(item.cost_used) > 0
                                 ? <span className="text-slate-700 font-semibold text-sm">฿{Number(item.cost_used).toLocaleString()}</span>
                                 : <span className="text-slate-200">—</span>
-                            ) : item.credit_deducted != null ? (
+                            ) : item.price_usd_used != null ? (() => {
+                              const usdAmt = Number(item.price_usd_used) * (item.bundle_lot_info ? 1 : Number(item.quantity))
+                              const tooltipText = item.bundle_lot_info ? (() => {
+                                try {
+                                  const comps = JSON.parse(item.bundle_lot_info)
+                                  return comps.map(c => `${c.name}${c.cost != null ? ` ต้นทุน ${c.cost}` : ''}`).join('\n')
+                                } catch { return item.product_name }
+                              })() : `ต้นทุน Lot: ${item.lot_cost_used != null ? `฿${item.lot_cost_used}` : '—'}`
+                              return (
+                                <span className="text-slate-700 font-semibold text-sm">
+                                  ${Number.isInteger(usdAmt) ? usdAmt : usdAmt.toFixed(2)}
+                                  <InfoTooltip>{tooltipText}</InfoTooltip>
+                                </span>
+                              )
+                            })() : item.credit_deducted != null ? (
                               <span className="text-slate-700 font-semibold text-sm">
                                 {Number(item.credit_deducted).toFixed(2)}
                               </span>
