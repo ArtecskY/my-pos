@@ -574,7 +574,30 @@ export default function POSPage() {
           }
 
           {cart.length > 0 && (
-            <div className="text-right font-bold text-blue-900 mt-3 text-lg">รวม ฿{total}</div>
+            <div className="mt-3">
+              <div className="text-right font-bold text-blue-900 text-lg">รวม ฿{total}</div>
+              {(() => {
+                // credits needed for EMAIL-behavior items
+                const emailItems = cart.filter(i => {
+                  if (['EMAIL', 'OTHER_EMAIL'].includes(i.fill_type)) return true
+                  const ct = emailTypes.find(t => t.key === i.fill_type)
+                  return ct?.behavior === 'EMAIL'
+                })
+                const totalCredits = emailItems.reduce((sum, i) => sum + creditsNeeded(i, emailTypes), 0)
+                // total cost for UID items (fill_type = UID or no fill_type but has cost)
+                const uidItems = cart.filter(i => {
+                  const ct = emailTypes.find(t => t.key === i.fill_type)
+                  return !i.fill_type || i.fill_type === 'UID' || ct?.behavior === 'UID'
+                })
+                const totalUidCost = uidItems.reduce((sum, i) => sum + (i.cost || 0) * i.quantity, 0)
+                return (
+                  <div className="text-right text-xs text-slate-400 mt-0.5 space-y-0.5">
+                    {totalCredits > 0 && <div>เครดิตที่ต้องใช้: <span className="font-medium text-amber-600">{totalCredits.toFixed(2)} เครดิต</span></div>}
+                    {totalUidCost > 0 && <div>ต้นทุน UID: <span className="font-medium text-slate-600">฿{totalUidCost.toFixed(2)}</span></div>}
+                  </div>
+                )
+              })()}
+            </div>
           )}
 
           {/* Buy mode: channel + TW + checkout button */}
@@ -709,7 +732,7 @@ export default function POSPage() {
                         <p className="text-xs text-slate-400">{r.reserve_time.replace('T', ' ')}</p>
                       )}
                       <p className="text-xs text-slate-500 mt-1 truncate">
-                        {r.items.map(item => `${item.name} ×${item.quantity}`).join(' · ')}
+                        {[...new Set(r.items.map(item => item.category_name || item.name))].join(' · ')}
                       </p>
                     </div>
                     <button

@@ -346,7 +346,7 @@ initDB().then(() => {
     const { key, label, color, behavior } = req.body
     if (!label?.trim()) return res.status(400).json({ error: 'กรุณากรอกชื่อประเภท' })
     const k = key?.trim() || label.trim()
-    const beh = behavior === 'RAZER' ? 'RAZER' : 'EMAIL'
+    const beh = ['RAZER', 'CREDITS'].includes(behavior) ? behavior : 'EMAIL'
     try {
       db.run('INSERT INTO email_types (key, label, color, behavior) VALUES (?,?,?,?)',
         [k, label.trim(), color || 'bg-slate-100 text-slate-700', beh])
@@ -630,12 +630,13 @@ initDB().then(() => {
     })) : []
     for (const r of reservations) {
       const items = db.exec(`
-        SELECT ri.product_id, ri.quantity, p.name, p.price
+        SELECT ri.product_id, ri.quantity, p.name, p.price, c.name as category_name
         FROM reservation_items ri
         JOIN products p ON p.id = ri.product_id
+        LEFT JOIN categories c ON c.id = p.category_id
         WHERE ri.reservation_id=?`, [r.id])
       r.items = items[0] ? items[0].values.map(row => ({
-        product_id: row[0], quantity: row[1], name: row[2], price: row[3],
+        product_id: row[0], quantity: row[1], name: row[2], price: row[3], category_name: row[4],
       })) : []
     }
     res.json(reservations)
