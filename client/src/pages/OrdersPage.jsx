@@ -407,12 +407,13 @@ export default function OrdersPage() {
                   const qty = i.bundle_lot_info ? 1 : Number(i.quantity)
                   return s + Number(i.price_usd_used) * qty
                 }, 0)
-                const hasUsd = orderUsdTotal > 0
+                const hasManual = order.items.some(i => i.manual_data)
+                const hasUsd = orderUsdTotal > 0 && !hasManual
                 const orderCostTotal = order.items.reduce((s, i) => {
                   if (i.manual_data || i.credit_deducted != null) return s
                   return s + (i.cost_used != null && Number(i.cost_used) > 0 ? Number(i.cost_used) * i.quantity : 0)
                 }, 0)
-                const hasCost = !hasUsd && !order.items.some(i => i.manual_data || i.credit_deducted != null) && orderCostTotal > 0
+                const hasCost = !hasUsd && !hasManual && !order.items.some(i => i.credit_deducted != null) && orderCostTotal > 0
                 return (
                   <tbody key={order.order_id} className="border-t border-slate-100">
                     {order.items.map((item, idx) => (
@@ -499,9 +500,11 @@ export default function OrdersPage() {
                             )}
                           </td>
                         )}
-                        {/* ชื่อเกม — แสดงทุกแถว */}
+                        {/* ชื่อเกม — แสดงเมื่อต่างจากแถวก่อน */}
                         <td className="py-2.5 px-3 text-slate-400 text-xs whitespace-nowrap">
-                          {item.category_name || <span className="text-slate-200">—</span>}
+                          {idx === 0 || item.category_name !== order.items[idx - 1]?.category_name
+                            ? (item.category_name || <span className="text-slate-200">—</span>)
+                            : null}
                         </td>
                         {/* ชื่อสินค้า + ⓘ */}
                         <td className="py-2.5 px-3 text-slate-800 font-medium">
