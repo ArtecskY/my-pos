@@ -76,6 +76,7 @@ export default function ManagePage() {
   const [categories, setCategories] = useState([])
   const [customEmailTypes, setCustomEmailTypes] = useState([])
   const [search, setSearch] = useState('')
+  const [selectedCat, setSelectedCat] = useState('')
   const [selectedFillType, setSelectedFillType] = useState('')
 
   // Add game modal
@@ -445,13 +446,19 @@ export default function ManagePage() {
 
   const activeFillTypes = [...new Set(categories.map(c => c.fill_type).filter(Boolean))]
 
+  const searchLower = search.toLowerCase()
   const grouped = categories
     .filter(c => !selectedFillType || c.fill_type === selectedFillType)
-    .filter(c => !search || String(c.id) === search)
+    .filter(c => !selectedCat || String(c.id) === selectedCat)
     .map(c => ({
       ...c,
-      items: products.filter(p => p.category_id === c.id),
+      items: products.filter(p => {
+        if (p.category_id !== c.id) return false
+        if (!search) return true
+        return p.name.toLowerCase().includes(searchLower) || c.name.toLowerCase().includes(searchLower)
+      }),
     }))
+    .filter(c => !search || c.items.length > 0)
 
   return (
     <div className="space-y-4">
@@ -469,18 +476,25 @@ export default function ManagePage() {
       <div className="space-y-2">
         <div className="flex gap-2">
           <select
-            value={search}
-            onChange={e => { setSearch(e.target.value); setSelectedFillType('') }}
-            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white flex-1"
+            value={selectedCat}
+            onChange={e => { setSelectedCat(e.target.value); setSelectedFillType('') }}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white"
           >
             <option value="">ทุกเกม</option>
             {categories.map(c => (
               <option key={c.id} value={String(c.id)}>{c.name}</option>
             ))}
           </select>
-          {(search || selectedFillType) && (
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="ค้นหาสินค้า..."
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white flex-1"
+          />
+          {(search || selectedCat || selectedFillType) && (
             <button
-              onClick={() => { setSearch(''); setSelectedFillType('') }}
+              onClick={() => { setSearch(''); setSelectedCat(''); setSelectedFillType('') }}
               className="px-3 py-2 text-sm text-slate-400 hover:text-slate-600 cursor-pointer whitespace-nowrap"
             >
               ล้าง ×
