@@ -114,8 +114,13 @@ export default function OrdersPage() {
   const [editAmountValue, setEditAmountValue] = useState('')
 
   useEffect(() => {
-    fetch('/order-items').then(r => r.json()).then(setOrderItems)
-    fetch('/email-types').then(r => r.json()).then(setCustomTypes)
+    function loadData() {
+      fetch('/order-items').then(r => r.json()).then(setOrderItems)
+      fetch('/email-types').then(r => r.json()).then(setCustomTypes)
+    }
+    loadData()
+    const timer = setInterval(loadData, 8000)
+    return () => clearInterval(timer)
   }, [])
 
   const groupedByDate = useMemo(() => {
@@ -201,7 +206,7 @@ export default function OrdersPage() {
     return [...orders].sort((a, b) => {
       const ta = (a.transfer_time || a.created_at || '').replace(' ', 'T')
       const tb = (b.transfer_time || b.created_at || '').replace(' ', 'T')
-      return ta < tb ? -1 : ta > tb ? 1 : 0
+      return ta < tb ? 1 : ta > tb ? -1 : 0 // ล่าสุดขึ้นก่อน
     })
   }, [currentGroup, selectedGame])
 
@@ -586,7 +591,16 @@ export default function OrdersPage() {
                         {/* ประเภท */}
                         {idx === 0 && (
                           <td rowSpan={order.items.length} className="py-2.5 px-3 align-middle text-center whitespace-nowrap">
-                            <FillBadge fill_type={item.fill_type} customTypes={customTypes} />
+                            {item.manual_data ? (() => {
+                              try {
+                                const md = JSON.parse(item.manual_data)
+                                return md.supplier_name
+                                  ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700">{md.supplier_name}</span>
+                                  : <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">Manual</span>
+                              } catch { return null }
+                            })() : (
+                              <FillBadge fill_type={item.fill_type} customTypes={customTypes} />
+                            )}
                           </td>
                         )}
                         {/* ปุ่มลบ */}

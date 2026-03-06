@@ -16,6 +16,10 @@ const CUSTOM_COLORS = [
   'bg-lime-100 text-lime-700',
 ]
 
+function todayStr() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function FillTypeBadge({ fill_type, allTypes }) {
   const cfg = allTypes[fill_type]
   if (!cfg) return null
@@ -51,7 +55,10 @@ function CopyCell({ value, masked, maskChar = '••••••••' }) {
 export default function EmailsPage() {
   const [emails, setEmails] = useState([])
   const [customTypes, setCustomTypes] = useState([])
-  const [form, setForm] = useState({ email: '', password: '', link_sms: '', credits: '', cost: '', fill_type: '', note: '' })
+  const [form, setForm] = useState({
+    email: '', password: '', link_sms: '', credits: '', cost: '',
+    fill_type: '', note: '', created_date: todayStr(),
+  })
   const [formError, setFormError] = useState('')
   const [showPass, setShowPass] = useState({})
   const [editModal, setEditModal] = useState(null)
@@ -80,7 +87,11 @@ export default function EmailsPage() {
     setCustomTypes(typeData)
   }
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => {
+    loadAll()
+    const timer = setInterval(loadAll, 10000)
+    return () => clearInterval(timer)
+  }, [])
 
   // allTypes = builtin + custom รวมกัน
   const allTypes = useMemo(() => {
@@ -90,6 +101,12 @@ export default function EmailsPage() {
     })
     return combined
   }, [customTypes])
+
+  function hasCreditsBehavior(fill_type) {
+    if (!fill_type) return false
+    const t = customTypes.find(ct => ct.key === fill_type)
+    return t?.behavior === 'CREDITS'
+  }
 
   // Filtered email list
   const filtered = useMemo(() => emails.filter(e => {
@@ -111,7 +128,12 @@ export default function EmailsPage() {
 
   async function addEmail() {
     setFormError('')
-    if (!form.email.trim() || !form.password.trim()) { setFormError('กรุณากรอก Email และ Password'); return }
+    const isCredits = hasCreditsBehavior(form.fill_type)
+    if (!form.email.trim()) {
+      setFormError('กรุณากรอก ' + (isCredits ? 'ชื่อ Supplier' : 'Email'))
+      return
+    }
+    if (!isCredits && !form.password.trim()) { setFormError('กรุณากรอก Password'); return }
     if (form.credits !== '' && isNaN(Number(form.credits))) { setFormError('เครดิตต้องเป็นตัวเลข'); return }
     if (form.cost !== '' && isNaN(Number(form.cost))) { setFormError('ต้นทุนต้องเป็นตัวเลข'); return }
     const res = await fetch('/emails', {
@@ -125,16 +147,17 @@ export default function EmailsPage() {
         cost: form.cost !== '' ? Number(form.cost) : 0,
         fill_type: form.fill_type || null,
         note: form.note.trim() || null,
+        created_date: form.created_date || null,
       }),
     })
     const data = await res.json()
     if (!res.ok) { setFormError(data.error); return }
-    setForm({ email: '', password: '', link_sms: '', credits: '', cost: '', fill_type: '', note: '' })
+    setForm({ email: '', password: '', link_sms: '', credits: '', cost: '', fill_type: '', note: '', created_date: todayStr() })
     loadAll()
   }
 
   async function saveEdit() {
-    const { id, email, password, link_sms, credits, cost, fill_type, note } = editModal
+    const { id, email, password, link_sms, credits, cost, fill_type, note, broken, created_date } = editModal
     await fetch(`/emails/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -145,6 +168,8 @@ export default function EmailsPage() {
         cost: Number(cost) || 0,
         fill_type: fill_type || null,
         note: note || null,
+        broken: broken ? 1 : 0,
+        created_date: created_date || null,
       }),
     })
     setEditModal(null)
@@ -164,7 +189,18 @@ export default function EmailsPage() {
         cost: Number(email.cost) || 0,
         fill_type: email.fill_type || null,
         note: newNote.trim() || null,
+        broken: email.broken ? 1 : 0,
+        created_date: email.created_date || null,
       }),
+    })
+    loadAll()
+  }
+
+  async function toggleBroken(email) {
+    await fetch(`/emails/${email.id}/broken`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ broken: !email.broken }),
     })
     loadAll()
   }
@@ -230,26 +266,45 @@ export default function EmailsPage() {
     )
   }
 
+  const isCreditsForm = hasCreditsBehavior(form.fill_type)
+  const isCreditsEdit = editModal ? hasCreditsBehavior(editModal.fill_type) : false
+
   return (
     <div className="space-y-5">
       {/* Add Email */}
       <div className="bg-white rounded-xl p-6 shadow-sm">
         <h2 className="font-semibold text-slate-800 mb-4">เพิ่ม Email ใหม่</h2>
         <div className="grid grid-cols-2 gap-2.5 mb-2">
-          <input
-            className={inputCls}
-            placeholder="Email"
-            type="email"
-            value={form.email}
-            onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-          />
-          <input
-            className={inputCls}
-            placeholder="Password"
-            type="text"
-            value={form.password}
-            onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-          />
+          {/* ประเภทก่อน เพื่อจะได้ detect CREDITS */}
+          <div className="col-span-2">
+            <TypeSelect value={form.fill_type} onChange={v => setForm(f => ({ ...f, fill_type: v }))} />
+          </div>
+          {isCreditsForm ? (
+            <input
+              className={`col-span-2 ${inputCls}`}
+              placeholder="ชื่อ Supplier"
+              type="text"
+              value={form.email}
+              onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+            />
+          ) : (
+            <>
+              <input
+                className={inputCls}
+                placeholder="Email"
+                type="email"
+                value={form.email}
+                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+              />
+              <input
+                className={inputCls}
+                placeholder="Password"
+                type="text"
+                value={form.password}
+                onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+              />
+            </>
+          )}
           <input
             className={inputCls}
             placeholder="เครดิต (เช่น 211.11)"
@@ -266,13 +321,23 @@ export default function EmailsPage() {
             value={form.cost}
             onChange={e => setForm(f => ({ ...f, cost: e.target.value }))}
           />
-          <input
-            className={inputCls}
-            placeholder="Link SMS (ไม่บังคับ)"
-            value={form.link_sms}
-            onChange={e => setForm(f => ({ ...f, link_sms: e.target.value }))}
-          />
-          <TypeSelect value={form.fill_type} onChange={v => setForm(f => ({ ...f, fill_type: v }))} />
+          {!isCreditsForm && (
+            <input
+              className={inputCls}
+              placeholder="Link SMS (ไม่บังคับ)"
+              value={form.link_sms}
+              onChange={e => setForm(f => ({ ...f, link_sms: e.target.value }))}
+            />
+          )}
+          <div className={isCreditsForm ? 'col-span-2' : ''}>
+            <input
+              className={`w-full ${inputCls}`}
+              type="date"
+              title="วันที่บันทึก"
+              value={form.created_date}
+              onChange={e => setForm(f => ({ ...f, created_date: e.target.value }))}
+            />
+          </div>
           <textarea
             className={`col-span-2 ${inputCls} resize-none`}
             placeholder="หมายเหตุ (ไม่บังคับ)"
@@ -298,6 +363,7 @@ export default function EmailsPage() {
             {customTypes.map((t, idx) => (
               <span key={t.id} className={`inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full text-xs font-medium ${t.color || CUSTOM_COLORS[idx % CUSTOM_COLORS.length]}`}>
                 {t.label}
+                {t.behavior === 'CREDITS' && <span className="opacity-60 text-[10px]">(Credits)</span>}
                 <button
                   onClick={() => deleteType(t.id, t.label)}
                   className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black/10 cursor-pointer transition-colors text-[10px] leading-none"
@@ -379,16 +445,22 @@ export default function EmailsPage() {
                     <th className="pb-2 px-2 font-medium">ประเภท</th>
                     <th className="pb-2 px-2 font-medium text-right">ต้นทุน</th>
                     <th className="pb-2 px-2 font-medium text-right">เครดิต</th>
-                    <th className="pb-2 px-2 font-medium">Email</th>
+                    <th className="pb-2 px-2 font-medium">Email / Supplier</th>
                     <th className="pb-2 px-2 font-medium">Password</th>
                     <th className="pb-2 px-2 font-medium">หมายเหตุ</th>
                     <th className="pb-2 px-2 font-medium text-center">OTP</th>
+                    <th className="pb-2 px-2 font-medium text-right">เครดิตเริ่มต้น</th>
                     <th className="pb-2 px-2"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map(e => (
-                    <tr key={e.id} className={`border-b border-slate-100 hover:bg-slate-50 ${Number(e.credits) === 0 ? 'opacity-50' : ''}`}>
+                    <tr
+                      key={e.id}
+                      className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${
+                        e.broken ? 'bg-red-50 hover:bg-red-100' : (Number(e.credits) === 0 ? 'opacity-50' : '')
+                      }`}
+                    >
                       <td className="py-2.5 px-2">
                         {e.fill_type ? <FillTypeBadge fill_type={e.fill_type} allTypes={allTypes} /> : <span className="text-slate-300 text-xs">—</span>}
                       </td>
@@ -402,17 +474,21 @@ export default function EmailsPage() {
                         <CopyCell value={e.email} />
                       </td>
                       <td className="py-2.5 px-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className="relative">
-                            <CopyCell value={e.password} masked={!showPass[e.id]} />
-                          </span>
-                          <button
-                            onClick={() => setShowPass(p => ({ ...p, [e.id]: !p[e.id] }))}
-                            className="text-xs text-slate-400 hover:text-slate-600 cursor-pointer"
-                          >
-                            {showPass[e.id] ? 'ซ่อน' : 'แสดง'}
-                          </button>
-                        </div>
+                        {e.password ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="relative">
+                              <CopyCell value={e.password} masked={!showPass[e.id]} />
+                            </span>
+                            <button
+                              onClick={() => setShowPass(p => ({ ...p, [e.id]: !p[e.id] }))}
+                              className="text-xs text-slate-400 hover:text-slate-600 cursor-pointer"
+                            >
+                              {showPass[e.id] ? 'ซ่อน' : 'แสดง'}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-slate-300 text-xs">—</span>
+                        )}
                       </td>
                       <td className="py-2.5 px-2 text-xs text-slate-500 max-w-[160px]">
                         {inlineNote?.id === e.id ? (
@@ -453,9 +529,25 @@ export default function EmailsPage() {
                         )}
                       </td>
                       <td className="py-2.5 px-2 text-right whitespace-nowrap">
+                        <span className={`font-semibold text-sm ${Number(e.initial_credits) === 0 ? 'text-slate-300' : 'text-slate-600'}`}>
+                          {Number(e.initial_credits).toFixed(2)}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-2 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => toggleBroken(e)}
+                          className={`px-2.5 py-1.5 rounded-md mr-1 cursor-pointer text-xs font-medium transition-colors ${
+                            e.broken
+                              ? 'bg-red-500 hover:bg-red-600 text-white'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-500'
+                          }`}
+                          title={e.broken ? 'คลิกเพื่อยกเลิกเสีย' : 'คลิกเพื่อระบุว่าเสีย'}
+                        >
+                          เสีย
+                        </button>
                         <button
                           onClick={() => { setEditModal({ ...e }); setEditShowPass(false) }}
-                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-md mr-1.5 cursor-pointer text-xs"
+                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-md mr-1 cursor-pointer text-xs"
                         >
                           แก้ไข
                         </button>
@@ -493,16 +585,17 @@ export default function EmailsPage() {
             </div>
             <div className="mb-4">
               <label className="block text-xs text-slate-500 mb-2">ทำงานเหมือน</label>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-col">
                 {[
                   { v: 'EMAIL', label: 'Apple ID', desc: 'ตัดเครดิตตามชื่อ ($) หรือราคา' },
                   { v: 'RAZER', label: 'Razer', desc: 'กรอกจำนวนเครดิตเองตอนชำระ' },
+                  { v: 'CREDITS', label: 'Credits', desc: 'Supplier — กรอกเครดิตเอง ต้นทุน = เครดิต × ราคา/หน่วย' },
                 ].map(({ v, label, desc }) => (
                   <button
                     key={v}
                     type="button"
                     onClick={() => setNewTypeBehavior(v)}
-                    className={`flex-1 p-3 rounded-xl border-2 text-left cursor-pointer transition-colors ${
+                    className={`p-3 rounded-xl border-2 text-left cursor-pointer transition-colors ${
                       newTypeBehavior === v
                         ? 'border-blue-500 bg-blue-50'
                         : 'border-slate-200 hover:border-slate-300'
@@ -566,32 +659,46 @@ export default function EmailsPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm text-slate-500 mb-1.5">Email</label>
+                <label className="block text-sm text-slate-500 mb-1.5">
+                  {isCreditsEdit ? 'ชื่อ Supplier' : 'Email'}
+                </label>
                 <input
-                  type="email" className={`w-full ${inputCls}`}
+                  type={isCreditsEdit ? 'text' : 'email'} className={`w-full ${inputCls}`}
                   value={editModal.email}
                   onChange={e => setEditModal(m => ({ ...m, email: e.target.value }))}
                 />
               </div>
-              <div>
-                <label className="block text-sm text-slate-500 mb-1.5">Password</label>
-                <div className="flex gap-2">
-                  <input
-                    type={editShowPass ? 'text' : 'password'} className={`flex-1 ${inputCls}`}
-                    value={editModal.password}
-                    onChange={e => setEditModal(m => ({ ...m, password: e.target.value }))}
-                  />
-                  <button onClick={() => setEditShowPass(p => !p)} className="px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-500 cursor-pointer hover:border-slate-400">
-                    {editShowPass ? 'ซ่อน' : 'แสดง'}
-                  </button>
+              {!isCreditsEdit && (
+                <div>
+                  <label className="block text-sm text-slate-500 mb-1.5">Password</label>
+                  <div className="flex gap-2">
+                    <input
+                      type={editShowPass ? 'text' : 'password'} className={`flex-1 ${inputCls}`}
+                      value={editModal.password}
+                      onChange={e => setEditModal(m => ({ ...m, password: e.target.value }))}
+                    />
+                    <button onClick={() => setEditShowPass(p => !p)} className="px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-500 cursor-pointer hover:border-slate-400">
+                      {editShowPass ? 'ซ่อน' : 'แสดง'}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
+              {!isCreditsEdit && (
+                <div>
+                  <label className="block text-sm text-slate-500 mb-1.5">Link SMS (ไม่บังคับ)</label>
+                  <input
+                    className={`w-full ${inputCls}`}
+                    value={editModal.link_sms || ''}
+                    onChange={e => setEditModal(m => ({ ...m, link_sms: e.target.value }))}
+                  />
+                </div>
+              )}
               <div>
-                <label className="block text-sm text-slate-500 mb-1.5">Link SMS (ไม่บังคับ)</label>
+                <label className="block text-sm text-slate-500 mb-1.5">วันที่บันทึก</label>
                 <input
-                  className={`w-full ${inputCls}`}
-                  value={editModal.link_sms || ''}
-                  onChange={e => setEditModal(m => ({ ...m, link_sms: e.target.value }))}
+                  type="date" className={`w-full ${inputCls}`}
+                  value={editModal.created_date || ''}
+                  onChange={e => setEditModal(m => ({ ...m, created_date: e.target.value }))}
                 />
               </div>
               <div>
@@ -603,6 +710,20 @@ export default function EmailsPage() {
                   onChange={e => setEditModal(m => ({ ...m, note: e.target.value }))}
                 />
               </div>
+              <div className="flex items-center gap-3 pt-1">
+                <label className="text-sm text-slate-500">สถานะ</label>
+                <button
+                  type="button"
+                  onClick={() => setEditModal(m => ({ ...m, broken: !m.broken }))}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium cursor-pointer border transition-colors ${
+                    editModal.broken
+                      ? 'bg-red-500 text-white border-red-500'
+                      : 'bg-white text-slate-500 border-slate-300 hover:border-slate-400'
+                  }`}
+                >
+                  {editModal.broken ? '🔴 เสีย' : 'ปกติ'}
+                </button>
+              </div>
             </div>
             <div className="flex gap-2.5 mt-6">
               <button onClick={saveEdit} className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2.5 rounded-lg cursor-pointer">บันทึก</button>
@@ -611,8 +732,6 @@ export default function EmailsPage() {
           </div>
         </div>
       )}
-
-
     </div>
   )
 }

@@ -386,7 +386,7 @@ initDB().then(() => {
   }
 
   app.post('/orders', requireLogin, (req, res) => {
-    const { items, transfer_amount, transfer_time, channel, tw } = req.body
+    const { items, transfer_amount, transfer_time, channel, tw, reservation_id } = req.body
 
     // Validate stock before proceeding
     const emailPendingDeductions = {} // track total deductions per email_id in this order
@@ -428,7 +428,7 @@ initDB().then(() => {
           if (!item.email_id) return res.status(400).json({ error: `กรุณาเลือก Email สำหรับ "${name}"` })
           const isCustom = !['EMAIL', 'RAZER', 'OTHER_EMAIL'].includes(fill_type)
           const customBehavior = isCustom ? getCustomEmailBehavior(fill_type) : null
-          const isRazerLike = fill_type === 'RAZER' || customBehavior === 'RAZER'
+          const isRazerLike = fill_type === 'RAZER' || customBehavior === 'RAZER' || customBehavior === 'CREDITS'
           if (isRazerLike && !item.credit_amount)
             return res.status(400).json({ error: `กรุณากรอกจำนวนเครดิตสำหรับ "${name}"` })
           const needed = isRazerLike ? (item.credit_amount || 0)
@@ -528,7 +528,7 @@ initDB().then(() => {
         } else if (usesEmailCredits(fill_type)) {
           const isCustom = !['EMAIL', 'RAZER', 'OTHER_EMAIL'].includes(fill_type)
           const customBehavior = isCustom ? getCustomEmailBehavior(fill_type) : null
-          const isRazerLike = fill_type === 'RAZER' || customBehavior === 'RAZER'
+          const isRazerLike = fill_type === 'RAZER' || customBehavior === 'RAZER' || customBehavior === 'CREDITS'
           creditDeducted = isRazerLike ? item.credit_amount
             : parseCreditPerUnit(productName, price, price_usd) * item.quantity
           emailIdUsed = item.email_id
@@ -542,6 +542,11 @@ initDB().then(() => {
       }
       db.run('UPDATE order_items SET credit_deducted=?, email_id_used=?, lot_id_used=?, price_usd_used=?, cost_used=?, lot_cost_used=?, bundle_lot_info=? WHERE id=?',
         [creditDeducted, emailIdUsed, lotIdUsed, priceUsdUsed, costUsed, lotCostUsed, bundleLotInfo, orderItemId])
+    }
+
+    if (reservation_id) {
+      db.run('DELETE FROM reservation_items WHERE reservation_id=?', [reservation_id])
+      db.run('DELETE FROM reservations WHERE id=?', [reservation_id])
     }
 
     save()
@@ -616,6 +621,68 @@ initDB().then(() => {
     res.json({ message: 'อัปเดตเวลาสำเร็จ' })
   })
 
+  // --- Reservations ---
+  app.get('/reservations', requireLogin, (req, res) => {
+    const result = db.exec('SELECT id, customer_name, transfer_amount, reserve_time, channel, created_at FROM reservations ORDER BY id DESC')
+    const reservations = result[0] ? result[0].values.map(row => ({
+      id: row[0], customer_name: row[1], transfer_amount: row[2],
+      reserve_time: row[3], channel: row[4], created_at: row[5],
+    })) : []
+    for (const r of reservations) {
+      const items = db.exec(`
+        SELECT ri.product_id, ri.quantity, p.name, p.price
+        FROM reservation_items ri
+        JOIN products p ON p.id = ri.product_id
+        WHERE ri.reservation_id=?`, [r.id])
+      r.items = items[0] ? items[0].values.map(row => ({
+        product_id: row[0], quantity: row[1], name: row[2], price: row[3],
+      })) : []
+    }
+    res.json(reservations)
+  })
+
+  app.post('/reservations', requireLogin, (req, res) => {
+    const { customer_name, transfer_amount, reserve_time, channel, items } = req.body
+    if (!items || items.length === 0) return res.status(400).json({ error: 'กรุณาเลือกสินค้า' })
+    db.run('INSERT INTO reservations (customer_name, transfer_amount, reserve_time, channel) VALUES (?,?,?,?)',
+      [customer_name || null, transfer_amount || null, reserve_time || null, channel || null])
+    const r = db.exec('SELECT last_insert_rowid()')
+    const reservationId = r[0].values[0][0]
+    for (const item of items) {
+      db.run('INSERT INTO reservation_items (reservation_id, product_id, quantity) VALUES (?,?,?)',
+        [reservationId, item.product_id, item.quantity])
+    }
+    save()
+    res.json({ id: reservationId, message: 'บันทึกการจองสำเร็จ' })
+  })
+
+  app.delete('/reservations/:id', requireLogin, (req, res) => {
+    db.run('DELETE FROM reservation_items WHERE reservation_id=?', [req.params.id])
+    db.run('DELETE FROM reservations WHERE id=?', [req.params.id])
+    save()
+    res.json({ message: 'ลบการจองสำเร็จ' })
+  })
+
+  app.post('/manual-orders', requireLogin, (req, res) => {
+    const { transfer_amount, transfer_time, game_name, product_name, cost, supplier_name, channel, tw } = req.body
+    if (!product_name) return res.status(400).json({ error: 'กรุณากรอกชื่อสินค้า' })
+    const amount = transfer_amount ? Number(transfer_amount) : 0
+    db.run('INSERT INTO orders (total, transfer_amount, transfer_time, channel, tw) VALUES (?, ?, ?, ?, ?)',
+      [amount, amount || null, transfer_time || null, channel || null, tw ? 1 : 0])
+    const orderResult = db.exec('SELECT last_insert_rowid()')
+    const orderId = orderResult[0].values[0][0]
+    const manualData = JSON.stringify({
+      game_name: game_name || '',
+      product_name: product_name || '',
+      cost: cost ? Number(cost) : 0,
+      supplier_name: supplier_name || '',
+    })
+    db.run('INSERT INTO order_items (order_id, product_id, quantity, price, cost_used, manual_data) VALUES (?,0,1,?,?,?)',
+      [orderId, amount, cost ? Number(cost) : null, manualData])
+    save()
+    res.json({ order_id: orderId, message: 'บันทึกรายการสำเร็จ' })
+  })
+
   app.patch('/orders/:id/transfer-amount', requireLogin, (req, res) => {
     const { id } = req.params
     const { transfer_amount } = req.body
@@ -629,7 +696,7 @@ initDB().then(() => {
     const { fill_type, needed } = req.query
     if (!fill_type) return res.json([])
     const result = db.exec(
-      'SELECT id, email, credits FROM emails WHERE fill_type=? AND credits >= ? ORDER BY credits DESC',
+      'SELECT id, email, credits FROM emails WHERE fill_type=? AND credits >= ? AND (broken IS NULL OR broken = 0) ORDER BY credits DESC',
       [fill_type, Number(needed) || 0]
     )
     const emails = result[0] ? result[0].values.map(row => ({
@@ -641,33 +708,45 @@ initDB().then(() => {
   // --- Email routes ---
   app.get('/emails', requireLogin, (req, res) => {
     const result = db.exec(`
-      SELECT e.id, e.email, e.password, e.link_sms, e.credits, e.note, e.cost, e.fill_type
+      SELECT e.id, e.email, e.password, e.link_sms, e.credits, e.note, e.cost, e.fill_type,
+             COALESCE(e.initial_credits, e.credits) as initial_credits, e.created_date, COALESCE(e.broken, 0) as broken
       FROM emails e
       ORDER BY e.id DESC
     `)
     const emails = result[0] ? result[0].values.map(row => ({
       id: row[0], email: row[1], password: row[2], link_sms: row[3] || '',
-      credits: row[4], note: row[5] || '', cost: row[6] || 0, fill_type: row[7] || null
+      credits: row[4], note: row[5] || '', cost: row[6] || 0, fill_type: row[7] || null,
+      initial_credits: row[8] ?? 0, created_date: row[9] || null, broken: row[10] === 1,
     })) : []
     res.json(emails)
   })
 
   app.post('/emails', requireLogin, (req, res) => {
-    const { email, password, link_sms, credits, note, cost, fill_type } = req.body
-    if (!email || !password) return res.status(400).json({ error: 'กรุณากรอก Email และ Password' })
-    db.run('INSERT INTO emails (email, password, link_sms, credits, note, cost, fill_type) VALUES (?,?,?,?,?,?,?)',
-      [email, password, link_sms || null, credits || 0, note || null, cost || 0, fill_type || null])
+    const { email, password, link_sms, credits, note, cost, fill_type, initial_credits, created_date } = req.body
+    const isCredits = fill_type && getCustomEmailBehavior(fill_type) === 'CREDITS'
+    if (!email) return res.status(400).json({ error: 'กรุณากรอก Email หรือชื่อ Supplier' })
+    if (!password && !isCredits) return res.status(400).json({ error: 'กรุณากรอก Password' })
+    const initCreds = initial_credits != null ? Number(initial_credits) : (Number(credits) || 0)
+    db.run('INSERT INTO emails (email, password, link_sms, credits, note, cost, fill_type, initial_credits, created_date) VALUES (?,?,?,?,?,?,?,?,?)',
+      [email, password || '', link_sms || null, credits || 0, note || null, cost || 0, fill_type || null, initCreds, created_date || null])
     const r = db.exec('SELECT last_insert_rowid()')
     save()
     res.json({ id: r[0].values[0][0], message: 'เพิ่ม Email สำเร็จ' })
   })
 
   app.put('/emails/:id', requireLogin, (req, res) => {
-    const { email, password, link_sms, credits, note, cost, fill_type } = req.body
-    db.run('UPDATE emails SET email=?, password=?, link_sms=?, credits=?, note=?, cost=?, fill_type=? WHERE id=?',
-      [email, password, link_sms || null, credits || 0, note || null, cost || 0, fill_type || null, req.params.id])
+    const { email, password, link_sms, credits, note, cost, fill_type, broken, created_date } = req.body
+    db.run('UPDATE emails SET email=?, password=?, link_sms=?, credits=?, note=?, cost=?, fill_type=?, broken=?, created_date=? WHERE id=?',
+      [email, password || '', link_sms || null, credits || 0, note || null, cost || 0, fill_type || null, broken ? 1 : 0, created_date || null, req.params.id])
     save()
     res.json({ message: 'แก้ไข Email สำเร็จ' })
+  })
+
+  app.patch('/emails/:id/broken', requireLogin, (req, res) => {
+    const { broken } = req.body
+    db.run('UPDATE emails SET broken=? WHERE id=?', [broken ? 1 : 0, req.params.id])
+    save()
+    res.json({ message: 'อัปเดตสถานะสำเร็จ' })
   })
 
   app.delete('/emails/:id', requireLogin, (req, res) => {
@@ -701,10 +780,10 @@ initDB().then(() => {
              e.email, e.cost AS email_cost,
              oi.lot_cost_used, oi.bundle_lot_info,
              c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used, p.id AS product_id,
-             c.name AS category_name
+             c.name AS category_name, oi.manual_data
       FROM orders o
       JOIN order_items oi ON oi.order_id = o.id
-      JOIN products p ON p.id = oi.product_id
+      LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
       LEFT JOIN categories c ON c.id = p.category_id
       LEFT JOIN emails e ON e.id = oi.email_id_used
       ORDER BY ts, o.id, oi.id
@@ -719,16 +798,36 @@ initDB().then(() => {
       const [order_id, transfer_amount, ts,
              product_name, quantity, credit_deducted, price_usd_used,
              email_used, email_cost, lot_cost_used, bundle_lot_info,
-             fill_type, is_bundle, cost_used, product_id, category_name] = row
+             fill_type, is_bundle, cost_used, product_id, category_name, manual_data_str] = row
+
+      // Handle manual orders
+      let actualProductName = product_name
+      let actualCategoryName = category_name || ''
+      let actualEmailUsed = email_used
+      let actualCostUsed = cost_used
+      let actualFillType = fill_type
+      let actualBundleLotInfo = bundle_lot_info
+      if (manual_data_str) {
+        try {
+          const md = JSON.parse(manual_data_str)
+          actualProductName = md.product_name || product_name || '(manual)'
+          actualCategoryName = md.game_name || category_name || ''
+          actualEmailUsed = md.supplier_name || email_used
+          actualCostUsed = md.cost != null ? Number(md.cost) : cost_used
+          actualFillType = 'UID'
+          actualBundleLotInfo = null
+        } catch {}
+      }
+
       if (!orderMap.has(order_id)) {
-        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, category_name: category_name || '', items: [] })
+        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, category_name: actualCategoryName, items: [] })
       }
 
       // สำหรับ bundle ที่ component ไม่มี price_usd (order เก่า) ให้ดึงจาก products table
-      let enrichedBundleLotInfo = bundle_lot_info
-      if (is_bundle === 1 && bundle_lot_info) {
+      let enrichedBundleLotInfo = actualBundleLotInfo
+      if (is_bundle === 1 && actualBundleLotInfo) {
         try {
-          const components = JSON.parse(bundle_lot_info)
+          const components = JSON.parse(actualBundleLotInfo)
           const needsEnrich = components.some(c => c.price_usd == null)
           if (needsEnrich) {
             const compRows = db.exec(
@@ -752,9 +851,9 @@ initDB().then(() => {
       }
 
       orderMap.get(order_id).items.push({
-        product_name, quantity, credit_deducted, price_usd_used,
-        email_used, email_cost, lot_cost_used, bundle_lot_info: enrichedBundleLotInfo,
-        fill_type, is_bundle: is_bundle === 1, cost_used,
+        product_name: actualProductName, quantity, credit_deducted, price_usd_used,
+        email_used: actualEmailUsed, email_cost, lot_cost_used, bundle_lot_info: enrichedBundleLotInfo,
+        fill_type: actualFillType, is_bundle: is_bundle === 1, cost_used: actualCostUsed,
       })
     }
 
@@ -772,25 +871,37 @@ initDB().then(() => {
       SELECT o.id, o.transfer_time, o.created_at, o.transfer_amount, o.total,
              p.name, oi.quantity, oi.price, oi.credit_deducted, e.email, oi.price_usd_used, c.name, oi.cost_used,
              COALESCE(oi.lot_cost_used, pl.cost) as lot_cost_used, oi.bundle_lot_info, o.channel, c.fill_type,
-             o.transfer_time2, o.tw
+             o.transfer_time2, o.tw, oi.manual_data
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
-      JOIN products p ON p.id = oi.product_id
+      LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
       LEFT JOIN categories c ON c.id = p.category_id
       LEFT JOIN emails e ON e.id = oi.email_id_used
       LEFT JOIN product_lots pl ON pl.id = oi.lot_id_used
       ORDER BY COALESCE(o.transfer_time, o.created_at) DESC, o.id DESC, oi.id ASC
     `)
-    const items = result[0] ? result[0].values.map(row => ({
-      order_id: row[0], transfer_time: row[1], created_at: row[2],
-      transfer_amount: row[3], total: row[4],
-      product_name: row[5], quantity: row[6], price: row[7],
-      credit_deducted: row[8], email_used: row[9] || null,
-      price_usd_used: row[10] ?? null, category_name: row[11] || null,
-      cost_used: row[12] ?? null, lot_cost_used: row[13] ?? null,
-      bundle_lot_info: row[14] ?? null, channel: row[15] || null, fill_type: row[16] || null,
-      transfer_time2: row[17] || null, tw: row[18] === 1,
-    })) : []
+    const items = result[0] ? result[0].values.map(row => {
+      const item = {
+        order_id: row[0], transfer_time: row[1], created_at: row[2],
+        transfer_amount: row[3], total: row[4],
+        product_name: row[5], quantity: row[6], price: row[7],
+        credit_deducted: row[8], email_used: row[9] || null,
+        price_usd_used: row[10] ?? null, category_name: row[11] || null,
+        cost_used: row[12] ?? null, lot_cost_used: row[13] ?? null,
+        bundle_lot_info: row[14] ?? null, channel: row[15] || null, fill_type: row[16] || null,
+        transfer_time2: row[17] || null, tw: row[18] === 1, manual_data: row[19] ?? null,
+      }
+      if (item.manual_data) {
+        try {
+          const md = JSON.parse(item.manual_data)
+          item.product_name = md.product_name || item.product_name || '(manual)'
+          item.category_name = md.game_name || item.category_name
+          item.email_used = md.supplier_name || item.email_used
+          item.cost_used = md.cost != null ? Number(md.cost) : item.cost_used
+        } catch {}
+      }
+      return item
+    }) : []
     res.json(items)
   })
 

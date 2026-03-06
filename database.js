@@ -102,6 +102,10 @@ async function initDB() {
   try { db.run('ALTER TABLE orders ADD COLUMN transfer_time2 TEXT') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE products ADD COLUMN sort_order INTEGER DEFAULT 0') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE orders ADD COLUMN tw INTEGER DEFAULT 0') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE emails ADD COLUMN initial_credits REAL DEFAULT 0') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE emails ADD COLUMN created_date TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE emails ADD COLUMN broken INTEGER DEFAULT 0') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN manual_data TEXT') } catch (e) { /* column exists */ }
   db.run(`CREATE TABLE IF NOT EXISTS email_types (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     key TEXT NOT NULL UNIQUE,
@@ -110,6 +114,23 @@ async function initDB() {
     behavior TEXT NOT NULL DEFAULT 'EMAIL'
   )`)
   try { db.run("ALTER TABLE email_types ADD COLUMN behavior TEXT NOT NULL DEFAULT 'EMAIL'") } catch (e) { /* column exists */ }
+
+  db.run(`CREATE TABLE IF NOT EXISTS reservations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_name TEXT,
+    transfer_amount REAL,
+    reserve_time TEXT,
+    channel TEXT,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+  )`)
+
+  db.run(`CREATE TABLE IF NOT EXISTS reservation_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reservation_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1
+  )`)
+
   // ผู้ใช้คนแรกเป็น admin เสมอ
   db.run('UPDATE users SET is_admin=1 WHERE id=(SELECT MIN(id) FROM users)')
 

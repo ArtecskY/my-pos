@@ -21,7 +21,7 @@ function creditPerUnit(item) {
 function isRazerBehavior(fill_type, emailTypes = []) {
   if (fill_type === 'RAZER') return true
   const et = emailTypes.find(t => t.key === fill_type)
-  return et?.behavior === 'RAZER'
+  return et?.behavior === 'RAZER' || et?.behavior === 'CREDITS'
 }
 
 const EMAIL_BUILTINS = ['EMAIL', 'OTHER_EMAIL']
@@ -63,12 +63,31 @@ export default function POSPage() {
   const [emailTypes, setEmailTypes] = useState([])
   const [selectedFillType, setSelectedFillType] = useState('')
 
+  // Manual order
+  const [showManualOrder, setShowManualOrder] = useState(false)
+  const [manualForm, setManualForm] = useState({ transfer_amount: '', transfer_time: '', game_name: '', product_name: '', cost: '', supplier_name: '', channel: null })
+  const [manualError, setManualError] = useState('')
+
+  // ระบบจอง
+  const [cartMode, setCartMode] = useState('buy') // 'buy' | 'reserve'
+  const [reserveName, setReserveName] = useState('')
+  const [reserveAmount, setReserveAmount] = useState('')
+  const [reserveTime, setReserveTime] = useState('')
+  const [reserveChannel, setReserveChannel] = useState(null)
+  const [reservations, setReservations] = useState([])
+  const [activeReservationId, setActiveReservationId] = useState(null)
+
+  function loadReservations() {
+    fetch('/reservations').then(r => r.json()).then(setReservations)
+  }
+
   useEffect(() => {
     Promise.all([
       fetch('/products').then(r => r.json()),
       fetch('/categories').then(r => r.json()),
       fetch('/email-types').then(r => r.json()),
-    ]).then(([p, c, et]) => { setProducts(p); setCategories(c); setEmailTypes(et) })
+      fetch('/reservations').then(r => r.json()),
+    ]).then(([p, c, et, rv]) => { setProducts(p); setCategories(c); setEmailTypes(et); setReservations(rv) })
   }, [])
 
   const FILL_TYPE_LABELS = {
@@ -195,8 +214,16 @@ export default function POSPage() {
   // ---- Payment modal ----
   async function openPayModal() {
     if (cart.length === 0) return alert('กรุณาเลือกสินค้าก่อนครับ')
-    setTransferAmount(String(total))
-    setTransferTime(nowLocalTime())
+
+    const activeRes = activeReservationId ? reservations.find(r => r.id === activeReservationId) : null
+    if (activeRes) {
+      setTransferAmount(activeRes.transfer_amount != null ? String(activeRes.transfer_amount) : String(total))
+      setTransferTime(activeRes.reserve_time || nowLocalTime())
+    } else {
+      setTransferAmount(String(total))
+      setTransferTime(nowLocalTime())
+    }
+
     setRazerAmounts({})
     setSelectedEmails({})
     setAvailableEmails({})
@@ -261,6 +288,7 @@ export default function POSPage() {
         transfer_time: transferTime || null,
         channel: channel || null,
         tw: tw ? 1 : 0,
+        reservation_id: activeReservationId || null,
       }),
     })
     const order = await res.json()
@@ -270,7 +298,83 @@ export default function POSPage() {
     setCart([])
     setChannel(null)
     setTw(false)
+    if (activeReservationId) {
+      setActiveReservationId(null)
+      loadReservations()
+    }
     fetch('/products').then(r => r.json()).then(setProducts)
+  }
+
+  // ---- Reservation actions ----
+  async function saveReservation() {
+    if (cart.length === 0) return alert('กรุณาเลือกสินค้าก่อนครับ')
+    const res = await fetch('/reservations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customer_name: reserveName || null,
+        transfer_amount: reserveAmount ? Number(reserveAmount) : null,
+        reserve_time: reserveTime || null,
+        channel: reserveChannel || null,
+        items: cart.map(i => ({ product_id: i.id, quantity: i.quantity })),
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) { alert(data.error); return }
+    setCart([])
+    setReserveName('')
+    setReserveAmount('')
+    setReserveTime('')
+    setReserveChannel(null)
+    setCartMode('buy')
+    loadReservations()
+  }
+
+  function loadReservation(r) {
+    const cartItems = r.items.map(item => {
+      const product = products.find(p => p.id === item.product_id)
+      if (!product) return null
+      return { ...product, quantity: item.quantity }
+    }).filter(Boolean)
+    if (cartItems.length === 0) { alert('ไม่พบสินค้าในรายการจอง (สินค้าอาจถูกลบออกจากระบบแล้ว)'); return }
+    setCart(cartItems)
+    setActiveReservationId(r.id)
+    setCartMode('buy')
+  }
+
+  async function deleteReservation(id) {
+    if (!confirm('ยืนยันการลบรายการจอง?')) return
+    await fetch(`/reservations/${id}`, { method: 'DELETE' })
+    if (activeReservationId === id) { setActiveReservationId(null); setCart([]) }
+    loadReservations()
+  }
+
+  function openManualOrder() {
+    setManualForm({ transfer_amount: '', transfer_time: nowLocalTime(), game_name: '', product_name: '', cost: '', supplier_name: '', channel: null })
+    setManualError('')
+    setShowManualOrder(true)
+  }
+
+  async function submitManualOrder() {
+    setManualError('')
+    if (!manualForm.product_name.trim()) { setManualError('กรุณากรอกชื่อสินค้า'); return }
+    const res = await fetch('/manual-orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transfer_amount: manualForm.transfer_amount ? Number(manualForm.transfer_amount) : null,
+        transfer_time: manualForm.transfer_time || null,
+        game_name: manualForm.game_name || null,
+        product_name: manualForm.product_name,
+        cost: manualForm.cost ? Number(manualForm.cost) : null,
+        supplier_name: manualForm.supplier_name || null,
+        channel: manualForm.channel || null,
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setManualError(data.error); return }
+    setShowManualOrder(false)
+    setReceipt({ total: manualForm.transfer_amount || 0, manual: true })
   }
 
   const total = cart.reduce((sum, i) => sum + i.price * i.quantity, 0)
@@ -391,85 +495,311 @@ export default function POSPage() {
         ))}
       </div>
 
-      {/* Cart */}
-      <div className="flex-1 bg-white rounded-xl p-4 lg:sticky lg:top-[120px] lg:self-start lg:max-h-[calc(100vh-130px)] lg:overflow-y-auto">
-        <h2 className="font-semibold text-slate-800 mb-3">ตะกร้า</h2>
-        {cart.length === 0
-          ? <p className="text-slate-400 text-sm">ยังไม่มีสินค้า</p>
-          : cart.map(i => (
-            <div key={i.id} className="py-2.5 border-b border-slate-100">
-              <div className="flex justify-between items-start mb-1.5">
-                <div className="flex-1 mr-2">
-                  {i.category_name && (
-                    <p className="text-xs text-slate-400 mb-0.5">{i.category_name}</p>
-                  )}
-                  <span className="text-sm font-medium">{i.name}</span>
-                </div>
+      {/* Right column: Cart + Reservation list */}
+      <div className="flex-1 lg:sticky lg:top-[120px] lg:self-start lg:max-h-[calc(100vh-130px)] lg:overflow-y-auto space-y-4">
+
+        {/* Cart */}
+        <div className="bg-white rounded-xl p-4">
+          {/* Cart header + mode toggle */}
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-slate-800">ตะกร้า</h2>
+            <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-slate-200 text-xs overflow-hidden">
+              <button
+                onClick={() => setCartMode('buy')}
+                className={`px-3 py-1.5 cursor-pointer transition-colors ${
+                  cartMode === 'buy' ? 'bg-blue-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                }`}
+              >ซื้อ</button>
+              <button
+                onClick={() => { setCartMode('reserve'); if (!reserveTime) setReserveTime(nowLocalTime()) }}
+                className={`px-3 py-1.5 cursor-pointer border-l border-slate-200 transition-colors ${
+                  cartMode === 'reserve' ? 'bg-orange-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                }`}
+              >จอง</button>
+            </div>
+            <button
+              onClick={openManualOrder}
+              className="w-7 h-7 rounded-full bg-green-500 hover:bg-green-600 text-white font-bold text-base flex items-center justify-center cursor-pointer flex-shrink-0"
+              title="สร้าง Order เอง"
+            >+</button>
+            </div>
+          </div>
+
+          {/* Active reservation indicator */}
+          {activeReservationId && cartMode === 'buy' && (() => {
+            const r = reservations.find(rv => rv.id === activeReservationId)
+            return r ? (
+              <div className="mb-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg flex items-center justify-between">
+                <p className="text-xs text-orange-700">
+                  <span className="font-semibold">จอง:</span> {r.customer_name || 'ไม่ระบุชื่อ'}
+                  {r.channel && <span className="ml-1 opacity-70">({r.channel})</span>}
+                </p>
                 <button
-                  onClick={() => removeFromCart(i.id)}
-                  className="text-slate-300 hover:text-red-400 text-xl leading-none cursor-pointer"
+                  onClick={() => { setActiveReservationId(null); setCart([]) }}
+                  className="text-slate-400 hover:text-red-400 text-base leading-none cursor-pointer ml-2"
                 >×</button>
               </div>
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-1">
-                  <button onClick={() => changeQty(i.id, -1)}
-                    className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold cursor-pointer">−</button>
-                  <span className="w-7 text-center text-sm font-medium">{i.quantity}</span>
-                  <button onClick={() => changeQty(i.id, 1)}
-                    className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold cursor-pointer">+</button>
+            ) : null
+          })()}
+
+          {cart.length === 0
+            ? <p className="text-slate-400 text-sm">ยังไม่มีสินค้า</p>
+            : cart.map(i => (
+              <div key={i.id} className="py-2.5 border-b border-slate-100">
+                <div className="flex justify-between items-start mb-1.5">
+                  <div className="flex-1 mr-2">
+                    {i.category_name && (
+                      <p className="text-xs text-slate-400 mb-0.5">{i.category_name}</p>
+                    )}
+                    <span className="text-sm font-medium">{i.name}</span>
+                  </div>
+                  <button
+                    onClick={() => removeFromCart(i.id)}
+                    className="text-slate-300 hover:text-red-400 text-xl leading-none cursor-pointer"
+                  >×</button>
                 </div>
-                <span className="text-sm font-semibold text-slate-700">฿{i.price * i.quantity}</span>
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => changeQty(i.id, -1)}
+                      className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold cursor-pointer">−</button>
+                    <span className="w-7 text-center text-sm font-medium">{i.quantity}</span>
+                    <button onClick={() => changeQty(i.id, 1)}
+                      className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold cursor-pointer">+</button>
+                  </div>
+                  <span className="text-sm font-semibold text-slate-700">฿{i.price * i.quantity}</span>
+                </div>
               </div>
-            </div>
-          ))
-        }
-        {cart.length > 0 && (
-          <div className="text-right font-bold text-blue-900 mt-3 text-lg">รวม ฿{total}</div>
-        )}
-        {cart.length > 0 && (
-          <div className="mt-3">
-            <p className="text-xs text-slate-400 mb-1.5">ช่องทาง</p>
-            <div className="flex gap-2">
-              {['หน้าบ้าน', 'หลังบ้าน'].map(ch => (
-                <button
-                  key={ch}
-                  onClick={() => setChannel(prev => prev === ch ? null : ch)}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium cursor-pointer border transition-colors ${
-                    channel === ch
-                      ? ch === 'หน้าบ้าน'
-                        ? 'bg-emerald-500 text-white border-emerald-500'
-                        : 'bg-purple-500 text-white border-purple-500'
-                      : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+            ))
+          }
+
+          {cart.length > 0 && (
+            <div className="text-right font-bold text-blue-900 mt-3 text-lg">รวม ฿{total}</div>
+          )}
+
+          {/* Buy mode: channel + TW + checkout button */}
+          {cartMode === 'buy' && (
+            <>
+              {cart.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs text-slate-400 mb-1.5">ช่องทาง</p>
+                  <div className="flex gap-2">
+                    {['หน้าบ้าน', 'หลังบ้าน'].map(ch => (
+                      <button
+                        key={ch}
+                        onClick={() => setChannel(prev => prev === ch ? null : ch)}
+                        className={`flex-1 py-2 rounded-lg text-sm font-medium cursor-pointer border transition-colors ${
+                          channel === ch
+                            ? ch === 'หน้าบ้าน'
+                              ? 'bg-emerald-500 text-white border-emerald-500'
+                              : 'bg-purple-500 text-white border-purple-500'
+                            : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        {ch}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-2">
+                    <button
+                      onClick={() => setTw(prev => !prev)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm cursor-pointer border transition-colors ${
+                        tw
+                          ? 'bg-sky-500 text-white border-sky-500'
+                          : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center text-xs font-bold transition-colors ${tw ? 'bg-white border-white text-sky-500' : 'border-slate-300'}`}>
+                        {tw ? '✓' : ''}
+                      </span>
+                      True Wallet
+                    </button>
+                  </div>
+                </div>
+              )}
+              <button
+                onClick={openPayModal}
+                className="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg cursor-pointer font-medium"
+              >
+                ชำระเงิน
+              </button>
+            </>
+          )}
+
+          {/* Reserve mode: reservation form + save button */}
+          {cartMode === 'reserve' && (
+            <>
+              {cart.length > 0 && (
+                <div className="mt-3 space-y-2.5">
+                  <p className="text-xs font-semibold text-orange-600">ข้อมูลการจอง</p>
+                  <input
+                    type="text" value={reserveName}
+                    onChange={e => setReserveName(e.target.value)}
+                    placeholder="ชื่อผู้จอง"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                  />
+                  <input
+                    type="number" value={reserveAmount}
+                    onChange={e => setReserveAmount(e.target.value)}
+                    placeholder="ยอดโอน (฿)"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                  />
+                  <input
+                    type="datetime-local" value={reserveTime}
+                    onChange={e => setReserveTime(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                  />
+                  <div className="flex gap-2">
+                    {['Facebook', 'Line'].map(ch => (
+                      <button
+                        key={ch}
+                        onClick={() => setReserveChannel(prev => prev === ch ? null : ch)}
+                        className={`flex-1 py-2 rounded-lg text-sm font-medium cursor-pointer border transition-colors ${
+                          reserveChannel === ch
+                            ? ch === 'Facebook' ? 'bg-blue-600 text-white border-blue-600' : 'bg-green-500 text-white border-green-500'
+                            : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                        }`}
+                      >{ch}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <button
+                onClick={saveReservation}
+                className="w-full mt-3 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg cursor-pointer font-medium"
+              >
+                บันทึกการจอง
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Reservation list */}
+        {reservations.length > 0 && (
+          <div className="bg-white rounded-xl p-4">
+            <p className="text-sm font-semibold text-slate-700 mb-3">
+              รายการจอง
+              <span className="ml-2 px-2 py-0.5 bg-orange-100 text-orange-600 rounded-full text-xs font-medium">{reservations.length}</span>
+            </p>
+            <div className="space-y-2">
+              {reservations.map(r => (
+                <div
+                  key={r.id}
+                  onClick={() => loadReservation(r)}
+                  className={`rounded-xl p-3 cursor-pointer transition-all border ${
+                    activeReservationId === r.id
+                      ? 'bg-orange-100 border-orange-400 shadow-sm'
+                      : 'bg-orange-50 border-orange-200 hover:bg-orange-100'
                   }`}
                 >
-                  {ch}
-                </button>
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-sm font-semibold text-orange-800">{r.customer_name || 'ไม่ระบุชื่อ'}</span>
+                        {r.channel && (
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                            r.channel === 'Facebook' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                          }`}>{r.channel}</span>
+                        )}
+                      </div>
+                      {r.transfer_amount != null && (
+                        <p className="text-xs text-green-600 mt-0.5">โอน ฿{r.transfer_amount}</p>
+                      )}
+                      {r.reserve_time && (
+                        <p className="text-xs text-slate-400">{r.reserve_time.replace('T', ' ')}</p>
+                      )}
+                      <p className="text-xs text-slate-500 mt-1 truncate">
+                        {r.items.map(item => `${item.name} ×${item.quantity}`).join(' · ')}
+                      </p>
+                    </div>
+                    <button
+                      onClick={e => { e.stopPropagation(); deleteReservation(r.id) }}
+                      className="text-slate-300 hover:text-red-400 text-xl leading-none cursor-pointer ml-2 flex-shrink-0"
+                    >×</button>
+                  </div>
+                </div>
               ))}
-            </div>
-            <div className="mt-2">
-              <button
-                onClick={() => setTw(prev => !prev)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm cursor-pointer border transition-colors ${
-                  tw
-                    ? 'bg-sky-500 text-white border-sky-500'
-                    : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <span className={`w-4 h-4 rounded border flex items-center justify-center text-xs font-bold transition-colors ${tw ? 'bg-white border-white text-sky-500' : 'border-slate-300'}`}>
-                  {tw ? '✓' : ''}
-                </span>
-                True Wallet
-              </button>
             </div>
           </div>
         )}
-        <button
-          onClick={openPayModal}
-          className="w-full mt-3 bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg cursor-pointer font-medium"
-        >
-          ชำระเงิน
-        </button>
       </div>
+
+      {/* Manual Order Modal */}
+      {showManualOrder && (
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-end sm:items-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl p-5 sm:p-8 w-full sm:max-w-[400px] max-h-[92vh] overflow-y-auto">
+            <h2 className="text-green-700 font-bold text-lg mb-5">สร้าง Order เอง</h2>
+            <div className="space-y-3.5">
+              <div>
+                <label className="block text-sm text-slate-500 mb-1.5">ยอดโอน (฿)</label>
+                <input type="number" value={manualForm.transfer_amount}
+                  onChange={e => setManualForm(f => ({ ...f, transfer_amount: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500"
+                  placeholder="0.00" />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-500 mb-1.5">เวลา</label>
+                <input type="datetime-local" value={manualForm.transfer_time}
+                  onChange={e => setManualForm(f => ({ ...f, transfer_time: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500" />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-500 mb-1.5">ชื่อเกม</label>
+                <input type="text" value={manualForm.game_name}
+                  onChange={e => setManualForm(f => ({ ...f, game_name: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500"
+                  placeholder="เช่น Genshin Impact" />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-500 mb-1.5">ชื่อสินค้า <span className="text-red-400">*</span></label>
+                <input type="text" value={manualForm.product_name}
+                  onChange={e => setManualForm(f => ({ ...f, product_name: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500"
+                  placeholder="เช่น 648 Crystals" />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-500 mb-1.5">ต้นทุน (฿)</label>
+                <input type="number" value={manualForm.cost}
+                  onChange={e => setManualForm(f => ({ ...f, cost: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500"
+                  placeholder="0.00" />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-500 mb-1.5">ชื่อ Supplier</label>
+                <input type="text" value={manualForm.supplier_name}
+                  onChange={e => setManualForm(f => ({ ...f, supplier_name: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500"
+                  placeholder="เช่น มิตร, ร้าน A" />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-500 mb-1.5">ช่องทาง</label>
+                <div className="flex gap-2">
+                  {['หน้าบ้าน', 'หลังบ้าน'].map(ch => (
+                    <button key={ch}
+                      onClick={() => setManualForm(f => ({ ...f, channel: f.channel === ch ? null : ch }))}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium cursor-pointer border transition-colors ${
+                        manualForm.channel === ch
+                          ? ch === 'หน้าบ้าน' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-purple-500 text-white border-purple-500'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                      }`}>{ch}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {manualError && <p className="text-red-500 text-sm mt-3">{manualError}</p>}
+            <div className="flex gap-2.5 mt-5">
+              <button onClick={submitManualOrder}
+                className="flex-1 bg-green-500 hover:bg-green-600 text-white py-3 rounded-lg cursor-pointer font-medium">
+                บันทึก
+              </button>
+              <button onClick={() => setShowManualOrder(false)}
+                className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-600 py-3 rounded-lg cursor-pointer">
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Payment modal */}
       {showPayModal && (
