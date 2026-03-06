@@ -447,7 +447,7 @@ export default function ManagePage() {
 
   const grouped = categories
     .filter(c => !selectedFillType || c.fill_type === selectedFillType)
-    .filter(c => !search || c.name.toLowerCase().includes(search.toLowerCase()))
+    .filter(c => !search || String(c.id) === search)
     .map(c => ({
       ...c,
       items: products.filter(p => p.category_id === c.id),
@@ -468,13 +468,16 @@ export default function ManagePage() {
       {/* Filter bar */}
       <div className="space-y-2">
         <div className="flex gap-2">
-          <input
-            type="text"
+          <select
             value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="ค้นหาเกม..."
+            onChange={e => { setSearch(e.target.value); setSelectedFillType('') }}
             className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white flex-1"
-          />
+          >
+            <option value="">ทุกเกม</option>
+            {categories.map(c => (
+              <option key={c.id} value={String(c.id)}>{c.name}</option>
+            ))}
+          </select>
           {(search || selectedFillType) && (
             <button
               onClick={() => { setSearch(''); setSelectedFillType('') }}
