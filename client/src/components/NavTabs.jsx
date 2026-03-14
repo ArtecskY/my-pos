@@ -5,7 +5,7 @@ export default function NavTabs({ page, onChangePage, user }) {
     ['emails', 'จัดการ Email'],
     ['orders', 'ประวัติรายการ'],
     ['dashboard', 'Dashboard'],
-    ...(user?.is_admin ? [['users', 'จัดการผู้ใช้']] : []),
+...(user?.is_admin ? [['users', 'จัดการผู้ใช้']] : []),
   ]
   return (
     <div className="flex gap-0.5 border-b-2 border-slate-200 mb-5 overflow-x-auto">

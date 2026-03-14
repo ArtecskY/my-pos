@@ -787,18 +787,24 @@ initDB().then(() => {
     const sheetId = result[0]?.values[0][0]
     if (!sheetId) return res.status(400).json({ error: 'ยังไม่ได้ตั้งค่า Sheet ID กรุณาตั้งค่าก่อน Export' })
 
+    const { dateFrom, dateTo } = req.body || {}
+    const dateFilter = (dateFrom && dateTo)
+      ? `WHERE DATE(COALESCE(o.transfer_time, o.created_at)) BETWEEN '${dateFrom}' AND '${dateTo}'`
+      : (dateFrom ? `WHERE DATE(COALESCE(o.transfer_time, o.created_at)) >= '${dateFrom}'` : '')
+
     const itemsRes = db.exec(`
       SELECT o.id, o.transfer_amount, COALESCE(o.transfer_time, o.created_at) AS ts,
              p.name, oi.quantity, oi.credit_deducted, oi.price_usd_used,
              e.email, e.cost AS email_cost,
              oi.lot_cost_used, oi.bundle_lot_info,
              c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used, p.id AS product_id,
-             c.name AS category_name, oi.manual_data
+             c.name AS category_name, oi.manual_data, o.channel
       FROM orders o
       JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
       LEFT JOIN categories c ON c.id = p.category_id
       LEFT JOIN emails e ON e.id = oi.email_id_used
+      ${dateFilter}
       ORDER BY ts, o.id, oi.id
     `)
 
@@ -811,7 +817,7 @@ initDB().then(() => {
       const [order_id, transfer_amount, ts,
              product_name, quantity, credit_deducted, price_usd_used,
              email_used, email_cost, lot_cost_used, bundle_lot_info,
-             fill_type, is_bundle, cost_used, product_id, category_name, manual_data_str] = row
+             fill_type, is_bundle, cost_used, product_id, category_name, manual_data_str, order_channel] = row
 
       // Handle manual orders
       let actualProductName = product_name
@@ -833,7 +839,7 @@ initDB().then(() => {
       }
 
       if (!orderMap.has(order_id)) {
-        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, category_name: actualCategoryName, items: [] })
+        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, category_name: actualCategoryName, channel: order_channel || null, items: [] })
       }
 
       // สำหรับ bundle ที่ component ไม่มี price_usd (order เก่า) ให้ดึงจาก products table
@@ -995,7 +1001,8 @@ initDB().then(() => {
   })
 
   const PORT = process.env.PORT || 3000
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`Server รันอยู่ที่ port ${PORT}`)
   })
+  server.timeout = 600000 // 10 นาที สำหรับ bot snapshot
 })

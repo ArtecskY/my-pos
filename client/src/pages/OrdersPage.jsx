@@ -107,6 +107,8 @@ export default function OrdersPage() {
   const [saveMsg, setSaveMsg] = useState('')
   const [exportMsg, setExportMsg] = useState('')
   const [exporting, setExporting] = useState(false)
+  const [exportDateFrom, setExportDateFrom] = useState('')
+  const [exportDateTo, setExportDateTo] = useState('')
   const [editTimeOrderId, setEditTimeOrderId] = useState(null)
   const [editTimeValue, setEditTimeValue] = useState('')
   const [editTimeValue2, setEditTimeValue2] = useState('')
@@ -281,6 +283,8 @@ export default function OrdersPage() {
 
   function openExport() {
     setExportMsg(''); setSaveMsg('')
+    setExportDateFrom(selectedDate || '')
+    setExportDateTo(selectedDate || '')
     setShowExport(true)
     loadSheetConfig()
   }
@@ -301,7 +305,14 @@ export default function OrdersPage() {
 
   async function exportToSheets() {
     setExportMsg(''); setExporting(true)
-    const res = await fetch('/export-to-sheets', { method: 'POST' })
+    const body = {}
+    if (exportDateFrom) body.dateFrom = exportDateFrom
+    if (exportDateTo) body.dateTo = exportDateTo
+    const res = await fetch('/export-to-sheets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
     const data = await res.json()
     setExporting(false)
     setExportMsg(res.ok ? `✅ ${data.message}` : `❌ ${data.error}`)
@@ -679,6 +690,25 @@ export default function OrdersPage() {
                 </div>
               )}
               {saveMsg && <p className={`text-sm mt-2 ${saveMsg.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>{saveMsg}</p>}
+            </div>
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-slate-600 mb-2">ช่วงวันที่ที่ต้องการ Export</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500"
+                  value={exportDateFrom}
+                  onChange={e => setExportDateFrom(e.target.value)}
+                />
+                <span className="text-slate-400 text-sm">–</span>
+                <input
+                  type="date"
+                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500"
+                  value={exportDateTo}
+                  onChange={e => setExportDateTo(e.target.value)}
+                />
+              </div>
+              <p className="text-xs text-slate-400 mt-1.5">ปล่อยว่างเพื่อ Export ทุกวัน</p>
             </div>
             {exportMsg && <p className={`text-sm mb-4 ${exportMsg.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>{exportMsg}</p>}
             <div className="flex gap-2.5">

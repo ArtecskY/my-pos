@@ -61,7 +61,7 @@ export default function App() {
         {page === 'emails' && <EmailsPage />}
         {page === 'orders' && <OrdersPage />}
         {page === 'dashboard' && <DashboardPage />}
-        {page === 'users' && user?.is_admin && <UsersPage currentUser={user} />}
+{page === 'users' && user?.is_admin && <UsersPage currentUser={user} />}
       </div>
     </div>
   )
