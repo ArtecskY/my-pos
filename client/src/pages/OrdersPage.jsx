@@ -114,6 +114,9 @@ export default function OrdersPage() {
   const [editTimeValue2, setEditTimeValue2] = useState('')
   const [editAmountOrderId, setEditAmountOrderId] = useState(null)
   const [editAmountValue, setEditAmountValue] = useState('')
+  const [editChannelOrderId, setEditChannelOrderId] = useState(null)
+  const [editItemId, setEditItemId] = useState(null)
+  const [editItemValue, setEditItemValue] = useState('')
 
   useEffect(() => {
     function loadData() {
@@ -272,6 +275,46 @@ export default function OrdersPage() {
       i.order_id === orderId ? { ...i, transfer_amount: Number(editAmountValue) } : i
     ))
     setEditAmountOrderId(null)
+  }
+
+  async function saveEditChannel(orderId, channel) {
+    await fetch(`/orders/${orderId}/channel`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel: channel || null }),
+    })
+    setOrderItems(prev => prev.map(i =>
+      i.order_id === orderId ? { ...i, channel: channel || null } : i
+    ))
+    setEditChannelOrderId(null)
+  }
+
+  function startEditItem(itemId, currentValue) {
+    setEditItemId(itemId)
+    setEditItemValue(String(currentValue))
+  }
+
+  async function saveEditItem(itemId, field) {
+    const value = Number(editItemValue)
+    if (isNaN(value) || value < 0) { setEditItemId(null); return }
+    const body = field === 'credit' ? { credit_deducted: value } : field === 'cost' ? { cost_used: value } : { quantity: value }
+    const res = await fetch(`/order-items/${itemId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      const data = await res.json()
+      alert(data.error || 'แก้ไขไม่สำเร็จ')
+      setEditItemId(null)
+      return
+    }
+    if (field === 'credit') {
+      setOrderItems(prev => prev.map(i => i.item_id === itemId ? { ...i, credit_deducted: value } : i))
+    } else {
+      setOrderItems(prev => prev.map(i => i.item_id === itemId ? { ...i, quantity: value } : i))
+    }
+    setEditItemId(null)
   }
 
   async function loadSheetConfig() {
@@ -566,14 +609,6 @@ export default function OrdersPage() {
                               </InfoTooltip>
                             </td>
                           ) : null
-                        ) : hasCost ? (
-                          idx === 0 ? (
-                            <td rowSpan={order.items.length} className="py-2.5 px-3 text-right align-middle whitespace-nowrap">
-                              <span className="text-slate-700 font-semibold text-sm">
-                                ฿{Number.isInteger(orderCostTotal) ? orderCostTotal : orderCostTotal.toFixed(2)}
-                              </span>
-                            </td>
-                          ) : null
                         ) : (
                           <td className="py-2.5 px-3 text-right whitespace-nowrap">
                             {item.manual_data ? (
@@ -595,9 +630,75 @@ export default function OrdersPage() {
                                 </span>
                               )
                             })() : item.credit_deducted != null ? (
-                              <span className="text-slate-700 font-semibold text-sm">
-                                {Number(item.credit_deducted).toFixed(2)}
+                              <span className="inline-flex items-center gap-0.5">
+                                {editItemId === item.item_id && !item.merged ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      value={editItemValue}
+                                      onChange={e => setEditItemValue(e.target.value)}
+                                      onKeyDown={e => {
+                                        if (e.key === 'Enter') saveEditItem(item.item_id, 'credit')
+                                        if (e.key === 'Escape') setEditItemId(null)
+                                      }}
+                                      className="border border-blue-400 rounded px-1 py-0.5 text-xs font-mono w-20 focus:outline-none"
+                                      autoFocus
+                                    />
+                                    <button onClick={() => saveEditItem(item.item_id, 'credit')} className="text-green-500 hover:text-green-700 text-xs cursor-pointer">✓</button>
+                                    <button onClick={() => setEditItemId(null)} className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer">✕</button>
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`text-slate-700 font-semibold text-sm ${!item.merged && item.item_id ? 'cursor-pointer hover:text-blue-600 hover:underline' : ''}`}
+                                    onClick={() => !item.merged && item.item_id && startEditItem(item.item_id, Number(item.credit_deducted).toFixed(2))}
+                                    title={!item.merged && item.item_id ? 'คลิกเพื่อแก้ไขเครดิต' : undefined}
+                                  >
+                                    {Number(item.credit_deducted).toFixed(2)}
+                                  </span>
+                                )}
+                                {item.topup_breakdown && (() => {
+                                  try {
+                                    const bd = JSON.parse(item.topup_breakdown)
+                                    if (!bd.length) return null
+                                    const totalCost = bd.reduce((s, b) => s + b.amount_used * b.cost, 0)
+                                    return (
+                                      <InfoTooltip>
+                                        {bd.map(b => `${Number(b.amount_used).toFixed(2)} เครดิต × ฿${b.cost} = ฿${(b.amount_used * b.cost).toFixed(2)}`).join('\n')}
+                                        {`\n─────────────────────\nรวมต้นทุน ฿${totalCost.toFixed(2)}`}
+                                      </InfoTooltip>
+                                    )
+                                  } catch { return null }
+                                })()}
                               </span>
+                            ) : item.cost_used != null && Number(item.cost_used) > 0 ? (
+                              // UID ที่มีต้นทุน — แสดง ฿cost_used และกดแก้ไขได้
+                              editItemId === item.item_id && !item.merged ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={editItemValue}
+                                    onChange={e => setEditItemValue(e.target.value)}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter') saveEditItem(item.item_id, 'cost')
+                                      if (e.key === 'Escape') setEditItemId(null)
+                                    }}
+                                    className="border border-blue-400 rounded px-1 py-0.5 text-xs font-mono w-20 focus:outline-none"
+                                    autoFocus
+                                  />
+                                  <button onClick={() => saveEditItem(item.item_id, 'cost')} className="text-green-500 hover:text-green-700 text-xs cursor-pointer">✓</button>
+                                  <button onClick={() => setEditItemId(null)} className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer">✕</button>
+                                </span>
+                              ) : (
+                                <span
+                                  className={`text-slate-700 font-semibold text-sm ${!item.merged && item.item_id ? 'cursor-pointer hover:text-blue-600 hover:underline' : ''}`}
+                                  onClick={() => !item.merged && item.item_id && startEditItem(item.item_id, item.cost_used)}
+                                  title={!item.merged && item.item_id ? 'คลิกเพื่อแก้ไขต้นทุน' : undefined}
+                                >
+                                  ฿{Number(item.cost_used).toLocaleString()}
+                                </span>
+                              )
                             ) : (
                               <span className="text-slate-700 font-semibold text-sm">×{item.quantity}</span>
                             )}
@@ -610,16 +711,40 @@ export default function OrdersPage() {
                         {/* ช่องทาง */}
                         {idx === 0 && (
                           <td rowSpan={order.items.length} className="py-3 px-3 align-middle text-center whitespace-nowrap">
-                            {order.channel ? (
-                              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                                order.channel === 'หน้าบ้าน'
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : 'bg-purple-100 text-purple-700'
-                              }`}>
-                                {order.channel}
-                              </span>
+                            {editChannelOrderId === order.order_id ? (
+                              <div className="flex flex-col gap-1 items-center">
+                                {['หน้าบ้าน', 'หลังบ้าน', '—'].map(opt => (
+                                  <button
+                                    key={opt}
+                                    onClick={() => saveEditChannel(order.order_id, opt === '—' ? null : opt)}
+                                    className={`w-full px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-colors ${
+                                      (opt === '—' ? !order.channel : order.channel === opt)
+                                        ? 'ring-2 ring-offset-1 ring-blue-400'
+                                        : ''
+                                    } ${opt === 'หน้าบ้าน' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : opt === 'หลังบ้าน' ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+                                  >
+                                    {opt}
+                                  </button>
+                                ))}
+                              </div>
                             ) : (
-                              <span className="text-slate-200">—</span>
+                              <div
+                                onClick={() => setEditChannelOrderId(order.order_id)}
+                                className="cursor-pointer"
+                                title="คลิกเพื่อแก้ไขช่องทาง"
+                              >
+                                {order.channel ? (
+                                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                                    order.channel === 'หน้าบ้าน'
+                                      ? 'bg-emerald-100 text-emerald-700'
+                                      : 'bg-purple-100 text-purple-700'
+                                  }`}>
+                                    {order.channel}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-200 hover:text-slate-400">—</span>
+                                )}
+                              </div>
                             )}
                           </td>
                         )}

@@ -385,6 +385,43 @@ initDB().then(() => {
     if (r[0]) db.run('UPDATE emails SET credits = credits + ? WHERE id=?', [amount, r[0].values[0][0]])
   }
 
+  function deductRazerFIFO(email_id, amount) {
+    const topups = db.exec(
+      'SELECT id, remaining, cost FROM email_topups WHERE email_id=? AND remaining > 0 ORDER BY created_at ASC, id ASC',
+      [email_id]
+    )
+    let remaining = amount
+    const breakdown = []
+    if (topups[0]) {
+      for (const [topupId, topupRemaining, topupCost] of topups[0].values) {
+        if (remaining <= 0) break
+        const use = Math.min(remaining, topupRemaining)
+        db.run('UPDATE email_topups SET remaining = remaining - ? WHERE id=?', [use, topupId])
+        breakdown.push({ topup_id: topupId, amount_used: use, cost: topupCost })
+        remaining -= use
+      }
+    }
+    if (remaining > 0) {
+      const ec = db.exec('SELECT cost FROM emails WHERE id=?', [email_id])
+      breakdown.push({ topup_id: null, amount_used: remaining, cost: ec[0]?.values[0][0] || 0 })
+    }
+    db.run('UPDATE emails SET credits = credits - ? WHERE id=?', [amount, email_id])
+    return breakdown
+  }
+
+  function restoreRazerFIFO(email_id, amount, topupBreakdownJson) {
+    db.run('UPDATE emails SET credits = credits + ? WHERE id=?', [amount, email_id])
+    if (!topupBreakdownJson) return
+    try {
+      const breakdown = JSON.parse(topupBreakdownJson)
+      for (const item of breakdown) {
+        if (item.topup_id != null) {
+          db.run('UPDATE email_topups SET remaining = remaining + ? WHERE id=?', [item.amount_used, item.topup_id])
+        }
+      }
+    } catch {}
+  }
+
   app.post('/orders', requireLogin, (req, res) => {
     const { items, manualItems = [], transfer_amount, transfer_time, channel, tw, reservation_id } = req.body
 
@@ -467,7 +504,7 @@ initDB().then(() => {
       const orderItemId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
 
       let creditDeducted = null, emailIdUsed = null, lotIdUsed = null, priceUsdUsed = null
-      let costUsed = null, lotCostUsed = null, bundleLotInfo = null
+      let costUsed = null, lotCostUsed = null, bundleLotInfo = null, topupBreakdown = null
       if (is_bundle) {
         let totalCompPriceUsd = 0
         let hasCompPriceUsd = false
@@ -532,7 +569,12 @@ initDB().then(() => {
           creditDeducted = isRazerLike ? item.credit_amount
             : parseCreditPerUnit(productName, price, price_usd) * item.quantity
           emailIdUsed = item.email_id
-          deductFromEmail(item.email_id, creditDeducted)
+          if (isRazerLike) {
+            const breakdown = deductRazerFIFO(item.email_id, creditDeducted)
+            topupBreakdown = JSON.stringify(breakdown)
+          } else {
+            deductFromEmail(item.email_id, creditDeducted)
+          }
         } else {
           db.run('UPDATE products SET stock = stock - ? WHERE id=? AND stock != -1', [item.quantity, item.product_id])
           const costRes = db.exec('SELECT cost FROM products WHERE id=?', [item.product_id])
@@ -540,8 +582,8 @@ initDB().then(() => {
           if (c != null && c > 0) costUsed = c
         }
       }
-      db.run('UPDATE order_items SET credit_deducted=?, email_id_used=?, lot_id_used=?, price_usd_used=?, cost_used=?, lot_cost_used=?, bundle_lot_info=? WHERE id=?',
-        [creditDeducted, emailIdUsed, lotIdUsed, priceUsdUsed, costUsed, lotCostUsed, bundleLotInfo, orderItemId])
+      db.run('UPDATE order_items SET credit_deducted=?, email_id_used=?, lot_id_used=?, price_usd_used=?, cost_used=?, lot_cost_used=?, bundle_lot_info=?, topup_breakdown=? WHERE id=?',
+        [creditDeducted, emailIdUsed, lotIdUsed, priceUsdUsed, costUsed, lotCostUsed, bundleLotInfo, topupBreakdown || null, orderItemId])
     }
 
     for (const mi of manualItems) {
@@ -578,13 +620,13 @@ initDB().then(() => {
     const id = req.params.id
     const items = db.exec(`
       SELECT oi.product_id, oi.quantity, oi.price, oi.credit_deducted, oi.email_id_used,
-             COALESCE(p.is_bundle, 0), oi.lot_id_used, c.fill_type
+             COALESCE(p.is_bundle, 0), oi.lot_id_used, c.fill_type, oi.topup_breakdown
       FROM order_items oi
       LEFT JOIN products p ON p.id = oi.product_id
       LEFT JOIN categories c ON c.id = p.category_id
       WHERE oi.order_id=?`, [id])
     if (items[0]) {
-      for (const [product_id, quantity, price, credit_deducted, email_id_used, is_bundle, lot_id_used, fill_type] of items[0].values) {
+      for (const [product_id, quantity, price, credit_deducted, email_id_used, is_bundle, lot_id_used, fill_type, topup_breakdown] of items[0].values) {
         if (is_bundle) {
           // คืน stock ให้ components (เช็คก่อนสุด ไม่สนใจ fill_type ของ bundle เอง)
           const comps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [product_id])
@@ -607,7 +649,7 @@ initDB().then(() => {
           }
         } else if (credit_deducted != null) {
           if (email_id_used != null) {
-            restoreToEmail(email_id_used, credit_deducted)
+            restoreRazerFIFO(email_id_used, credit_deducted, topup_breakdown)
           } else {
             const pRes = db.exec('SELECT category_id FROM products WHERE id=?', [product_id])
             const category_id = pRes[0]?.values[0][0]
@@ -705,6 +747,56 @@ initDB().then(() => {
     res.json({ message: 'อัปเดตยอดโอนสำเร็จ' })
   })
 
+  app.patch('/orders/:id/channel', requireLogin, (req, res) => {
+    const { channel } = req.body
+    db.run('UPDATE orders SET channel=? WHERE id=?', [channel || null, req.params.id])
+    save()
+    res.json({ message: 'อัปเดตช่องทางสำเร็จ' })
+  })
+
+  app.patch('/order-items/:id', requireLogin, (req, res) => {
+    const itemRes = db.exec(
+      `SELECT oi.quantity, oi.credit_deducted, oi.email_id_used, oi.product_id, c.fill_type, oi.lot_id_used
+       FROM order_items oi
+       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
+       LEFT JOIN categories c ON c.id = p.category_id
+       WHERE oi.id=?`,
+      [req.params.id]
+    )
+    if (!itemRes[0]) return res.status(404).json({ error: 'ไม่พบรายการ' })
+    const [oldQty, oldCredit, emailIdUsed, productId, fillType, lotIdUsed] = itemRes[0].values[0]
+
+    if (req.body.credit_deducted !== undefined) {
+      const newCredit = Number(req.body.credit_deducted)
+      if (isNaN(newCredit) || newCredit < 0) return res.status(400).json({ error: 'จำนวนเครดิตไม่ถูกต้อง' })
+      if (emailIdUsed != null) {
+        const delta = newCredit - (oldCredit || 0)
+        if (delta > 0) {
+          const emailRes = db.exec('SELECT credits FROM emails WHERE id=?', [emailIdUsed])
+          const currentCredits = emailRes[0]?.values[0][0] || 0
+          if (currentCredits < delta) return res.status(400).json({ error: `Email มีเครดิตไม่พอ (เหลือ ${Number(currentCredits).toFixed(2)})` })
+          db.run('UPDATE emails SET credits = credits - ? WHERE id=?', [delta, emailIdUsed])
+        } else if (delta < 0) {
+          db.run('UPDATE emails SET credits = credits + ? WHERE id=?', [-delta, emailIdUsed])
+        }
+      }
+      db.run('UPDATE order_items SET credit_deducted=? WHERE id=?', [newCredit, req.params.id])
+    } else if (req.body.quantity !== undefined) {
+      const newQty = Number(req.body.quantity)
+      if (isNaN(newQty) || newQty < 1) return res.status(400).json({ error: 'จำนวนไม่ถูกต้อง' })
+      // อัปเดตเฉพาะตัวเลขในประวัติ ไม่กระทบสต็อกจริง
+      db.run('UPDATE order_items SET quantity=? WHERE id=?', [newQty, req.params.id])
+    } else if (req.body.cost_used !== undefined) {
+      const newCost = Number(req.body.cost_used)
+      if (isNaN(newCost) || newCost < 0) return res.status(400).json({ error: 'ต้นทุนไม่ถูกต้อง' })
+      db.run('UPDATE order_items SET cost_used=? WHERE id=?', [newCost, req.params.id])
+    } else {
+      return res.status(400).json({ error: 'ไม่มีข้อมูลที่ต้องการแก้ไข' })
+    }
+    save()
+    res.json({ message: 'แก้ไขสำเร็จ' })
+  })
+
   app.get('/emails/available', requireLogin, (req, res) => {
     const { fill_type, needed } = req.query
     if (!fill_type) return res.json([])
@@ -743,8 +835,14 @@ initDB().then(() => {
     db.run('INSERT INTO emails (email, password, link_sms, credits, note, cost, fill_type, initial_credits, created_date) VALUES (?,?,?,?,?,?,?,?,?)',
       [email, password || '', link_sms || null, credits || 0, note || null, cost || 0, fill_type || null, initCreds, created_date || null])
     const r = db.exec('SELECT last_insert_rowid()')
+    const newEmailId = r[0].values[0][0]
+    const isRazerFill = fill_type === 'RAZER' || (fill_type && !['EMAIL', 'OTHER_EMAIL'].includes(fill_type) && getCustomEmailBehavior(fill_type) === 'RAZER')
+    if (isRazerFill && (Number(credits) || 0) > 0 && (Number(cost) || 0) > 0) {
+      db.run('INSERT INTO email_topups (email_id, amount, remaining, cost) VALUES (?,?,?,?)',
+        [newEmailId, Number(credits), Number(credits), Number(cost)])
+    }
     save()
-    res.json({ id: r[0].values[0][0], message: 'เพิ่ม Email สำเร็จ' })
+    res.json({ id: newEmailId, message: 'เพิ่ม Email สำเร็จ' })
   })
 
   app.put('/emails/:id', requireLogin, (req, res) => {
@@ -766,6 +864,31 @@ initDB().then(() => {
     db.run('DELETE FROM emails WHERE id=?', [req.params.id])
     save()
     res.json({ message: 'ลบ Email สำเร็จ' })
+  })
+
+  app.post('/emails/:id/topup', requireLogin, (req, res) => {
+    const { amount, cost } = req.body
+    if (!amount || Number(amount) <= 0) return res.status(400).json({ error: 'กรุณากรอกจำนวนเครดิต' })
+    if (cost == null || Number(cost) < 0) return res.status(400).json({ error: 'กรุณากรอกต้นทุนต่อเครดิต' })
+    const emailId = Number(req.params.id)
+    const emailCheck = db.exec('SELECT id FROM emails WHERE id=?', [emailId])
+    if (!emailCheck[0]) return res.status(404).json({ error: 'ไม่พบ Email' })
+    db.run('INSERT INTO email_topups (email_id, amount, remaining, cost) VALUES (?,?,?,?)',
+      [emailId, Number(amount), Number(amount), Number(cost)])
+    db.run('UPDATE emails SET credits = credits + ? WHERE id=?', [Number(amount), emailId])
+    save()
+    res.json({ message: 'เติมเครดิตสำเร็จ' })
+  })
+
+  app.get('/emails/:id/topups', requireLogin, (req, res) => {
+    const result = db.exec(
+      'SELECT id, amount, remaining, cost, created_at FROM email_topups WHERE email_id=? ORDER BY created_at ASC, id ASC',
+      [req.params.id]
+    )
+    const topups = result[0] ? result[0].values.map(row => ({
+      id: row[0], amount: row[1], remaining: row[2], cost: row[3], created_at: row[4],
+    })) : []
+    res.json(topups)
   })
 
   // --- Sheet Config routes ---
@@ -798,7 +921,7 @@ initDB().then(() => {
              e.email, e.cost AS email_cost,
              oi.lot_cost_used, oi.bundle_lot_info,
              c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used, p.id AS product_id,
-             c.name AS category_name, oi.manual_data, o.channel
+             c.name AS category_name, oi.manual_data, o.channel, oi.topup_breakdown
       FROM orders o
       JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
@@ -817,7 +940,7 @@ initDB().then(() => {
       const [order_id, transfer_amount, ts,
              product_name, quantity, credit_deducted, price_usd_used,
              email_used, email_cost, lot_cost_used, bundle_lot_info,
-             fill_type, is_bundle, cost_used, product_id, category_name, manual_data_str, order_channel] = row
+             fill_type, is_bundle, cost_used, product_id, category_name, manual_data_str, order_channel, topup_breakdown_raw] = row
 
       // Handle manual orders
       let actualProductName = product_name
@@ -873,6 +996,7 @@ initDB().then(() => {
         product_name: actualProductName, quantity, credit_deducted, price_usd_used,
         email_used: actualEmailUsed, email_cost, lot_cost_used, bundle_lot_info: enrichedBundleLotInfo,
         fill_type: actualFillType, is_bundle: is_bundle === 1, cost_used: actualCostUsed,
+        topup_breakdown: manual_data_str ? null : (topup_breakdown_raw ?? null),
       })
     }
 
@@ -890,7 +1014,7 @@ initDB().then(() => {
       SELECT o.id, o.transfer_time, o.created_at, o.transfer_amount, o.total,
              p.name, oi.quantity, oi.price, oi.credit_deducted, e.email, oi.price_usd_used, c.name, oi.cost_used,
              COALESCE(oi.lot_cost_used, pl.cost) as lot_cost_used, oi.bundle_lot_info, o.channel, c.fill_type,
-             o.transfer_time2, o.tw, oi.manual_data
+             o.transfer_time2, o.tw, oi.manual_data, oi.id AS item_id, oi.topup_breakdown
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
@@ -909,6 +1033,7 @@ initDB().then(() => {
         cost_used: row[12] ?? null, lot_cost_used: row[13] ?? null,
         bundle_lot_info: row[14] ?? null, channel: row[15] || null, fill_type: row[16] || null,
         transfer_time2: row[17] || null, tw: row[18] === 1, manual_data: row[19] ?? null,
+        item_id: row[20] ?? null, topup_breakdown: row[21] ?? null,
       }
       if (item.manual_data) {
         try {

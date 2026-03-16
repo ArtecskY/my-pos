@@ -69,7 +69,7 @@ function isEmailLike(fill_type) {
 function computeItemData(item) {
   const { product_name, fill_type, quantity, credit_deducted, email_cost,
           lot_cost_used, price_usd_used, cost_used,
-          is_bundle, bundle_lot_info } = item
+          is_bundle, bundle_lot_info, topup_breakdown } = item
 
   // Bundle: คำนวณต้นทุนจาก bundle_lot_info (price_usd/qty ถูก enrich จาก products table ใน index.js)
   if (is_bundle && bundle_lot_info) {
@@ -95,9 +95,21 @@ function computeItemData(item) {
   }
 
   if (isEmailLike(fill_type)) {
-    // EMAIL / RAZER / custom: ต้นทุน = email_cost, ต้นทุนรวม = credit_deducted × email_cost
-    const ec = email_cost ?? 0
     const qty = credit_deducted ?? quantity
+    if (topup_breakdown) {
+      try {
+        const breakdown = JSON.parse(topup_breakdown)
+        const totalCost = breakdown.reduce((s, b) => s + (b.amount_used || 0) * (b.cost || 0), 0)
+        const avgCost = qty > 0 ? totalCost / qty : (email_cost ?? 0)
+        return {
+          unitQty: qty,
+          cost: avgCost,
+          totalCost,
+          note: breakdown.map(b => `  ${Number(b.amount_used).toFixed(2)} เครดิต × ฿${b.cost}`).join('\n'),
+        }
+      } catch {}
+    }
+    const ec = email_cost ?? 0
     return {
       unitQty: qty,
       cost: ec,

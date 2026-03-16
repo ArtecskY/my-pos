@@ -73,6 +73,13 @@ export default function EmailsPage() {
   // Inline note editing
   const [inlineNote, setInlineNote] = useState(null) // { id, value }
 
+  // Top-up modal
+  const [topupModal, setTopupModal] = useState(null) // { id, email, credits }
+  const [topupAmount, setTopupAmount] = useState('')
+  const [topupCost, setTopupCost] = useState('')
+  const [topupError, setTopupError] = useState('')
+  const [topupLoading, setTopupLoading] = useState(false)
+
   // Filter state
   const [hideZero, setHideZero] = useState(false)
   const [filterType, setFilterType] = useState('')
@@ -106,6 +113,32 @@ export default function EmailsPage() {
     if (!fill_type) return false
     const t = customTypes.find(ct => ct.key === fill_type)
     return t?.behavior === 'CREDITS'
+  }
+
+  function isRazerLike(fill_type) {
+    if (!fill_type) return false
+    if (fill_type === 'RAZER') return true
+    const t = customTypes.find(ct => ct.key === fill_type)
+    return t?.behavior === 'RAZER' || t?.behavior === 'CREDITS'
+  }
+
+  async function doTopup() {
+    setTopupError('')
+    if (!topupAmount || Number(topupAmount) <= 0) { setTopupError('กรุณากรอกจำนวนเครดิต'); return }
+    if (!topupCost || Number(topupCost) < 0) { setTopupError('กรุณากรอกต้นทุน'); return }
+    setTopupLoading(true)
+    const res = await fetch(`/emails/${topupModal.id}/topup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: Number(topupAmount), cost: Number(topupCost) }),
+    })
+    const data = await res.json()
+    setTopupLoading(false)
+    if (!res.ok) { setTopupError(data.error); return }
+    setTopupModal(null)
+    setTopupAmount('')
+    setTopupCost('')
+    loadAll()
   }
 
   // Filtered email list
@@ -562,6 +595,14 @@ export default function EmailsPage() {
                         >
                           เสีย
                         </button>
+                        {isRazerLike(e.fill_type) && (
+                          <button
+                            onClick={() => { setTopupModal({ id: e.id, email: e.email, credits: e.credits }); setTopupAmount(''); setTopupCost(String(e.cost || '')); setTopupError('') }}
+                            className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md mr-1 cursor-pointer text-xs"
+                          >
+                            เติม
+                          </button>
+                        )}
                         <button
                           onClick={() => { setEditModal({ ...e }); setEditShowPass(false) }}
                           className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-md mr-1 cursor-pointer text-xs"
@@ -583,6 +624,67 @@ export default function EmailsPage() {
           )
         }
       </div>
+
+      {/* Top-up Modal */}
+      {topupModal && (
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-end sm:items-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl p-6 w-full sm:max-w-[380px]">
+            <h3 className="font-bold text-slate-800 mb-1">เติมเครดิต</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              {topupModal.email}
+              <span className="ml-2 font-semibold text-blue-700">{Number(topupModal.credits).toFixed(2)} เครดิต</span>
+            </p>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-xs text-slate-500 mb-1.5">จำนวนเครดิตที่เติม</label>
+                <input
+                  autoFocus
+                  type="number"
+                  step="0.01"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+                  placeholder="เช่น 500"
+                  value={topupAmount}
+                  onChange={e => setTopupAmount(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && doTopup()}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1.5">ต้นทุนต่อเครดิต (฿)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+                  placeholder="เช่น 27.30"
+                  value={topupCost}
+                  onChange={e => setTopupCost(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && doTopup()}
+                />
+              </div>
+              {topupAmount && topupCost && Number(topupAmount) > 0 && Number(topupCost) > 0 && (
+                <div className="bg-slate-50 rounded-lg px-3 py-2 text-sm text-slate-600">
+                  รวมต้นทุน: <span className="font-semibold text-slate-800">฿{(Number(topupAmount) * Number(topupCost)).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
+            </div>
+            {topupError && <p className="text-red-500 text-sm mb-3">{topupError}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={doTopup}
+                disabled={topupLoading}
+                className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-medium cursor-pointer"
+              >
+                {topupLoading ? 'กำลังเติม...' : 'เติมเครดิต'}
+              </button>
+              <button
+                onClick={() => setTopupModal(null)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-2.5 rounded-lg text-sm cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* New Type Modal */}
       {showNewType && (

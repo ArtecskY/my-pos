@@ -461,7 +461,7 @@ export default function ManagePage() {
     .filter(c => !search || c.items.length > 0)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 overflow-x-hidden">
       {/* Top bar */}
       <div className="flex justify-end">
         <button
@@ -1114,7 +1114,7 @@ export default function ManagePage() {
                           })}
                           {/* เพิ่ม lot ต้นทุนใหม่ */}
                           <td className="py-3 px-2 border border-slate-300">
-                            {dashNewLot?.productId === product.id ? (
+                            {dashNewLot?.productId === product.id && dashNewLot?.cost === '' ? (
                               <div className="space-y-1 min-w-[120px]">
                                 <input
                                   type="number" step="0.01" placeholder="ต้นทุน ฿"
