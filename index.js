@@ -165,6 +165,8 @@ initDB().then(() => {
     const items = req.body // [{ id, sort_order }, ...]
     for (const { id, sort_order } of items) {
       db.run('UPDATE products SET sort_order=? WHERE id=?', [sort_order, id])
+      const check = db.exec('SELECT id, name, sort_order FROM products WHERE id=?', [id])
+      console.log('[reorder] after update id=%d so=%d → db:', id, sort_order, check[0]?.values)
     }
     save()
     res.json({ message: 'บันทึกลำดับสำเร็จ' })
@@ -269,7 +271,7 @@ initDB().then(() => {
 
   app.get('/id-pass-dashboard/:category_id', requireLogin, (req, res) => {
     const productsRes = db.exec(
-      'SELECT id, name, price, price_usd FROM products WHERE category_id=? AND (is_bundle IS NULL OR is_bundle=0) ORDER BY name',
+      'SELECT id, name, price, price_usd FROM products WHERE category_id=? AND (is_bundle IS NULL OR is_bundle=0) ORDER BY sort_order ASC, name ASC',
       [req.params.category_id]
     )
     const products = productsRes[0] ? productsRes[0].values.map(row => ({

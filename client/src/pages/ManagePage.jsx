@@ -119,9 +119,17 @@ export default function ManagePage() {
   const dragItem = useRef(null) // { catId, index }
 
   // Dashboard สต็อก: Drag & Drop
-  const dashDragItem = useRef(null) // index
+  // dashProductsRef เก็บ order ล่าสุดแบบ synchronous (ไม่ผ่าน React state)
+  const dashProductsRef = useRef([])
+  const dashDragItem = useRef(null)
+  const dashDragAllowed = useRef(false)
 
-  function handleDashDragStart(index) {
+  function handleDashDragStart(e, index) {
+    const tag = e.target.tagName.toLowerCase()
+    if (!dashDragAllowed.current || ['input', 'button', 'select', 'textarea'].includes(tag)) {
+      e.preventDefault()
+      return
+    }
     dashDragItem.current = index
   }
 
@@ -130,24 +138,30 @@ export default function ManagePage() {
     if (dashDragItem.current === null || dashDragItem.current === index) return
     const fromIdx = dashDragItem.current
     dashDragItem.current = index
-    setDashboardData(prev => {
-      const items = [...prev.products]
-      const moved = items.splice(fromIdx, 1)[0]
-      items.splice(index, 0, moved)
-      return { ...prev, products: items }
-    })
+    const items = [...dashProductsRef.current]
+    const moved = items.splice(fromIdx, 1)[0]
+    items.splice(index, 0, moved)
+    dashProductsRef.current = items // sync update ทันที ไม่รอ React
+    setDashboardData(prev => ({ ...prev, products: items }))
   }
 
-  async function handleDashDrop() {
-    if (dashDragItem.current === null) return
+  function handleDashDrop(e) {
+    e.preventDefault()
+  }
+
+  async function handleDashDragEnd() {
+    dashDragAllowed.current = false
     dashDragItem.current = null
-    const payload = dashboardData.products.map((p, i) => ({ id: p.id, sort_order: i }))
-    await fetch('/products/reorder', {
+    const payload = dashProductsRef.current.map((p, i) => ({ id: p.id, sort_order: i }))
+    console.log('[DashDrag] payload to save:', payload.map(p => p.id + ':so=' + p.sort_order))
+    if (payload.length === 0) { console.log('[DashDrag] payload empty, skip'); return }
+    const res = await fetch('/products/reorder', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    loadAll()
+    console.log('[DashDrag] save result:', res.status)
+    reloadDashboard()
   }
 
 
@@ -328,11 +342,13 @@ export default function ManagePage() {
     setDashboardCat(cat)
     setDashEditLot(null); setDashEditUsd(null); setDashNewLot(null)
     const data = await fetch(`/id-pass-dashboard/${cat.id}`).then(r => r.json())
+    dashProductsRef.current = data.products // sync ref
     setDashboardData(data)
   }
 
   async function reloadDashboard(catId) {
     const data = await fetch(`/id-pass-dashboard/${catId || dashboardCat?.id}`).then(r => r.json())
+    dashProductsRef.current = data.products // sync ref
     setDashboardData(data)
   }
 
@@ -1055,14 +1071,19 @@ export default function ManagePage() {
                       {products.map((product, idx) => (
                         <tr
                           key={product.id}
-                          className="hover:bg-slate-50 cursor-grab active:cursor-grabbing"
+                          className="hover:bg-slate-50"
                           draggable
-                          onDragStart={() => handleDashDragStart(idx)}
+                          onDragStart={e => handleDashDragStart(e, idx)}
                           onDragOver={e => handleDashDragOver(e, idx)}
                           onDrop={handleDashDrop}
+                          onDragEnd={handleDashDragEnd}
                         >
                           <td className="py-3 px-3 font-medium text-slate-800 whitespace-nowrap sticky left-0 bg-white z-10 border border-slate-300">
-                            <span className="text-slate-300 mr-2 select-none">⠿</span>{product.name}
+                            <span
+                              className="text-slate-300 mr-2 select-none cursor-grab active:cursor-grabbing"
+                              onMouseDown={() => { dashDragAllowed.current = true }}
+                              onMouseUp={() => { dashDragAllowed.current = false }}
+                            >⠿</span>{product.name}
                           </td>
                           <td className="py-3 px-3 text-slate-600 whitespace-nowrap border border-slate-300">฿{product.price}</td>
                           {/* ราคา $ — คลิกเพื่อแก้ไข */}
@@ -1155,7 +1176,7 @@ export default function ManagePage() {
                           })}
                           {/* เพิ่ม lot ต้นทุนใหม่ */}
                           <td className="py-3 px-2 border border-slate-300">
-                            {dashNewLot?.productId === product.id && dashNewLot?.cost === '' ? (
+                            {dashNewLot?.productId === product.id && dashNewLot?.isNewCost ? (
                               <div className="space-y-1 min-w-[120px]">
                                 <input
                                   type="number" step="0.01" placeholder="ต้นทุน ฿"
@@ -1177,7 +1198,7 @@ export default function ManagePage() {
                               </div>
                             ) : (
                               <button
-                                onClick={() => { setDashNewLot({ productId: product.id, cost: '', stock: '' }); setDashEditLot(null) }}
+                                onClick={() => { setDashNewLot({ productId: product.id, cost: '', stock: '', isNewCost: true }); setDashEditLot(null) }}
                                 className="w-7 h-7 rounded-full bg-slate-100 hover:bg-blue-100 text-blue-400 hover:text-blue-600 cursor-pointer text-lg leading-none"
                                 title="เพิ่ม Lot ต้นทุนใหม่"
                               >+</button>
