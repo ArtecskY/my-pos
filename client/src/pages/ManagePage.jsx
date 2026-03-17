@@ -118,6 +118,38 @@ export default function ManagePage() {
   // Feature 1: Drag & Drop
   const dragItem = useRef(null) // { catId, index }
 
+  // Dashboard สต็อก: Drag & Drop
+  const dashDragItem = useRef(null) // index
+
+  function handleDashDragStart(index) {
+    dashDragItem.current = index
+  }
+
+  function handleDashDragOver(e, index) {
+    e.preventDefault()
+    if (dashDragItem.current === null || dashDragItem.current === index) return
+    const fromIdx = dashDragItem.current
+    dashDragItem.current = index
+    setDashboardData(prev => {
+      const items = [...prev.products]
+      const moved = items.splice(fromIdx, 1)[0]
+      items.splice(index, 0, moved)
+      return { ...prev, products: items }
+    })
+  }
+
+  async function handleDashDrop() {
+    if (dashDragItem.current === null) return
+    dashDragItem.current = null
+    const payload = dashboardData.products.map((p, i) => ({ id: p.id, sort_order: i }))
+    await fetch('/products/reorder', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    loadAll()
+  }
+
 
   async function loadAll() {
     const [p, c, et] = await Promise.all([
@@ -1020,9 +1052,18 @@ export default function ManagePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {products.map(product => (
-                        <tr key={product.id} className="hover:bg-slate-50">
-                          <td className="py-3 px-3 font-medium text-slate-800 whitespace-nowrap sticky left-0 bg-white z-10 border border-slate-300">{product.name}</td>
+                      {products.map((product, idx) => (
+                        <tr
+                          key={product.id}
+                          className="hover:bg-slate-50 cursor-grab active:cursor-grabbing"
+                          draggable
+                          onDragStart={() => handleDashDragStart(idx)}
+                          onDragOver={e => handleDashDragOver(e, idx)}
+                          onDrop={handleDashDrop}
+                        >
+                          <td className="py-3 px-3 font-medium text-slate-800 whitespace-nowrap sticky left-0 bg-white z-10 border border-slate-300">
+                            <span className="text-slate-300 mr-2 select-none">⠿</span>{product.name}
+                          </td>
                           <td className="py-3 px-3 text-slate-600 whitespace-nowrap border border-slate-300">฿{product.price}</td>
                           {/* ราคา $ — คลิกเพื่อแก้ไข */}
                           <td className="py-3 px-3 border border-slate-300">
