@@ -152,13 +152,12 @@ export default function POSPage() {
   }
 
   function activateSplit(item) {
-    // สร้าง 2 split entries โดยแบ่ง quantity เท่าๆ กัน
+    // สร้าง split entries: qty > 1 แบ่ง 2 รายการ, qty = 1 สร้าง 1 รายการ (ผู้ใช้เพิ่มเองได้)
     const qty1 = Math.ceil(item.quantity / 2)
     const qty2 = item.quantity - qty1
-    const splits = [
-      { splitKey: newSplitKey(item.id), quantity: qty1 },
-      { splitKey: newSplitKey(item.id), quantity: qty2 },
-    ]
+    const splits = qty2 > 0
+      ? [{ splitKey: newSplitKey(item.id), quantity: qty1 }, { splitKey: newSplitKey(item.id), quantity: qty2 }]
+      : [{ splitKey: newSplitKey(item.id), quantity: qty1 }]
     setSplitState(prev => ({ ...prev, [item.id]: splits }))
     splits.forEach(s => {
       if (!isRazerBehavior(item.fill_type, emailTypes)) {
@@ -870,7 +869,7 @@ export default function POSPage() {
                           {item.name} × {item.quantity}
                         </p>
                         {!splits ? (
-                          item.quantity > 1 && (
+                          (item.quantity > 1 || (!isRazerBehavior(item.fill_type, emailTypes) && usesEmailCredits(item.fill_type, emailTypes))) && (
                             <button
                               onClick={() => activateSplit(item)}
                               className="text-xs px-2.5 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg cursor-pointer"
