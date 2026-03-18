@@ -7,6 +7,7 @@ const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
 const { exportDailyOrders } = require('./sheets')
+const cron = require('node-cron')
 
 const app = express()
 app.use(express.json())
@@ -129,7 +130,7 @@ initDB().then(() => {
             const compFillType = compCatRes[0]?.values[0][0] || 'UID'
             let compStock
             if (compFillType === 'ID_PASS') {
-              const lr = db.exec('SELECT COALESCE(SUM(stock),0) FROM product_lots WHERE product_id=?', [compId])
+              const lr = db.exec('SELECT COALESCE(SUM(stock),0) FROM product_lots WHERE product_id=? AND (disabled IS NULL OR disabled=0)', [compId])
               compStock = lr[0]?.values[0][0] || 0
             } else {
               const cr = db.exec('SELECT stock FROM products WHERE id=?', [compId])
@@ -143,7 +144,7 @@ initDB().then(() => {
           p.stock = 0
         }
       } else if (p.fill_type === 'ID_PASS') {
-        const lotsRes = db.exec('SELECT COALESCE(SUM(stock), 0) FROM product_lots WHERE product_id=?', [p.id])
+        const lotsRes = db.exec('SELECT COALESCE(SUM(stock), 0) FROM product_lots WHERE product_id=? AND (disabled IS NULL OR disabled=0)', [p.id])
         p.stock = lotsRes[0]?.values[0][0] || 0
       }
     }
@@ -242,8 +243,8 @@ initDB().then(() => {
   app.get('/product-lots', requireLogin, (req, res) => {
     const { product_id } = req.query
     if (!product_id) return res.json([])
-    const result = db.exec('SELECT id, cost, stock FROM product_lots WHERE product_id=? ORDER BY cost ASC', [product_id])
-    const lots = result[0] ? result[0].values.map(row => ({ id: row[0], cost: row[1], stock: row[2] })) : []
+    const result = db.exec('SELECT id, cost, stock, disabled FROM product_lots WHERE product_id=? ORDER BY cost ASC', [product_id])
+    const lots = result[0] ? result[0].values.map(row => ({ id: row[0], cost: row[1], stock: row[2], disabled: row[3] === 1 })) : []
     res.json(lots)
   })
 
@@ -263,6 +264,26 @@ initDB().then(() => {
     res.json({ message: 'แก้ไข Lot สำเร็จ' })
   })
 
+  // toggle ปิด/เปิด lot
+  app.patch('/product-lots/:id/disabled', requireLogin, (req, res) => {
+    const { disabled } = req.body
+    db.run('UPDATE product_lots SET disabled=? WHERE id=?', [disabled ? 1 : 0, req.params.id])
+    save()
+    res.json({ message: 'อัปเดตสถานะสำเร็จ' })
+  })
+
+  // ลบต้นทุนทั้งคอลัมน์ (ต้องอยู่ก่อน /:id เพื่อป้องกัน Express จับ 'by-cost' เป็น id)
+  app.delete('/product-lots/by-cost', requireLogin, (req, res) => {
+    const { category_id, cost } = req.body
+    if (!category_id || cost == null) return res.status(400).json({ error: 'กรุณาระบุ category_id และ cost' })
+    db.run(
+      'DELETE FROM product_lots WHERE cost=? AND product_id IN (SELECT id FROM products WHERE category_id=?)',
+      [cost, category_id]
+    )
+    save()
+    res.json({ message: 'ลบต้นทุนสำเร็จ' })
+  })
+
   app.delete('/product-lots/:id', requireLogin, (req, res) => {
     db.run('DELETE FROM product_lots WHERE id=?', [req.params.id])
     save()
@@ -279,8 +300,8 @@ initDB().then(() => {
     })) : []
     const costSet = new Set()
     for (const p of products) {
-      const lotsRes = db.exec('SELECT id, cost, stock FROM product_lots WHERE product_id=? ORDER BY cost ASC', [p.id])
-      p.lots = lotsRes[0] ? lotsRes[0].values.map(row => ({ id: row[0], cost: row[1], stock: row[2] })) : []
+      const lotsRes = db.exec('SELECT id, cost, stock, disabled FROM product_lots WHERE product_id=? ORDER BY cost ASC', [p.id])
+      p.lots = lotsRes[0] ? lotsRes[0].values.map(row => ({ id: row[0], cost: row[1], stock: row[2], disabled: row[3] === 1 })) : []
       for (const lot of p.lots) costSet.add(lot.cost)
     }
     const uniqueCosts = Array.from(costSet).sort((a, b) => a - b)
@@ -448,7 +469,7 @@ initDB().then(() => {
           const [rawStock, compName, compFillType] = compRes[0].values[0]
           let compStock = rawStock
           if (compFillType === 'ID_PASS') {
-            const lotsRes = db.exec('SELECT COALESCE(SUM(stock), 0) FROM product_lots WHERE product_id=?', [compId])
+            const lotsRes = db.exec('SELECT COALESCE(SUM(stock), 0) FROM product_lots WHERE product_id=? AND (disabled IS NULL OR disabled=0)', [compId])
             compStock = lotsRes[0]?.values[0][0] || 0
           }
           if (compStock !== -1 && compStock < bundleQty * item.quantity)
@@ -459,7 +480,7 @@ initDB().then(() => {
         const fill_type = catRes[0]?.values[0][0] || 'UID'
 
         if (fill_type === 'ID_PASS') {
-          const totalStockRes = db.exec('SELECT COALESCE(SUM(stock), 0) FROM product_lots WHERE product_id=?', [item.product_id])
+          const totalStockRes = db.exec('SELECT COALESCE(SUM(stock), 0) FROM product_lots WHERE product_id=? AND (disabled IS NULL OR disabled=0)', [item.product_id])
           const totalStock = totalStockRes[0]?.values[0][0] || 0
           if (totalStock < item.quantity)
             return res.status(400).json({ error: `สินค้า "${name}" มีสต็อกไม่พอ (เหลือ ${totalStock} ชิ้น)` })
@@ -529,7 +550,7 @@ initDB().then(() => {
             if (compFillType === 'ID_PASS') {
               let remaining = needed
               let firstCost = null
-              const lots = db.exec('SELECT id, stock, cost FROM product_lots WHERE product_id=? AND stock > 0 ORDER BY cost ASC', [compId])
+              const lots = db.exec('SELECT id, stock, cost FROM product_lots WHERE product_id=? AND stock > 0 AND (disabled IS NULL OR disabled=0) ORDER BY cost DESC', [compId])
               if (lots[0]) {
                 for (const [lotId, lotStock, lotCost] of lots[0].values) {
                   if (remaining <= 0) break
@@ -554,7 +575,7 @@ initDB().then(() => {
         if (fill_type === 'ID_PASS') {
           priceUsdUsed = price_usd
           let remaining = item.quantity
-          const lots = db.exec('SELECT id, stock, cost FROM product_lots WHERE product_id=? AND stock > 0 ORDER BY cost ASC', [item.product_id])
+          const lots = db.exec('SELECT id, stock, cost FROM product_lots WHERE product_id=? AND stock > 0 AND (disabled IS NULL OR disabled=0) ORDER BY cost DESC', [item.product_id])
           if (lots[0]) {
             for (const [lotId, lotStock, lotCost] of lots[0].values) {
               if (remaining <= 0) break
@@ -919,7 +940,7 @@ initDB().then(() => {
 
     const itemsRes = db.exec(`
       SELECT o.id, o.transfer_amount, COALESCE(o.transfer_time, o.created_at) AS ts,
-             p.name, oi.quantity, oi.credit_deducted, oi.price_usd_used,
+             p.name, oi.quantity, oi.price, oi.credit_deducted, oi.price_usd_used,
              e.email, e.cost AS email_cost,
              oi.lot_cost_used, oi.bundle_lot_info,
              c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used, p.id AS product_id,
@@ -940,7 +961,7 @@ initDB().then(() => {
     const orderMap = new Map()
     for (const row of itemsRes[0].values) {
       const [order_id, transfer_amount, ts,
-             product_name, quantity, credit_deducted, price_usd_used,
+             product_name, quantity, item_price, credit_deducted, price_usd_used,
              email_used, email_cost, lot_cost_used, bundle_lot_info,
              fill_type, is_bundle, cost_used, product_id, category_name, manual_data_str, order_channel, topup_breakdown_raw] = row
 
@@ -995,7 +1016,7 @@ initDB().then(() => {
       }
 
       orderMap.get(order_id).items.push({
-        product_name: actualProductName, quantity, credit_deducted, price_usd_used,
+        product_name: actualProductName, quantity, price: item_price ?? 0, credit_deducted, price_usd_used,
         email_used: actualEmailUsed, email_cost, lot_cost_used, bundle_lot_info: enrichedBundleLotInfo,
         fill_type: actualFillType, is_bundle: is_bundle === 1, cost_used: actualCostUsed,
         topup_breakdown: manual_data_str ? null : (topup_breakdown_raw ?? null),
@@ -1126,6 +1147,118 @@ initDB().then(() => {
   app.get('/{*path}', (req, res) => {
     res.sendFile(path.join(__dirname, 'client/dist/index.html'))
   })
+
+  // Helper: ดึงข้อมูล orders สำหรับ export (ใช้ร่วมกันระหว่าง endpoint และ cron)
+  async function runSheetExport(dateFrom, dateTo) {
+    const settingsRes = db.exec("SELECT value FROM settings WHERE key='sheet_id'")
+    const sheetId = settingsRes[0]?.values[0][0]
+    if (!sheetId) throw new Error('ยังไม่ได้ตั้งค่า Sheet ID')
+
+    const dateFilter = (dateFrom && dateTo)
+      ? `WHERE DATE(COALESCE(o.transfer_time, o.created_at)) BETWEEN '${dateFrom}' AND '${dateTo}'`
+      : (dateFrom ? `WHERE DATE(COALESCE(o.transfer_time, o.created_at)) >= '${dateFrom}'` : '')
+
+    const itemsRes = db.exec(`
+      SELECT o.id, o.transfer_amount, COALESCE(o.transfer_time, o.created_at) AS ts,
+             p.name, oi.quantity, oi.price, oi.credit_deducted, oi.price_usd_used,
+             e.email, e.cost AS email_cost,
+             oi.lot_cost_used, oi.bundle_lot_info,
+             c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used, p.id AS product_id,
+             c.name AS category_name, oi.manual_data, o.channel, oi.topup_breakdown
+      FROM orders o
+      JOIN order_items oi ON oi.order_id = o.id
+      LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
+      LEFT JOIN categories c ON c.id = p.category_id
+      LEFT JOIN emails e ON e.id = oi.email_id_used
+      ${dateFilter}
+      ORDER BY ts, o.id, oi.id
+    `)
+
+    if (!itemsRes[0] || itemsRes[0].values.length === 0) {
+      throw new Error('ไม่มีข้อมูลให้ export')
+    }
+
+    const orderMap = new Map()
+    for (const row of itemsRes[0].values) {
+      const [order_id, transfer_amount, ts,
+             product_name, quantity, item_price, credit_deducted, price_usd_used,
+             email_used, email_cost, lot_cost_used, bundle_lot_info,
+             fill_type, is_bundle, cost_used, product_id, category_name, manual_data_str, order_channel, topup_breakdown_raw] = row
+
+      let actualProductName = product_name
+      let actualCategoryName = category_name || ''
+      let actualEmailUsed = email_used
+      let actualCostUsed = cost_used
+      let actualFillType = fill_type
+      let actualBundleLotInfo = bundle_lot_info
+      if (manual_data_str) {
+        try {
+          const md = JSON.parse(manual_data_str)
+          actualProductName = md.product_name || product_name || '(manual)'
+          actualCategoryName = md.game_name || category_name || ''
+          actualEmailUsed = md.supplier_name || email_used
+          actualCostUsed = md.cost != null ? Number(md.cost) : cost_used
+          actualFillType = 'UID'
+          actualBundleLotInfo = null
+        } catch {}
+      }
+
+      if (!orderMap.has(order_id)) {
+        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, category_name: actualCategoryName, channel: order_channel || null, items: [] })
+      }
+
+      let enrichedBundleLotInfo = actualBundleLotInfo
+      if (is_bundle === 1 && actualBundleLotInfo) {
+        try {
+          const components = JSON.parse(actualBundleLotInfo)
+          const needsEnrich = components.some(c => c.price_usd == null)
+          if (needsEnrich) {
+            const compRows = db.exec(
+              'SELECT p.name, p.price_usd, pb.quantity FROM product_bundles pb JOIN products p ON p.id = pb.component_id WHERE pb.product_id=?',
+              [product_id]
+            )
+            if (compRows[0]) {
+              const priceMap = {}
+              for (const [cName, cPriceUsd, cQty] of compRows[0].values) {
+                priceMap[cName] = { price_usd: cPriceUsd, qty: cQty }
+              }
+              const enriched = components.map(c => ({
+                ...c,
+                price_usd: c.price_usd ?? priceMap[c.name]?.price_usd ?? null,
+                qty: c.qty ?? priceMap[c.name]?.qty ?? 1,
+              }))
+              enrichedBundleLotInfo = JSON.stringify(enriched)
+            }
+          }
+        } catch {}
+      }
+
+      orderMap.get(order_id).items.push({
+        product_name: actualProductName, quantity, price: item_price ?? 0, credit_deducted, price_usd_used,
+        email_used: actualEmailUsed, email_cost, lot_cost_used, bundle_lot_info: enrichedBundleLotInfo,
+        fill_type: actualFillType, is_bundle: is_bundle === 1, cost_used: actualCostUsed,
+        topup_breakdown: manual_data_str ? null : (topup_breakdown_raw ?? null),
+      })
+    }
+
+    const orders = Array.from(orderMap.values())
+    const dayCount = await exportDailyOrders(sheetId, orders)
+    return { orderCount: orders.length, dayCount }
+  }
+
+  // Cron: Export วันก่อนหน้าอัตโนมัติทุกวันเวลา 05:00 น.
+  cron.schedule('0 5 * * *', async () => {
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const dateStr = yesterday.toISOString().split('T')[0]
+    console.log(`[Auto Export] เริ่ม export วันที่ ${dateStr}`)
+    try {
+      const { orderCount, dayCount } = await runSheetExport(dateStr, dateStr)
+      console.log(`[Auto Export] สำเร็จ ${orderCount} รายการ (${dayCount} วัน)`)
+    } catch (err) {
+      console.error(`[Auto Export] ล้มเหลว: ${err.message}`)
+    }
+  }, { timezone: 'Asia/Bangkok' })
 
   const PORT = process.env.PORT || 3000
   const server = app.listen(PORT, () => {

@@ -123,6 +123,7 @@ async function initDB() {
     behavior TEXT NOT NULL DEFAULT 'EMAIL'
   )`)
   try { db.run("ALTER TABLE email_types ADD COLUMN behavior TEXT NOT NULL DEFAULT 'EMAIL'") } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE product_lots ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0') } catch (e) { /* column exists */ }
 
   db.run(`CREATE TABLE IF NOT EXISTS reservations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

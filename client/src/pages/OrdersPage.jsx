@@ -696,7 +696,7 @@ export default function OrdersPage() {
                                   onClick={() => !item.merged && item.item_id && startEditItem(item.item_id, item.cost_used)}
                                   title={!item.merged && item.item_id ? 'คลิกเพื่อแก้ไขต้นทุน' : undefined}
                                 >
-                                  ฿{Number(item.cost_used).toLocaleString()}
+                                  ฿{(Number(item.cost_used) * (Number(item.quantity) || 1)).toLocaleString()}
                                 </span>
                               )
                             ) : (

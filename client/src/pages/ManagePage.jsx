@@ -414,6 +414,26 @@ export default function ManagePage() {
     await reloadDashboard(); loadAll()
   }
 
+  async function deleteCostColumn(cost) {
+    if (!confirm(`ลบต้นทุน ฿${cost} ทั้งหมดออกจากตาราง?`)) return
+    await fetch('/product-lots/by-cost', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category_id: dashboardCat.id, cost }),
+    })
+    setDashEditCost(null)
+    await reloadDashboard(); loadAll()
+  }
+
+  async function toggleLotDisabled(lotId, currentDisabled) {
+    await fetch(`/product-lots/${lotId}/disabled`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ disabled: !currentDisabled }),
+    })
+    await reloadDashboard()
+  }
+
   async function saveNewLot() {
     await fetch('/product-lots', {
       method: 'POST',
@@ -1052,6 +1072,7 @@ export default function ManagePage() {
                                 />
                                 <button onClick={saveDashCost} className="text-green-600 hover:text-green-800 cursor-pointer">✓</button>
                                 <button onClick={() => setDashEditCost(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">✕</button>
+                                <button onClick={() => deleteCostColumn(dashEditCost.old_cost)} className="text-red-400 hover:text-red-600 cursor-pointer text-xs" title="ลบต้นทุนนี้ทั้งหมด">🗑</button>
                               </div>
                             ) : (
                               <button
@@ -1161,15 +1182,28 @@ export default function ManagePage() {
                                     </div>
                                   </div>
                                 ) : (
-                                  <button
-                                    onClick={() => { setDashEditLot({ id: lot.id, cost: lot.cost, stock: lot.stock }); setDashEditUsd(null) }}
-                                    className="hover:bg-slate-100 rounded px-2 py-1 cursor-pointer whitespace-nowrap"
-                                  >
-                                    {lot.stock > 0
-                                      ? <span className="text-slate-700 font-medium">{lot.stock} ชิ้น</span>
-                                      : <span className="text-slate-300">—</span>
-                                    }
-                                  </button>
+                                  <div className="flex flex-col items-center gap-1">
+                                    <button
+                                      onClick={() => { setDashEditLot({ id: lot.id, cost: lot.cost, stock: lot.stock }); setDashEditUsd(null) }}
+                                      className={`hover:bg-slate-100 rounded px-2 py-1 cursor-pointer whitespace-nowrap ${lot.disabled ? 'opacity-40' : ''}`}
+                                    >
+                                      {lot.stock > 0
+                                        ? <span className={`font-medium ${lot.disabled ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{lot.stock} ชิ้น</span>
+                                        : <span className="text-slate-300">—</span>
+                                      }
+                                    </button>
+                                    <button
+                                      onClick={() => toggleLotDisabled(lot.id, lot.disabled)}
+                                      className={`px-2 py-0.5 rounded text-xs cursor-pointer font-medium transition-colors ${
+                                        lot.disabled
+                                          ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200'
+                                          : 'bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500'
+                                      }`}
+                                      title={lot.disabled ? 'คลิกเพื่อเปิดใช้งาน' : 'คลิกเพื่อปิดไม่ให้ตัด stock'}
+                                    >
+                                      {lot.disabled ? 'เปิด' : 'ปิด'}
+                                    </button>
+                                  </div>
                                 )}
                               </td>
                             )

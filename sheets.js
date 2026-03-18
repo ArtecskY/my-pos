@@ -62,10 +62,10 @@ function isEmailLike(fill_type) {
 }
 
 // คำนวณข้อมูลต้นทุนต่อ item → { unitQty, cost, totalCost, note }
-// unitQty   = จำนวนเหรียญ/ต้นทุน (แสดงในคอลัมน์ที่ 5)
-// cost      = ต้นทุน (คอลัมน์ที่ 7)
-// totalCost = ต้นทุนรวม (คอลัมน์ที่ 8)
-// note      = หมายเหตุ (คอลัมน์ที่ 10)
+// unitQty   = จำนวนเหรียญ/ต้นทุน (แสดงในคอลัมน์)
+// cost      = ต้นทุนต่อหน่วย
+// totalCost = ต้นทุนรวมของ item นี้
+// note      = หมายเหตุ
 function computeItemData(item) {
   const { product_name, fill_type, quantity, credit_deducted, email_cost,
           lot_cost_used, price_usd_used, cost_used,
@@ -130,12 +130,13 @@ function computeItemData(item) {
     }
   }
 
-  // UID / OTHER_UID: จำนวนเหรียญ = cost_used, ต้นทุนรวม = cost_used
-  const uid_qty = cost_used ?? quantity
+  // UID / OTHER_UID: cost_used คือต้นทุนต่อหน่วย, totalCost = cost_used * quantity
+  const uid_unitCost = cost_used ?? 0
+  const uid_qty = quantity || 1
   return {
     unitQty: uid_qty,
-    cost: uid_qty,
-    totalCost: uid_qty,
+    cost: uid_unitCost,
+    totalCost: uid_unitCost * uid_qty,
     note: '',
   }
 }
@@ -146,6 +147,7 @@ function fmt(num) {
 }
 
 // export ออเดอร์แบบรายวัน — แต่ละวันไปอยู่ tab ชื่อวันที่พ.ศ.
+// คอลัมน์: No., ยอดโอน (฿), ชื่อเกม, ช่องทาง, เวลาโอน, รายการสินค้า, จำนวนเหรียญ/ต้นทุน, Email ที่ใช้, ต้นทุน, ต้นทุนรวม, กำไร, หมายเหตุ
 async function exportDailyOrders(spreadsheetId, orders) {
   const auth = getClient()
   const sheets = google.sheets({ version: 'v4', auth })
@@ -161,7 +163,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
   for (const [tabName, dayOrders] of Object.entries(byDay)) {
     await ensureSheetTab(sheets, spreadsheetId, tabName)
 
-    // เรียงตามเวลาจากเช้าไปสาย (เหมือนหน้าบันทึกรายการ)
+    // เรียงตามเวลาจากเช้าไปสาย
     dayOrders.sort((a, b) => {
       const ta = (a.transfer_time || a.ts || '').replace(' ', 'T')
       const tb = (b.transfer_time || b.ts || '').replace(' ', 'T')
@@ -170,31 +172,38 @@ async function exportDailyOrders(spreadsheetId, orders) {
 
     const rows = []
     for (const [orderIdx, o] of dayOrders.entries()) {
-      // รวมต้นทุนทั้งหมดของออเดอร์สำหรับคำนวณกำไร
-      let orderTotalCost = 0
       const itemDataList = o.items.map(item => {
         const d = computeItemData(item)
-        orderTotalCost += d.totalCost
         return { item, data: d }
       })
 
-      const profit = (o.transfer_amount ?? 0) - orderTotalCost
       const time = toTimeOnly(o.transfer_time)
 
-      // สร้างแถวสำหรับแต่ละ item ในออเดอร์
+      // สร้างแถวสำหรับแต่ละ item — ยอดโอนและกำไรคิดแยกต่อแพ็ก
       itemDataList.forEach(({ item, data }, i) => {
+        // ยอดโอนต่อ item = ราคาขาย (oi.price * quantity)
+        // ถ้า item ไม่มี price (manual order หรือ price=0) ใช้ transfer_amount ทั้งออเดอร์
+        const itemPrice = item.price != null && Number(item.price) > 0
+          ? Number(item.price) * (Number(item.quantity) || 1)
+          : (i === 0 ? (o.transfer_amount ?? '') : '')
+
+        // กำไรต่อ item = ยอดโอน - ต้นทุนรวม
+        const itemProfit = item.price != null && Number(item.price) > 0
+          ? Number(item.price) * (Number(item.quantity) || 1) - data.totalCost
+          : (i === 0 ? (o.transfer_amount ?? 0) - data.totalCost : '')
+
         rows.push([
-          i === 0 ? `#${orderIdx + 1}` : '',           // No. (sequential ตามเวลา)
-          i === 0 ? (o.transfer_amount ?? '') : '',     // ยอดโอน (฿)
-          i === 0 ? time : '',                          // เวลาโอน
+          i === 0 ? `#${orderIdx + 1}` : '',           // No.
+          itemPrice,                                     // ยอดโอน (฿) — แยกต่อแพ็ก
           i === 0 ? (o.category_name || '') : '',       // ชื่อเกม
+          i === 0 ? (o.channel || '') : '',             // ช่องทาง (ระหว่างชื่อเกมกับเวลาโอน)
+          i === 0 ? time : '',                          // เวลาโอน
           item.product_name,                            // รายการสินค้า
           data.unitQty,                                 // จำนวนเหรียญ/ต้นทุน
           item.email_used || '-',                       // Email ที่ใช้
-          i === 0 ? (o.channel || '') : '',             // ช่องทาง
           fmt(data.cost),                               // ต้นทุน
           fmt(data.totalCost),                          // ต้นทุนรวม
-          i === 0 ? fmt(profit) : '',                   // กำไร
+          item.price != null && Number(item.price) > 0 ? fmt(itemProfit) : (i === 0 ? fmt(itemProfit) : ''), // กำไรต่อแพ็ก
           data.note,                                    // หมายเหตุ
         ])
       })
@@ -211,7 +220,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
       valueInputOption: 'USER_ENTERED',
       requestBody: {
         values: [
-          ['No.', 'ยอดโอน (฿)', 'เวลาโอน', 'ชื่อเกม', 'รายการสินค้า', 'จำนวนเหรียญ/ต้นทุน', 'Email ที่ใช้', 'ช่องทาง', 'ต้นทุน', 'ต้นทุนรวม', 'กำไร', 'หมายเหตุ'],
+          ['No.', 'ยอดโอน (฿)', 'ชื่อเกม', 'ช่องทาง', 'เวลาโอน', 'รายการสินค้า', 'จำนวนเหรียญ/ต้นทุน', 'Email ที่ใช้', 'ต้นทุน', 'ต้นทุนรวม', 'กำไร', 'หมายเหตุ'],
           ...rows,
         ],
       },
