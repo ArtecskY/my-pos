@@ -119,29 +119,33 @@ initDB().then(() => {
     // คำนวณ stock ของ bundle และ ID_PASS จาก sub-tables
     for (const p of products) {
       if (p.is_bundle) {
-        const comps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [p.id])
-        if (comps[0] && comps[0].values.length > 0) {
-          let minStock = Infinity
-          for (const [compId, qty] of comps[0].values) {
-            // ตรวจ fill_type ของ component เพื่อเลือก stock source ที่ถูกต้อง
-            const compCatRes = db.exec(
-              'SELECT c.fill_type FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id=?', [compId]
-            )
-            const compFillType = compCatRes[0]?.values[0][0] || 'UID'
-            let compStock
-            if (compFillType === 'ID_PASS') {
-              const lr = db.exec('SELECT COALESCE(SUM(stock),0) FROM product_lots WHERE product_id=? AND (disabled IS NULL OR disabled=0)', [compId])
-              compStock = lr[0]?.values[0][0] || 0
-            } else {
-              const cr = db.exec('SELECT stock FROM products WHERE id=?', [compId])
-              compStock = cr[0] ? cr[0].values[0][0] : 0
-            }
-            const s = Math.floor(compStock / qty)
-            if (s < minStock) minStock = s
-          }
-          p.stock = minStock === Infinity ? 0 : minStock
+        if (usesEmailCredits(p.fill_type)) {
+          // EMAIL-type bundle: stock is email credits (already set from row[9]) — no override needed
         } else {
-          p.stock = 0
+          const comps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [p.id])
+          if (comps[0] && comps[0].values.length > 0) {
+            let minStock = Infinity
+            for (const [compId, qty] of comps[0].values) {
+              // ตรวจ fill_type ของ component เพื่อเลือก stock source ที่ถูกต้อง
+              const compCatRes = db.exec(
+                'SELECT c.fill_type FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id=?', [compId]
+              )
+              const compFillType = compCatRes[0]?.values[0][0] || 'UID'
+              let compStock
+              if (compFillType === 'ID_PASS') {
+                const lr = db.exec('SELECT COALESCE(SUM(stock),0) FROM product_lots WHERE product_id=? AND (disabled IS NULL OR disabled=0)', [compId])
+                compStock = lr[0]?.values[0][0] || 0
+              } else {
+                const cr = db.exec('SELECT stock FROM products WHERE id=?', [compId])
+                compStock = cr[0] ? cr[0].values[0][0] : 0
+              }
+              const s = Math.floor(compStock / qty)
+              if (s < minStock) minStock = s
+            }
+            p.stock = minStock === Infinity ? 0 : minStock
+          } else {
+            p.stock = 0
+          }
         }
       } else if (p.fill_type === 'ID_PASS') {
         const lotsRes = db.exec('SELECT COALESCE(SUM(stock), 0) FROM product_lots WHERE product_id=? AND (disabled IS NULL OR disabled=0)', [p.id])
@@ -456,24 +460,39 @@ initDB().then(() => {
       const [stock, name, category_id, price, is_bundle, price_usd_val] = pRes[0].values[0]
 
       if (is_bundle) {
-        // ตรวจสอบ stock ของ components
-        const comps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [item.product_id])
-        if (!comps[0] || comps[0].values.length === 0)
-          return res.status(400).json({ error: `แพ็กโปรโมชั่น "${name}" ยังไม่มีสินค้า component` })
-        for (const [compId, bundleQty] of comps[0].values) {
-          const compRes = db.exec(
-            'SELECT p.stock, p.name, c.fill_type FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id=?',
-            [compId]
-          )
-          if (!compRes[0]) return res.status(400).json({ error: `ไม่พบสินค้า component ของ "${name}"` })
-          const [rawStock, compName, compFillType] = compRes[0].values[0]
-          let compStock = rawStock
-          if (compFillType === 'ID_PASS') {
-            const lotsRes = db.exec('SELECT COALESCE(SUM(stock), 0) FROM product_lots WHERE product_id=? AND (disabled IS NULL OR disabled=0)', [compId])
-            compStock = lotsRes[0]?.values[0][0] || 0
+        const catRes0 = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
+        const bundleFillType0 = catRes0[0]?.values[0][0] || 'UID'
+        if (usesEmailCredits(bundleFillType0)) {
+          // EMAIL-type bundle: validate email credits เหมือน regular EMAIL product
+          if (!item.email_id) return res.status(400).json({ error: `กรุณาเลือก Email สำหรับ "${name}"` })
+          const needed = parseCreditPerUnit(name, price, price_usd_val) * item.quantity
+          const emailRes = db.exec('SELECT credits FROM emails WHERE id=? AND fill_type=?', [item.email_id, bundleFillType0])
+          if (!emailRes[0]) return res.status(400).json({ error: `ไม่พบ Email ที่เลือกสำหรับ "${name}"` })
+          const emailCredits = emailRes[0].values[0][0]
+          const alreadyPending = emailPendingDeductions[item.email_id] || 0
+          if (emailCredits - alreadyPending < needed)
+            return res.status(400).json({ error: `Email ที่เลือกมีเครดิตไม่พอสำหรับ "${name}" (เหลือ ${Number(emailCredits - alreadyPending).toFixed(2)} ต้องการ ${needed})` })
+          emailPendingDeductions[item.email_id] = alreadyPending + needed
+        } else {
+          // ตรวจสอบ stock ของ components
+          const comps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [item.product_id])
+          if (!comps[0] || comps[0].values.length === 0)
+            return res.status(400).json({ error: `แพ็กโปรโมชั่น "${name}" ยังไม่มีสินค้า component` })
+          for (const [compId, bundleQty] of comps[0].values) {
+            const compRes = db.exec(
+              'SELECT p.stock, p.name, c.fill_type FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id=?',
+              [compId]
+            )
+            if (!compRes[0]) return res.status(400).json({ error: `ไม่พบสินค้า component ของ "${name}"` })
+            const [rawStock, compName, compFillType] = compRes[0].values[0]
+            let compStock = rawStock
+            if (compFillType === 'ID_PASS') {
+              const lotsRes = db.exec('SELECT COALESCE(SUM(stock), 0) FROM product_lots WHERE product_id=? AND (disabled IS NULL OR disabled=0)', [compId])
+              compStock = lotsRes[0]?.values[0][0] || 0
+            }
+            if (compStock !== -1 && compStock < bundleQty * item.quantity)
+              return res.status(400).json({ error: `${compName} มีสต็อกไม่พอสำหรับแพ็ก "${name}" (ต้องการ ${bundleQty * item.quantity} เหลือ ${compStock})` })
           }
-          if (compStock !== -1 && compStock < bundleQty * item.quantity)
-            return res.status(400).json({ error: `${compName} มีสต็อกไม่พอสำหรับแพ็ก "${name}" (ต้องการ ${bundleQty * item.quantity} เหลือ ${compStock})` })
         }
       } else {
         const catRes = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
@@ -529,46 +548,59 @@ initDB().then(() => {
       let creditDeducted = null, emailIdUsed = null, lotIdUsed = null, priceUsdUsed = null
       let costUsed = null, lotCostUsed = null, bundleLotInfo = null, topupBreakdown = null
       if (is_bundle) {
-        let totalCompPriceUsd = 0
-        let hasCompPriceUsd = false
-        const bundleComponents = []
-        const comps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [item.product_id])
-        if (comps[0]) {
-          for (const [compId, bundleQty] of comps[0].values) {
-            const compRes = db.exec(
-              'SELECT c.fill_type, p.price_usd, p.name FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id=?',
-              [compId]
-            )
-            const compFillType = compRes[0]?.values[0][0]
-            const compPriceUsd = compRes[0]?.values[0][1]
-            const compName = compRes[0]?.values[0][2] || ''
-            if (compPriceUsd != null) {
-              totalCompPriceUsd += Number(compPriceUsd) * bundleQty
-              hasCompPriceUsd = true
-            }
-            const needed = bundleQty * item.quantity
-            if (compFillType === 'ID_PASS') {
-              let remaining = needed
-              let firstCost = null
-              const lots = db.exec('SELECT id, stock, cost FROM product_lots WHERE product_id=? AND stock > 0 AND (disabled IS NULL OR disabled=0) ORDER BY cost DESC', [compId])
-              if (lots[0]) {
-                for (const [lotId, lotStock, lotCost] of lots[0].values) {
-                  if (remaining <= 0) break
-                  const deduct = Math.min(remaining, lotStock)
-                  db.run('UPDATE product_lots SET stock = stock - ? WHERE id=?', [deduct, lotId])
-                  if (firstCost === null) firstCost = lotCost
-                  remaining -= deduct
-                }
+        const catRes1 = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
+        const bundleFillType1 = catRes1[0]?.values[0][0] || 'UID'
+        if (usesEmailCredits(bundleFillType1)) {
+          // EMAIL-type bundle: deduct email credits เหมือน regular EMAIL product
+          creditDeducted = parseCreditPerUnit(productName, price, price_usd) * item.quantity
+          emailIdUsed = item.email_id
+          deductFromEmail(item.email_id, creditDeducted)
+          priceUsdUsed = price_usd != null ? price_usd * item.quantity : null
+          const ec = db.exec('SELECT cost FROM emails WHERE id=?', [item.email_id])
+          const ecCost = ec[0]?.values[0][0]
+          if (ecCost != null && ecCost > 0) costUsed = ecCost
+        } else {
+          let totalCompPriceUsd = 0
+          let hasCompPriceUsd = false
+          const bundleComponents = []
+          const comps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [item.product_id])
+          if (comps[0]) {
+            for (const [compId, bundleQty] of comps[0].values) {
+              const compRes = db.exec(
+                'SELECT c.fill_type, p.price_usd, p.name FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id=?',
+                [compId]
+              )
+              const compFillType = compRes[0]?.values[0][0]
+              const compPriceUsd = compRes[0]?.values[0][1]
+              const compName = compRes[0]?.values[0][2] || ''
+              if (compPriceUsd != null) {
+                totalCompPriceUsd += Number(compPriceUsd) * bundleQty
+                hasCompPriceUsd = true
               }
-              bundleComponents.push({ name: compName, cost: firstCost, price_usd: compPriceUsd ?? null, qty: bundleQty })
-            } else {
-              db.run('UPDATE products SET stock = stock - ? WHERE id=? AND stock != -1', [needed, compId])
-              bundleComponents.push({ name: compName, cost: null, price_usd: compPriceUsd ?? null, qty: bundleQty })
+              const needed = bundleQty * item.quantity
+              if (compFillType === 'ID_PASS') {
+                let remaining = needed
+                let firstCost = null
+                const lots = db.exec('SELECT id, stock, cost FROM product_lots WHERE product_id=? AND stock > 0 AND (disabled IS NULL OR disabled=0) ORDER BY cost DESC', [compId])
+                if (lots[0]) {
+                  for (const [lotId, lotStock, lotCost] of lots[0].values) {
+                    if (remaining <= 0) break
+                    const deduct = Math.min(remaining, lotStock)
+                    db.run('UPDATE product_lots SET stock = stock - ? WHERE id=?', [deduct, lotId])
+                    if (firstCost === null) firstCost = lotCost
+                    remaining -= deduct
+                  }
+                }
+                bundleComponents.push({ name: compName, cost: firstCost, price_usd: compPriceUsd ?? null, qty: bundleQty })
+              } else {
+                db.run('UPDATE products SET stock = stock - ? WHERE id=? AND stock != -1', [needed, compId])
+                bundleComponents.push({ name: compName, cost: null, price_usd: compPriceUsd ?? null, qty: bundleQty })
+              }
             }
           }
+          if (hasCompPriceUsd) priceUsdUsed = totalCompPriceUsd * item.quantity
+          if (bundleComponents.length > 0) bundleLotInfo = JSON.stringify(bundleComponents)
         }
-        if (hasCompPriceUsd) priceUsdUsed = totalCompPriceUsd * item.quantity
-        if (bundleComponents.length > 0) bundleLotInfo = JSON.stringify(bundleComponents)
       } else {
         const catRes = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
         const fill_type = catRes[0]?.values[0][0] || 'UID'
@@ -651,18 +683,23 @@ initDB().then(() => {
     if (items[0]) {
       for (const [product_id, quantity, price, credit_deducted, email_id_used, is_bundle, lot_id_used, fill_type, topup_breakdown] of items[0].values) {
         if (is_bundle) {
-          // คืน stock ให้ components (เช็คก่อนสุด ไม่สนใจ fill_type ของ bundle เอง)
-          const comps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [product_id])
-          if (comps[0]) {
-            for (const [compId, bundleQty] of comps[0].values) {
-              const compFtRes = db.exec('SELECT c.fill_type FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id=?', [compId])
-              const compFillType = compFtRes[0]?.values[0][0]
-              const restoreQty = bundleQty * quantity
-              if (compFillType === 'ID_PASS') {
-                const firstLot = db.exec('SELECT id FROM product_lots WHERE product_id=? ORDER BY cost ASC LIMIT 1', [compId])
-                if (firstLot[0]) db.run('UPDATE product_lots SET stock = stock + ? WHERE id=?', [restoreQty, firstLot[0].values[0][0]])
-              } else {
-                db.run('UPDATE products SET stock = stock + ? WHERE id=? AND stock != -1', [restoreQty, compId])
+          if (credit_deducted != null && email_id_used != null) {
+            // EMAIL-type bundle: คืน email credits (credit_deducted ถูก set ไว้ตอน process)
+            restoreRazerFIFO(email_id_used, credit_deducted, topup_breakdown)
+          } else {
+            // คืน stock ให้ components (เช็คก่อนสุด ไม่สนใจ fill_type ของ bundle เอง)
+            const comps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [product_id])
+            if (comps[0]) {
+              for (const [compId, bundleQty] of comps[0].values) {
+                const compFtRes = db.exec('SELECT c.fill_type FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id=?', [compId])
+                const compFillType = compFtRes[0]?.values[0][0]
+                const restoreQty = bundleQty * quantity
+                if (compFillType === 'ID_PASS') {
+                  const firstLot = db.exec('SELECT id FROM product_lots WHERE product_id=? ORDER BY cost ASC LIMIT 1', [compId])
+                  if (firstLot[0]) db.run('UPDATE product_lots SET stock = stock + ? WHERE id=?', [restoreQty, firstLot[0].values[0][0]])
+                } else {
+                  db.run('UPDATE products SET stock = stock + ? WHERE id=? AND stock != -1', [restoreQty, compId])
+                }
               }
             }
           }
