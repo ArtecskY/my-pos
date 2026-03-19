@@ -225,7 +225,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
             const rowCostPerCredit = emailCostMap[email] ?? 0
             const rowTotalCost = credits * rowCostPerCredit
 
-            // ยอดโอนต่อ email = proportional ตาม credits
+            // ยอดโอนแสดงเต็มเฉพาะ row แรก
             const rowSellPrice = totalCreditsAll > 0
               ? bundleSellPrice * (credits / totalCreditsAll)
               : 0
@@ -233,7 +233,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
 
             rows.push([
               isFirstRow && si === 0 ? `#${orderIdx + 1}` : '',  // No.
-              fmt(rowSellPrice),                                   // ยอดโอน (฿) — แบ่งตามสัดส่วน
+              isFirstRow && si === 0 ? fmt(bundleSellPrice) : '', // ยอดโอน (฿) — แสดงเต็มแค่ row แรก
               isFirstRow && si === 0 ? (o.category_name || '') : '', // ชื่อเกม
               isFirstRow && si === 0 ? (o.channel || '') : '',    // ช่องทาง
               isFirstRow && si === 0 ? time : '',                 // เวลาโอน

@@ -160,15 +160,16 @@ export default function OrdersPage() {
           i => i.category_name === item.category_name && i.email_used === item.email_used && i.credit_deducted != null
         )
         if (existing) {
-          existing.credit_deducted = Number(existing.credit_deducted) + Number(item.credit_deducted)
+          const prevCredits = Number(existing.credit_deducted)
+          existing.credit_deducted = prevCredits + Number(item.credit_deducted)
           existing.merged = true
           // Track individual components for ⓘ tooltip
           if (!existing.mergedItems) {
             const m1 = dollarPat.exec(existing.product_name)
-            existing.mergedItems = [{ name: existing.product_name, qty: existing.quantity, dollarAmt: m1 ? Number(m1[1]) * existing.quantity : null }]
+            existing.mergedItems = [{ name: existing.product_name, qty: existing.quantity, dollarAmt: m1 ? Number(m1[1]) * existing.quantity : null, credits: prevCredits }]
           }
           const m2 = dollarPat.exec(item.product_name)
-          existing.mergedItems.push({ name: item.product_name, qty: item.quantity, dollarAmt: m2 ? Number(m2[1]) * item.quantity : null })
+          existing.mergedItems.push({ name: item.product_name, qty: item.quantity, dollarAmt: m2 ? Number(m2[1]) * item.quantity : null, credits: Number(item.credit_deducted) })
 
           const m1ex = dollarPat.exec(existing.mergedItems[0]?.name || '')
           if (m2) {
@@ -467,19 +468,26 @@ export default function OrdersPage() {
                         const em = {}
                         p.bundle_email_ids.forEach(be => {
                           const k = be.email || '?'
-                          if (!em[k]) em[k] = 0
-                          em[k] += Number(be.credits)
+                          if (!em[k]) em[k] = { credits: 0, entries: [] }
+                          em[k].credits += Number(be.credits)
+                          if (be.quantity && be.credits) {
+                            em[k].entries.push({
+                              name: be.component_name || '?',
+                              qty: Number(be.quantity),
+                              priceUsd: Number(be.credits) / Number(be.quantity),
+                            })
+                          }
                         })
-                        bundleEmails = Object.entries(em)
+                        bundleEmails = Object.entries(em).map(([email, data]) => ({ email, credits: data.credits, entries: data.entries }))
                       }
                     } catch {}
                   }
                   if (bundleEmails?.length) {
-                    bundleEmails.forEach(([email, credits], si) =>
-                      displayRows.push({ item, si, count: bundleEmails.length, email, credits, split: true })
+                    bundleEmails.forEach(({ email, credits, entries }, si) =>
+                      displayRows.push({ item, si, count: bundleEmails.length, email, credits, entries, split: true })
                     )
                   } else {
-                    displayRows.push({ item, si: 0, count: 1, email: null, credits: null, split: false })
+                    displayRows.push({ item, si: 0, count: 1, email: null, credits: null, entries: null, split: false })
                   }
                 }
 
@@ -627,8 +635,17 @@ export default function OrdersPage() {
                         {/* จำนวน / เครดิต */}
                         {row.split ? (
                           <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                            <span className="text-slate-700 font-semibold text-sm">
+                            <span className="text-slate-700 font-semibold text-sm inline-flex items-center gap-0.5">
                               {Number(row.credits).toFixed(2)}
+                              {row.entries?.length > 1 && (
+                                <InfoTooltip>
+                                  {row.entries.map(e => {
+                                    const usd = e.priceUsd
+                                    const usdStr = Number.isInteger(usd) ? usd : usd.toFixed(2)
+                                    return `${usdStr}$×${e.qty}`
+                                  }).join(', ') + `\nรวม ${Number(row.credits).toFixed(2)}`}
+                                </InfoTooltip>
+                              )}
                             </span>
                           </td>
                         ) : hasUsd ? (
@@ -717,19 +734,12 @@ export default function OrdersPage() {
                                     {Number(item.credit_deducted).toFixed(2)}
                                   </span>
                                 )}
-                                {item.topup_breakdown && (() => {
-                                  try {
-                                    const bd = JSON.parse(item.topup_breakdown)
-                                    if (!bd.length) return null
-                                    const totalCost = bd.reduce((s, b) => s + b.amount_used * b.cost, 0)
-                                    return (
-                                      <InfoTooltip>
-                                        {bd.map(b => `${Number(b.amount_used).toFixed(2)} เครดิต × ฿${b.cost} = ฿${(b.amount_used * b.cost).toFixed(2)}`).join('\n')}
-                                        {`\n─────────────────────\nรวมต้นทุน ฿${totalCost.toFixed(2)}`}
-                                      </InfoTooltip>
-                                    )
-                                  } catch { return null }
-                                })()}
+                                {item.merged && item.mergedItems && (
+                                  <InfoTooltip>
+                                    {item.mergedItems.map(mi => `${mi.name} ใช้เครดิต ${Number(mi.credits ?? 0).toFixed(2)}`).join('\n')}
+                                    {`\n─────────────────────\nรวม ${Number(item.credit_deducted).toFixed(2)} เครดิต`}
+                                  </InfoTooltip>
+                                )}
                               </span>
                             ) : item.cost_used != null && Number(item.cost_used) > 0 ? (
                               // UID ที่มีต้นทุน — แสดง ฿cost_used และกดแก้ไขได้

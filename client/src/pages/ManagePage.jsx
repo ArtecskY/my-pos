@@ -107,6 +107,12 @@ export default function ManagePage() {
   const [editPreview, setEditPreview] = useState(null)
   const editImageRef = useRef(null)
 
+  // Bundle component editing
+  const [bundleComponentsMap, setBundleComponentsMap] = useState({})
+  const [editBundleComps, setEditBundleComps] = useState([])
+  const [editBundlePendingId, setEditBundlePendingId] = useState('')
+  const [editBundlePendingQty, setEditBundlePendingQty] = useState('1')
+
   // ID-PASS Dashboard
   const [dashboardCat, setDashboardCat] = useState(null)
   const [dashboardData, setDashboardData] = useState({ products: [], uniqueCosts: [] })
@@ -174,6 +180,16 @@ export default function ManagePage() {
     setProducts(p)
     setCategories(c)
     setCustomEmailTypes(et)
+    // Load bundle components for display
+    const bundleProds = p.filter(prod => prod.is_bundle)
+    if (bundleProds.length > 0) {
+      const results = await Promise.all(
+        bundleProds.map(prod => fetch(`/products/${prod.id}/bundle-components`).then(r => r.json()).then(comps => [prod.id, comps]))
+      )
+      const map = {}
+      results.forEach(([id, comps]) => { map[id] = comps })
+      setBundleComponentsMap(map)
+    }
   }
 
   const allTypeConfig = useMemo(() => {
@@ -309,8 +325,15 @@ export default function ManagePage() {
   }
 
   async function saveEdit() {
-    const { id, name, price, stock, category_id, fill_type, price_usd, cost } = editModal
+    const { id, name, price, stock, category_id, fill_type, price_usd, cost, is_bundle } = editModal
     if (!name || price === '') return
+
+    // For bundles, auto-compute price_usd from components
+    let finalPriceUsd = price_usd !== '' && price_usd != null ? Number(price_usd) : null
+    if (is_bundle && editBundleComps.length > 0) {
+      const sum = editBundleComps.reduce((s, c) => s + (c.price_usd ?? 0) * c.quantity, 0)
+      if (sum > 0) finalPriceUsd = sum
+    }
 
     const needsStock = !usesEmailCredits(fill_type, customEmailTypes) && !isIDPass(fill_type)
     await fetch(`/products/${id}`, {
@@ -321,10 +344,18 @@ export default function ManagePage() {
         price: Number(price),
         stock: needsStock ? Number(stock) : 0,
         category_id: category_id || null,
-        price_usd: price_usd !== '' && price_usd != null ? Number(price_usd) : null,
+        price_usd: finalPriceUsd,
         cost: cost !== '' && cost != null ? Number(cost) : 0,
       }),
     })
+
+    if (is_bundle) {
+      await fetch(`/products/${id}/bundle-components`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ components: editBundleComps.map(c => ({ product_id: c.product_id, quantity: c.quantity })) }),
+      })
+    }
 
     const imageFile = editImageRef.current?.files[0]
     if (imageFile) {
@@ -672,6 +703,15 @@ export default function ManagePage() {
                               {p.is_bundle && (
                                 <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-600 font-medium">แพ็ก</span>
                               )}
+                              {p.is_bundle && bundleComponentsMap[p.id]?.length > 0 && (
+                                <div className="mt-0.5 space-y-0">
+                                  {bundleComponentsMap[p.id].map(c => (
+                                    <div key={c.product_id} className="text-xs text-slate-400 font-normal">
+                                      • {c.name} × {c.quantity}{c.price_usd != null ? ` ($${c.price_usd})` : ''}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </td>
                             <td className="py-2.5 px-2 text-slate-500">฿{p.price}</td>
                             {p.is_bundle
@@ -699,7 +739,17 @@ export default function ManagePage() {
                             }
                             <td className="py-2.5 px-2 text-right whitespace-nowrap">
                               <button
-                                onClick={() => { setEditModal({ ...p }); setEditPreview(null) }}
+                                onClick={() => {
+                                  setEditModal({ ...p })
+                                  setEditPreview(null)
+                                  setEditBundlePendingId('')
+                                  setEditBundlePendingQty('1')
+                                  if (p.is_bundle) {
+                                    fetch(`/products/${p.id}/bundle-components`).then(r => r.json()).then(comps => setEditBundleComps(comps))
+                                  } else {
+                                    setEditBundleComps([])
+                                  }
+                                }}
                                 className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-md mr-1.5 cursor-pointer text-xs"
                               >
                                 แก้ไข
@@ -1279,6 +1329,57 @@ export default function ManagePage() {
                 className={`w-full ${inputCls}`}
               />
             </div>
+            {editModal.is_bundle && (
+              <div className="mb-3.5">
+                <label className="block text-sm text-slate-500 mb-2">สินค้าในแพ็ก</label>
+                <div className="space-y-1.5 mb-2">
+                  {editBundleComps.map(c => (
+                    <div key={c.product_id} className="flex items-center gap-2 text-sm bg-slate-50 rounded-lg px-3 py-1.5 border border-slate-100">
+                      <span className="flex-1 text-slate-700">{c.name}</span>
+                      <span className="text-slate-400 text-xs">× {c.quantity}{c.price_usd != null ? ` ($${c.price_usd})` : ''}</span>
+                      <button
+                        onClick={() => setEditBundleComps(prev => prev.filter(cc => cc.product_id !== c.product_id))}
+                        className="text-red-400 hover:text-red-600 cursor-pointer text-base leading-none"
+                      >×</button>
+                    </div>
+                  ))}
+                </div>
+                {editBundleComps.length > 0 && (
+                  <div className="text-xs text-green-600 mb-2">
+                    รวม $ = {editBundleComps.reduce((s, c) => s + (c.price_usd ?? 0) * c.quantity, 0).toFixed(2)}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <select
+                    value={editBundlePendingId}
+                    onChange={e => setEditBundlePendingId(e.target.value)}
+                    className={`flex-1 ${inputCls} text-slate-600 text-xs`}
+                  >
+                    <option value="">— เลือกสินค้าเพิ่ม —</option>
+                    {products.filter(p => p.category_id === editModal.category_id && !p.is_bundle && !editBundleComps.find(c => c.product_id === p.id)).map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number" min="1" value={editBundlePendingQty}
+                    onChange={e => setEditBundlePendingQty(e.target.value)}
+                    className={`w-16 ${inputCls} text-xs`}
+                  />
+                  <button
+                    onClick={() => {
+                      const pid = Number(editBundlePendingId)
+                      const qty = Number(editBundlePendingQty)
+                      if (!pid || qty < 1) return
+                      const prod = products.find(p => p.id === pid)
+                      setEditBundleComps(prev => [...prev, { product_id: pid, quantity: qty, name: prod?.name || '', price: prod?.price || 0, price_usd: prod?.price_usd ?? null }])
+                      setEditBundlePendingId('')
+                      setEditBundlePendingQty('1')
+                    }}
+                    className="px-2.5 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-xs cursor-pointer whitespace-nowrap"
+                  >+ เพิ่ม</button>
+                </div>
+              </div>
+            )}
             {!usesEmailCredits(editModal.fill_type, customEmailTypes) && !isIDPass(editModal.fill_type) && !editModal.is_bundle && (
               <div className="mb-3.5">
                 <label className="block text-sm text-slate-500 mb-1.5">ราคาทุน (฿)</label>
@@ -1319,6 +1420,15 @@ export default function ManagePage() {
                 <label className="block text-sm text-slate-500 mb-1.5">
                   {editModal.fill_type === 'EMAIL' ? 'เครดิต Apple ID ($)' : 'ราคา $ (ราคาขายในหน่วย USD)'}
                 </label>
+                {editModal.is_bundle ? (
+                  <input
+                    type="number" step="0.01" min="0"
+                    value={editBundleComps.reduce((s, c) => s + (c.price_usd ?? 0) * c.quantity, 0) || ''}
+                    readOnly
+                    className={`w-full ${inputCls} bg-slate-50 text-slate-500 cursor-not-allowed`}
+                    placeholder="0.00"
+                  />
+                ) : (
                 <input
                   type="number" step="0.01" min="0"
                   value={editModal.price_usd ?? ''}
@@ -1326,6 +1436,7 @@ export default function ManagePage() {
                   className={`w-full ${inputCls}`}
                   placeholder="0.00"
                 />
+                )}
               </div>
             )}
             <div className="mb-3.5">

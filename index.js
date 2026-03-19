@@ -1181,6 +1181,12 @@ initDB().then(() => {
     if (emailMapRes[0]) {
       for (const [id, email] of emailMapRes[0].values) emailIdMap[id] = email
     }
+    // Pre-load product name map for component_name enrichment
+    const productNameMapRes = db.exec('SELECT id, name FROM products')
+    const productNameMap = {}
+    if (productNameMapRes[0]) {
+      for (const [id, name] of productNameMapRes[0].values) productNameMap[id] = name
+    }
 
     const result = db.exec(`
       SELECT o.id, o.transfer_time, o.created_at, o.transfer_amount, o.total,
@@ -1215,18 +1221,21 @@ initDB().then(() => {
           item.cost_used = md.cost != null ? Number(md.cost) : item.cost_used
         } catch {}
       }
-      // Enrich bundle_lot_info: fill missing email field from emailIdMap
+      // Enrich bundle_lot_info: fill missing email + component_name fields
       if (item.bundle_lot_info) {
         try {
           const parsed = JSON.parse(item.bundle_lot_info)
           if (parsed.bundle_email_ids) {
-            const needsEnrich = parsed.bundle_email_ids.some(be => !be.email && be.email_id)
+            const needsEnrich = parsed.bundle_email_ids.some(be =>
+              (!be.email && be.email_id) || (!be.component_name && be.component_product_id)
+            )
             if (needsEnrich) {
               item.bundle_lot_info = JSON.stringify({
                 ...parsed,
                 bundle_email_ids: parsed.bundle_email_ids.map(be => ({
                   ...be,
                   email: be.email || emailIdMap[be.email_id] || null,
+                  component_name: be.component_name || (be.component_product_id ? productNameMap[be.component_product_id] || null : null),
                 }))
               })
             }
