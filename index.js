@@ -1175,6 +1175,18 @@ initDB().then(() => {
   })
 
   app.get('/order-items', requireLogin, (req, res) => {
+    // Pre-load bundle components map for bundle display
+    const bundleCompsRes = db.exec(
+      'SELECT pb.product_id, p.name, pb.quantity, p.price_usd FROM product_bundles pb JOIN products p ON p.id = pb.component_id ORDER BY pb.product_id, pb.rowid'
+    )
+    const bundleCompsMap = {}
+    if (bundleCompsRes[0]) {
+      for (const [pid, name, qty, price_usd] of bundleCompsRes[0].values) {
+        if (!bundleCompsMap[pid]) bundleCompsMap[pid] = []
+        bundleCompsMap[pid].push({ name, qty, price_usd })
+      }
+    }
+
     // Pre-load email map for enriching old bundle records that lack email field
     const emailMapRes = db.exec('SELECT id, email FROM emails')
     const emailIdMap = {}
@@ -1192,7 +1204,7 @@ initDB().then(() => {
       SELECT o.id, o.transfer_time, o.created_at, o.transfer_amount, o.total,
              p.name, oi.quantity, oi.price, oi.credit_deducted, e.email, oi.price_usd_used, c.name, oi.cost_used,
              COALESCE(oi.lot_cost_used, pl.cost) as lot_cost_used, oi.bundle_lot_info, o.channel, c.fill_type,
-             o.transfer_time2, o.tw, oi.manual_data, oi.id AS item_id, oi.topup_breakdown
+             o.transfer_time2, o.tw, oi.manual_data, oi.id AS item_id, oi.topup_breakdown, COALESCE(p.is_bundle, 0) as is_bundle, oi.product_id
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
@@ -1211,7 +1223,7 @@ initDB().then(() => {
         cost_used: row[12] ?? null, lot_cost_used: row[13] ?? null,
         bundle_lot_info: row[14] ?? null, channel: row[15] || null, fill_type: row[16] || null,
         transfer_time2: row[17] || null, tw: row[18] === 1, manual_data: row[19] ?? null,
-        item_id: row[20] ?? null, topup_breakdown: row[21] ?? null,
+        item_id: row[20] ?? null, topup_breakdown: row[21] ?? null, is_bundle: row[22] === 1, product_id: row[23] ?? null,
       }
       if (item.manual_data) {
         try {
@@ -1241,6 +1253,11 @@ initDB().then(() => {
             }
           }
         } catch {}
+      }
+      // Enrich bundle without bundle_lot_info with components from product_bundles
+      if (item.is_bundle && !item.bundle_lot_info && item.product_id) {
+        const comps = bundleCompsMap[item.product_id]
+        if (comps?.length) item.bundle_components = comps
       }
       return item
     }) : []

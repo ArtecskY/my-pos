@@ -496,9 +496,10 @@ export default function OrdersPage() {
                   if (row.split) return s
                   const i = row.item
                   if (i.price_usd_used == null) return s
-                  return s + Number(i.price_usd_used) * (i.bundle_lot_info ? 1 : Number(i.quantity))
+                  return s + Number(i.price_usd_used) * (i.bundle_lot_info || i.is_bundle ? 1 : Number(i.quantity))
                 }, 0)
                 const hasUsd = orderUsdTotal > 0 && !hasManual
+                const hasIdPass = order.items.some(i => i.fill_type === 'ID_PASS')
                 const usdRows = displayRows.filter(row => !row.split && row.item.price_usd_used != null)
 
                 // Type span map for consecutive same fill_types
@@ -652,21 +653,36 @@ export default function OrdersPage() {
                           item.price_usd_used != null ? (
                             usdRows.indexOf(row) === 0 ? (
                             <td rowSpan={usdRows.length} className="py-2.5 px-3 text-right align-middle whitespace-nowrap">
-                              <span className="text-slate-700 font-semibold text-sm">
-                                ${Number.isInteger(orderUsdTotal) ? orderUsdTotal : orderUsdTotal.toFixed(2)}
+                              <span className="text-slate-700 font-semibold text-sm inline-flex items-center gap-0.5">
+                                {hasIdPass
+                                  ? `$${Number.isInteger(orderUsdTotal) ? orderUsdTotal : orderUsdTotal.toFixed(2)}`
+                                  : orderUsdTotal.toFixed(2)}
                               </span>
-                              {/* ⓘ ID-PASS — แสดงต้นทุน lot */}
+                              {/* ⓘ — แสดงรายละเอียด */}
                               <InfoTooltip>
                                 {order.items.filter(i => i.price_usd_used != null || i.bundle_lot_info).map(i => {
+                                  if (i.bundle_components?.length) {
+                                    const perUnit = i.bundle_components.reduce((s, c) => s + (c.price_usd ?? 0) * c.qty, 0)
+                                    const total = perUnit * Number(i.quantity)
+                                    return i.bundle_components.map(c => {
+                                      const u = c.price_usd
+                                      return `${Number.isInteger(u) ? u : u.toFixed(2)}$×${c.qty}`
+                                    }).join('\n') + `\n─────────────────────\nรวม ${Number.isInteger(perUnit) ? perUnit : perUnit.toFixed(2)}$ × ${i.quantity} ชิ้น = ${total.toFixed(2)} เครดิต`
+                                  }
                                   if (i.bundle_lot_info) {
                                     try {
                                       const comps = JSON.parse(i.bundle_lot_info)
-                                      return `${i.product_name}\n` + comps.map(c =>
-                                        `  ${c.name}${c.cost != null ? ` ต้นทุน ${c.cost}` : ''}`
-                                      ).join('\n')
-                                    } catch { return i.product_name }
+                                      if (Array.isArray(comps)) {
+                                        return `${i.product_name}\n` + comps.map(c =>
+                                          `  ${c.name}${c.cost != null ? ` ต้นทุน ${c.cost}` : ''}`
+                                        ).join('\n')
+                                      }
+                                    } catch {}
+                                    return i.product_name
                                   }
-                                  return `${i.product_name}\n  ต้นทุน Lot: ${i.lot_cost_used != null ? `฿${i.lot_cost_used}` : '—'}`
+                                  return i.lot_cost_used != null
+                                    ? `${i.product_name}\n  ต้นทุน Lot: ฿${i.lot_cost_used}`
+                                    : i.product_name
                                 }).join('\n')}
                               </InfoTooltip>
                             </td>
@@ -688,22 +704,30 @@ export default function OrdersPage() {
                                 ? <span className="text-slate-700 font-semibold text-sm">฿{Number(item.cost_used).toLocaleString()}</span>
                                 : <span className="text-slate-200">—</span>
                             ) : item.price_usd_used != null ? (() => {
-                              const usdAmt = Number(item.price_usd_used) * (item.bundle_lot_info ? 1 : Number(item.quantity))
-                              const tooltipText = item.bundle_lot_info ? (() => {
+                              const usdAmt = Number(item.price_usd_used) * (item.bundle_lot_info || item.is_bundle ? 1 : Number(item.quantity))
+                              const isCredit = item.is_bundle && !item.fill_type !== 'ID_PASS'
+                              let tooltipText = null
+                              if (item.bundle_components?.length) {
+                                const perUnit = item.bundle_components.reduce((s, c) => s + (c.price_usd ?? 0) * c.qty, 0)
+                                const total = perUnit * Number(item.quantity)
+                                tooltipText = item.bundle_components.map(c => {
+                                  const u = c.price_usd
+                                  return `${Number.isInteger(u) ? u : u.toFixed(2)}$×${c.qty}`
+                                }).join('\n') + `\n─────────────────────\nรวม ${Number.isInteger(perUnit) ? perUnit : perUnit.toFixed(2)}$ × ${item.quantity} ชิ้น = ${total.toFixed(2)} เครดิต`
+                              } else if (item.bundle_lot_info) {
                                 try {
                                   const parsed = JSON.parse(item.bundle_lot_info)
-                                  if (parsed.bundle_email_ids) {
-                                    return parsed.bundle_email_ids.map(be =>
-                                      `${be.email || '?'}: ${Number(be.credits).toFixed(2)} เครดิต`
-                                    ).join('\n')
+                                  if (Array.isArray(parsed)) {
+                                    tooltipText = parsed.map(c => `${c.name}${c.cost != null ? ` ต้นทุน ${c.cost}` : ''}`).join('\n')
                                   }
-                                  return parsed.map(c => `${c.name}${c.cost != null ? ` ต้นทุน ${c.cost}` : ''}`).join('\n')
-                                } catch { return item.product_name }
-                              })() : `ต้นทุน Lot: ${item.lot_cost_used != null ? `฿${item.lot_cost_used}` : '—'}`
+                                } catch {}
+                              } else if (!item.is_bundle) {
+                                tooltipText = item.lot_cost_used != null ? `ต้นทุน Lot: ฿${item.lot_cost_used}` : null
+                              }
                               return (
-                                <span className="text-slate-700 font-semibold text-sm">
-                                  ${Number.isInteger(usdAmt) ? usdAmt : usdAmt.toFixed(2)}
-                                  <InfoTooltip>{tooltipText}</InfoTooltip>
+                                <span className="text-slate-700 font-semibold text-sm inline-flex items-center gap-0.5">
+                                  {item.is_bundle ? usdAmt.toFixed(2) : `$${Number.isInteger(usdAmt) ? usdAmt : usdAmt.toFixed(2)}`}
+                                  {tooltipText && <InfoTooltip>{tooltipText}</InfoTooltip>}
                                 </span>
                               )
                             })() : item.credit_deducted != null ? (
