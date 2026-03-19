@@ -513,6 +513,18 @@ export default function OrdersPage() {
                   ti += span
                 }
 
+                // Group split rows by email — รวม credits ของหลาย bundle ที่ใช้ email เดียวกัน
+                const splitEmailGroupMap = {}
+                displayRows.forEach((row, i) => {
+                  if (!row.split) return
+                  const k = row.email || '?'
+                  if (!splitEmailGroupMap[k]) splitEmailGroupMap[k] = { firstIdx: i, size: 0, totalCredits: 0, bundles: [] }
+                  const g = splitEmailGroupMap[k]
+                  g.size++
+                  g.totalCredits += Number(row.credits)
+                  g.bundles.push({ name: row.item.product_name, credits: Number(row.credits), entries: row.entries || [] })
+                })
+
                 return (
                   <tbody key={order.order_id} className="border-t border-slate-100">
                     {displayRows.map((row, di) => { const item = row.item; return (
@@ -634,22 +646,28 @@ export default function OrdersPage() {
                           </td>
                         ) : null}
                         {/* จำนวน / เครดิต */}
-                        {row.split ? (
-                          <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                            <span className="text-slate-700 font-semibold text-sm inline-flex items-center gap-0.5">
-                              {Number(row.credits).toFixed(2)}
-                              {row.entries?.length > 1 && (
-                                <InfoTooltip>
-                                  {row.entries.map(e => {
-                                    const usd = e.priceUsd
-                                    const usdStr = Number.isInteger(usd) ? usd : usd.toFixed(2)
-                                    return `${usdStr}$×${e.qty}`
-                                  }).join(', ') + `\nรวม ${Number(row.credits).toFixed(2)}`}
-                                </InfoTooltip>
-                              )}
-                            </span>
-                          </td>
-                        ) : hasUsd ? (
+                        {row.split ? (() => {
+                          const emailKey = row.email || '?'
+                          const eg = splitEmailGroupMap[emailKey]
+                          const isFirst = eg?.firstIdx === di
+                          if (!isFirst) return null
+                          const showTooltip = eg.size > 1 || (row.entries?.length ?? 0) > 1
+                          const tooltipText = eg.size > 1
+                            ? eg.bundles.map(b => `${b.name} ใช้เครดิต ${b.credits.toFixed(2)}`).join('\n')
+                              + `\n─────────────────────\nรวม ${eg.totalCredits.toFixed(2)} เครดิต`
+                            : row.entries.map(e => {
+                                const u = e.priceUsd
+                                return `${Number.isInteger(u) ? u : u.toFixed(2)}$×${e.qty}`
+                              }).join(', ') + `\nรวม ${Number(row.credits).toFixed(2)}`
+                          return (
+                            <td rowSpan={eg.size} className="py-2.5 px-3 text-right align-middle whitespace-nowrap">
+                              <span className="text-slate-700 font-semibold text-sm inline-flex items-center gap-0.5">
+                                {eg.totalCredits.toFixed(2)}
+                                {showTooltip && <InfoTooltip>{tooltipText}</InfoTooltip>}
+                              </span>
+                            </td>
+                          )
+                        })() : hasUsd ? (
                           item.price_usd_used != null ? (
                             usdRows.indexOf(row) === 0 ? (
                             <td rowSpan={usdRows.length} className="py-2.5 px-3 text-right align-middle whitespace-nowrap">
@@ -799,8 +817,19 @@ export default function OrdersPage() {
                           </td>
                         )}
                         {/* Email */}
+                        {row.split ? (() => {
+                          const emailKey = row.email || '?'
+                          const eg = splitEmailGroupMap[emailKey]
+                          const isFirst = eg?.firstIdx === di
+                          if (!isFirst) return null
+                          return (
+                            <td rowSpan={eg.size} className="py-2.5 px-3 font-mono text-xs text-slate-400 align-middle">
+                              {row.email}
+                            </td>
+                          )
+                        })() : (
                         <td className="py-2.5 px-3 font-mono text-xs text-slate-400">
-                          {row.split ? row.email : (
+                          {(
                             item.email_used ? item.email_used : (() => {
                               if (!item.bundle_lot_info) return <span className="text-slate-200">—</span>
                               try {
@@ -825,6 +854,7 @@ export default function OrdersPage() {
                             })()
                           )}
                         </td>
+                        )}
                         {/* ช่องทาง */}
                         {di === 0 && (
                           <td rowSpan={displayRows.length} className="py-3 px-3 align-middle text-center whitespace-nowrap">

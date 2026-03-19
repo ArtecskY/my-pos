@@ -1217,7 +1217,7 @@ initDB().then(() => {
       const item = {
         order_id: row[0], transfer_time: row[1], created_at: row[2],
         transfer_amount: row[3], total: row[4],
-        product_name: row[5], quantity: row[6], price: row[7],
+        product_name: row[5] || '(สินค้าถูกลบแล้ว)', quantity: row[6], price: row[7],
         credit_deducted: row[8], email_used: row[9] || null,
         price_usd_used: row[10] ?? null, category_name: row[11] || null,
         cost_used: row[12] ?? null, lot_cost_used: row[13] ?? null,
