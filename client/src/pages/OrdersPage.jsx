@@ -454,35 +454,71 @@ export default function OrdersPage() {
                 </tr>
               </thead>
               {filteredOrders.map((order, orderIdx) => {
-                const orderUsdTotal = order.items.reduce((s, i) => {
-                  if (i.price_usd_used == null) return s
-                  // bundle: price_usd_used ถูก * quantity ไว้แล้วตอนบันทึก
-                  // ID_PASS: price_usd_used คือราคาต่อหน่วย ต้องคูณ quantity
-                  const qty = i.bundle_lot_info ? 1 : Number(i.quantity)
-                  return s + Number(i.price_usd_used) * qty
-                }, 0)
                 const hasManual = order.items.some(i => i.manual_data)
-                const hasUsd = orderUsdTotal > 0 && !hasManual
-                const orderCostTotal = order.items.reduce((s, i) => {
-                  if (i.manual_data || i.credit_deducted != null) return s
-                  return s + (i.cost_used != null && Number(i.cost_used) > 0 ? Number(i.cost_used) * i.quantity : 0)
+
+                // Expand bundle-split items into per-email display rows
+                const displayRows = []
+                for (const item of order.items) {
+                  let bundleEmails = null
+                  if (item.bundle_lot_info) {
+                    try {
+                      const p = JSON.parse(item.bundle_lot_info)
+                      if (p.bundle_email_ids) {
+                        const em = {}
+                        p.bundle_email_ids.forEach(be => {
+                          const k = be.email || '?'
+                          if (!em[k]) em[k] = 0
+                          em[k] += Number(be.credits)
+                        })
+                        bundleEmails = Object.entries(em)
+                      }
+                    } catch {}
+                  }
+                  if (bundleEmails?.length) {
+                    bundleEmails.forEach(([email, credits], si) =>
+                      displayRows.push({ item, si, count: bundleEmails.length, email, credits, split: true })
+                    )
+                  } else {
+                    displayRows.push({ item, si: 0, count: 1, email: null, credits: null, split: false })
+                  }
+                }
+
+                // hasUsd: exclude bundle-split items
+                const orderUsdTotal = displayRows.reduce((s, row) => {
+                  if (row.split) return s
+                  const i = row.item
+                  if (i.price_usd_used == null) return s
+                  return s + Number(i.price_usd_used) * (i.bundle_lot_info ? 1 : Number(i.quantity))
                 }, 0)
-                const hasCost = !hasUsd && !hasManual && !order.items.some(i => i.credit_deducted != null) && orderCostTotal > 0
+                const hasUsd = orderUsdTotal > 0 && !hasManual
+                const usdRows = displayRows.filter(row => !row.split && row.item.price_usd_used != null)
+
+                // Type span map for consecutive same fill_types
+                const typeSpanByIdx = {}
+                let ti = 0
+                while (ti < displayRows.length) {
+                  const ttype = displayRows[ti].item.fill_type
+                  let span = 1
+                  while (ti + span < displayRows.length && displayRows[ti + span].item.fill_type === ttype) span++
+                  typeSpanByIdx[ti] = span
+                  ti += span
+                }
+
                 return (
                   <tbody key={order.order_id} className="border-t border-slate-100">
-                    {order.items.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50">
+                    {displayRows.map((row, di) => { const item = row.item; return (
+                      <tr key={di} className="hover:bg-slate-50">
                         {/* No. รีเซ็ตทุกวัน */}
-                        {idx === 0 && (
-                          <td rowSpan={order.items.length} className="py-3 px-4 align-top">
+                        {di === 0 && (
+                          <td rowSpan={displayRows.length} className="py-3 px-4 align-top">
                             <span className="font-mono text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">
                               #{orderIdx + 1}
                             </span>
                           </td>
                         )}
                         {/* ยอดโอน */}
-                        {idx === 0 && (
-                          <td rowSpan={order.items.length} className="py-3 px-3 align-middle whitespace-nowrap">
+                        {di === 0 && (
+                          <td rowSpan={displayRows.length} className="py-3 px-3 align-middle whitespace-nowrap">
                             {editAmountOrderId === order.order_id ? (
                               <div className="flex items-center gap-1">
                                 <input
@@ -514,8 +550,8 @@ export default function OrdersPage() {
                           </td>
                         )}
                         {/* เวลา */}
-                        {idx === 0 && (
-                          <td rowSpan={order.items.length} className="py-3 px-3 align-middle text-slate-500 whitespace-nowrap">
+                        {di === 0 && (
+                          <td rowSpan={displayRows.length} className="py-3 px-3 align-middle text-slate-500 whitespace-nowrap">
                             {editTimeOrderId === order.order_id ? (
                               <div className="flex flex-col gap-1">
                                 <input
@@ -556,40 +592,49 @@ export default function OrdersPage() {
                         )}
                         {/* ชื่อเกม — แสดงเมื่อต่างจากแถวก่อน */}
                         <td className="py-2.5 px-3 text-slate-400 text-xs whitespace-nowrap">
-                          {idx === 0 || item.category_name !== order.items[idx - 1]?.category_name
+                          {di === 0 || item.category_name !== displayRows[di - 1]?.item.category_name
                             ? (item.category_name || <span className="text-slate-200">—</span>)
                             : null}
                         </td>
                         {/* ชื่อสินค้า + ⓘ */}
-                        <td className="py-2.5 px-3 text-slate-800 font-medium">
-                          {item.merged && !item.mergedName && item.mergedItems ? (
-                            // Non-dollar merged (เช่น BLEACH) — แสดงชื่อแต่ละแพ็กเป็นบรรทัดๆ
-                            <div className="space-y-0.5 leading-tight">
-                              {item.mergedItems.map((mi, i) => (
-                                <div key={i}>{mi.name} ×{mi.qty}</div>
-                              ))}
-                            </div>
-                          ) : (
-                            <>
-                              <span>{buildProductName(item)}</span>
-                              {/* ⓘ dollar merged — แสดง breakdown */}
-                              {item.merged && item.mergedItems && (
-                                <InfoTooltip>
-                                  {item.mergedItems.map(mi =>
-                                    `${mi.name} ×${mi.qty}${mi.dollarAmt != null ? ` = ${Number.isInteger(mi.dollarAmt) ? mi.dollarAmt : mi.dollarAmt.toFixed(2)}$` : ''}`
-                                  ).join('\n')}
-                                  {item.mergedDollarTotal != null
-                                    ? `\n──────────\nรวม ${Number.isInteger(item.mergedDollarTotal) ? item.mergedDollarTotal : item.mergedDollarTotal.toFixed(2)}$`
-                                    : ''}
-                                </InfoTooltip>
-                              )}
-                            </>
-                          )}
-                        </td>
+                        {row.si === 0 ? (
+                          <td rowSpan={row.count} className="py-2.5 px-3 text-slate-800 font-medium">
+                            {item.merged && !item.mergedName && item.mergedItems ? (
+                              // Non-dollar merged (เช่น BLEACH) — แสดงชื่อแต่ละแพ็กเป็นบรรทัดๆ
+                              <div className="space-y-0.5 leading-tight">
+                                {item.mergedItems.map((mi, i) => (
+                                  <div key={i}>{mi.name} ×{mi.qty}</div>
+                                ))}
+                              </div>
+                            ) : (
+                              <>
+                                <span>{buildProductName(item)}</span>
+                                {/* ⓘ dollar merged — แสดง breakdown */}
+                                {item.merged && item.mergedItems && (
+                                  <InfoTooltip>
+                                    {item.mergedItems.map(mi =>
+                                      `${mi.name} ×${mi.qty}${mi.dollarAmt != null ? ` = ${Number.isInteger(mi.dollarAmt) ? mi.dollarAmt : mi.dollarAmt.toFixed(2)}$` : ''}`
+                                    ).join('\n')}
+                                    {item.mergedDollarTotal != null
+                                      ? `\n──────────\nรวม ${Number.isInteger(item.mergedDollarTotal) ? item.mergedDollarTotal : item.mergedDollarTotal.toFixed(2)}$`
+                                      : ''}
+                                  </InfoTooltip>
+                                )}
+                              </>
+                            )}
+                          </td>
+                        ) : null}
                         {/* จำนวน / เครดิต */}
-                        {hasUsd ? (
-                          idx === 0 ? (
-                            <td rowSpan={order.items.length} className="py-2.5 px-3 text-right align-middle whitespace-nowrap">
+                        {row.split ? (
+                          <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                            <span className="text-slate-700 font-semibold text-sm">
+                              {Number(row.credits).toFixed(2)}
+                            </span>
+                          </td>
+                        ) : hasUsd ? (
+                          item.price_usd_used != null ? (
+                            usdRows.indexOf(row) === 0 ? (
+                            <td rowSpan={usdRows.length} className="py-2.5 px-3 text-right align-middle whitespace-nowrap">
                               <span className="text-slate-700 font-semibold text-sm">
                                 ${Number.isInteger(orderUsdTotal) ? orderUsdTotal : orderUsdTotal.toFixed(2)}
                               </span>
@@ -610,6 +655,16 @@ export default function OrdersPage() {
                             </td>
                           ) : null
                         ) : (
+                          // Credit-only item in USD order — แสดง credit_deducted ในเซลล์แยก
+                          <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                            {item.credit_deducted != null ? (
+                              <span className="text-slate-700 font-semibold text-sm">
+                                {Number(item.credit_deducted).toFixed(2)}
+                              </span>
+                            ) : <span className="text-slate-200">—</span>}
+                          </td>
+                        )
+                        ) : (
                           <td className="py-2.5 px-3 text-right whitespace-nowrap">
                             {item.manual_data ? (
                               item.cost_used != null && Number(item.cost_used) > 0
@@ -619,8 +674,13 @@ export default function OrdersPage() {
                               const usdAmt = Number(item.price_usd_used) * (item.bundle_lot_info ? 1 : Number(item.quantity))
                               const tooltipText = item.bundle_lot_info ? (() => {
                                 try {
-                                  const comps = JSON.parse(item.bundle_lot_info)
-                                  return comps.map(c => `${c.name}${c.cost != null ? ` ต้นทุน ${c.cost}` : ''}`).join('\n')
+                                  const parsed = JSON.parse(item.bundle_lot_info)
+                                  if (parsed.bundle_email_ids) {
+                                    return parsed.bundle_email_ids.map(be =>
+                                      `${be.email || '?'}: ${Number(be.credits).toFixed(2)} เครดิต`
+                                    ).join('\n')
+                                  }
+                                  return parsed.map(c => `${c.name}${c.cost != null ? ` ต้นทุน ${c.cost}` : ''}`).join('\n')
                                 } catch { return item.product_name }
                               })() : `ต้นทุน Lot: ${item.lot_cost_used != null ? `฿${item.lot_cost_used}` : '—'}`
                               return (
@@ -706,11 +766,34 @@ export default function OrdersPage() {
                         )}
                         {/* Email */}
                         <td className="py-2.5 px-3 font-mono text-xs text-slate-400">
-                          {item.email_used || <span className="text-slate-200">—</span>}
+                          {row.split ? row.email : (
+                            item.email_used ? item.email_used : (() => {
+                              if (!item.bundle_lot_info) return <span className="text-slate-200">—</span>
+                              try {
+                                const parsed = JSON.parse(item.bundle_lot_info)
+                                if (!parsed.bundle_email_ids) return <span className="text-slate-200">—</span>
+                                const emailMap = {}
+                                parsed.bundle_email_ids.forEach(be => {
+                                  const key = be.email || '?'
+                                  if (!emailMap[key]) emailMap[key] = 0
+                                  emailMap[key] += Number(be.credits)
+                                })
+                                const entries = Object.entries(emailMap)
+                                if (entries.length === 0) return <span className="text-slate-200">—</span>
+                                return (
+                                  <span className="text-purple-500 flex flex-col gap-0.5">
+                                    {entries.map(([email, credits], i) => (
+                                      <span key={i}>{email}: {credits.toFixed(2)} เครดิต</span>
+                                    ))}
+                                  </span>
+                                )
+                              } catch { return <span className="text-slate-200">—</span> }
+                            })()
+                          )}
                         </td>
                         {/* ช่องทาง */}
-                        {idx === 0 && (
-                          <td rowSpan={order.items.length} className="py-3 px-3 align-middle text-center whitespace-nowrap">
+                        {di === 0 && (
+                          <td rowSpan={displayRows.length} className="py-3 px-3 align-middle text-center whitespace-nowrap">
                             {editChannelOrderId === order.order_id ? (
                               <div className="flex flex-col gap-1 items-center">
                                 {['หน้าบ้าน', 'หลังบ้าน', '—'].map(opt => (
@@ -748,22 +831,24 @@ export default function OrdersPage() {
                             )}
                           </td>
                         )}
-                        {/* ประเภท — แสดงทุกแถว */}
-                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                          {item.manual_data ? (() => {
-                            try {
-                              const md = JSON.parse(item.manual_data)
-                              return md.supplier_name
-                                ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700">{md.supplier_name}</span>
-                                : <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">Manual</span>
-                            } catch { return null }
-                          })() : (
-                            <FillBadge fill_type={item.fill_type} customTypes={customTypes} />
-                          )}
-                        </td>
+                        {/* ประเภท — ใช้ typeSpanByIdx */}
+                        {typeSpanByIdx[di] != null ? (
+                          <td rowSpan={typeSpanByIdx[di]} className="py-2.5 px-3 text-center whitespace-nowrap">
+                            {item.manual_data ? (() => {
+                              try {
+                                const md = JSON.parse(item.manual_data)
+                                return md.supplier_name
+                                  ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700">{md.supplier_name}</span>
+                                  : <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">Manual</span>
+                              } catch { return null }
+                            })() : (
+                              <FillBadge fill_type={item.fill_type} customTypes={customTypes} />
+                            )}
+                          </td>
+                        ) : null}
                         {/* ปุ่มลบ */}
-                        {idx === 0 && (
-                          <td rowSpan={order.items.length} className="py-3 px-2 align-top">
+                        {di === 0 && (
+                          <td rowSpan={displayRows.length} className="py-3 px-2 align-top">
                             <button
                               onClick={() => deleteOrder(order.order_id)}
                               className="text-slate-200 hover:text-red-500 cursor-pointer transition-colors"
@@ -772,7 +857,7 @@ export default function OrdersPage() {
                           </td>
                         )}
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 )
               })}

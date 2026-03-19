@@ -58,6 +58,8 @@ export default function POSPage() {
 
   // { [itemId]: [{splitKey, quantity}] } — null / ไม่มี key = ยังไม่ split
   const [splitState, setSplitState] = useState({})
+  // { [itemId]: [{splitKey, name, credits}] } — per-component email split สำหรับ EMAIL bundle
+  const [bundleCompSplit, setBundleCompSplit] = useState({})
   const [channel, setChannel] = useState(null)
   const [tw, setTw] = useState(false)
   const [emailTypes, setEmailTypes] = useState([])
@@ -86,8 +88,13 @@ export default function POSPage() {
       fetch('/products').then(r => r.json()),
       fetch('/categories').then(r => r.json()),
       fetch('/email-types').then(r => r.json()),
-      fetch('/reservations').then(r => r.json()),
-    ]).then(([p, c, et, rv]) => { setProducts(p); setCategories(c); setEmailTypes(et); setReservations(rv) })
+    ]).then(([p, c, et]) => { setProducts(p); setCategories(c); setEmailTypes(et) })
+  }, [])
+
+  useEffect(() => {
+    const es = new EventSource('/reservations/events')
+    es.onmessage = e => { try { setReservations(JSON.parse(e.data)) } catch {} }
+    return () => es.close()
   }, [])
 
   const FILL_TYPE_LABELS = {
@@ -170,6 +177,75 @@ export default function POSPage() {
     setSplitState(prev => { const n = { ...prev }; delete n[itemId]; return n })
   }
 
+  async function activateBundleCompSplit(item) {
+    const comps = await fetch(`/products/${item.id}/bundle-components`).then(r => r.json())
+    // สร้าง entry ต่อ distinct component (quantity รวม) — ผู้ใช้กด Split เองได้ทีหลัง
+    const entries = comps.map(comp => {
+      const key = newSplitKey(item.id)
+      let credits = 0
+      const m = /(\d+(?:\.\d+)?)\$/.exec(comp.name)
+      if (m) {
+        credits = Number(m[1])
+      } else if (comp.price_usd != null) {
+        credits = Number(comp.price_usd)
+      }
+      return { splitKey: key, name: comp.name, credits, product_id: comp.product_id, quantity: comp.quantity }
+    })
+    setBundleCompSplit(prev => ({ ...prev, [item.id]: entries }))
+    for (const e of entries) {
+      fetchEmailsFor(e.splitKey, item.fill_type, e.credits * e.quantity)
+    }
+  }
+
+  function mergeBundleCompEntries(itemId, productId) {
+    const entries = bundleCompSplit[itemId] || []
+    const toMerge = entries.filter(e => e.product_id === productId)
+    if (toMerge.length <= 1) return
+    const totalQty = toMerge.reduce((s, e) => s + (e.quantity || 1), 0)
+    const template = toMerge[0]
+    toMerge.forEach(e => {
+      setSelectedEmails(prev => { const n = { ...prev }; delete n[e.splitKey]; return n })
+      setAvailableEmails(prev => { const n = { ...prev }; delete n[e.splitKey]; return n })
+    })
+    const newKey = newSplitKey(itemId)
+    const merged = { ...template, splitKey: newKey, quantity: totalQty }
+    let inserted = false
+    const newArr = entries.reduce((acc, e) => {
+      if (e.product_id === productId) {
+        if (!inserted) { acc.push(merged); inserted = true }
+      } else { acc.push(e) }
+      return acc
+    }, [])
+    setBundleCompSplit(prev => ({ ...prev, [itemId]: newArr }))
+    const item = cart.find(i => i.id === itemId)
+    if (item) fetchEmailsFor(newKey, item.fill_type, template.credits * totalQty)
+  }
+
+  function splitBundleCompEntry(itemId, splitKey) {
+    const entries = bundleCompSplit[itemId] || []
+    const entry = entries.find(e => e.splitKey === splitKey)
+    if (!entry || entry.quantity <= 1) return
+    const idx = entries.indexOf(entry)
+    const newEntries = Array.from({ length: entry.quantity }, () => ({
+      ...entry, splitKey: newSplitKey(itemId), quantity: 1,
+    }))
+    setSelectedEmails(prev => { const n = { ...prev }; delete n[splitKey]; return n })
+    setAvailableEmails(prev => { const n = { ...prev }; delete n[splitKey]; return n })
+    const newArr = [...entries.slice(0, idx), ...newEntries, ...entries.slice(idx + 1)]
+    setBundleCompSplit(prev => ({ ...prev, [itemId]: newArr }))
+    const item = cart.find(i => i.id === itemId)
+    if (item) newEntries.forEach(e => fetchEmailsFor(e.splitKey, item.fill_type, e.credits))
+  }
+
+  function deactivateBundleCompSplit(itemId) {
+    const entries = bundleCompSplit[itemId] || []
+    setBundleCompSplit(prev => { const n = { ...prev }; delete n[itemId]; return n })
+    entries.forEach(e => {
+      setSelectedEmails(prev => { const n = { ...prev }; delete n[e.splitKey]; return n })
+      setAvailableEmails(prev => { const n = { ...prev }; delete n[e.splitKey]; return n })
+    })
+  }
+
   function addSplitEntry(item) {
     const splitKey = newSplitKey(item.id)
     setSplitState(prev => ({
@@ -227,6 +303,7 @@ export default function POSPage() {
     setSelectedEmails({})
     setAvailableEmails({})
     setSplitState({})
+    setBundleCompSplit({})
     setShowPayModal(true)
     // pre-fetch สำหรับ EMAIL/OTHER_EMAIL (ก่อน split)
     for (const item of cart) {
@@ -247,6 +324,20 @@ export default function POSPage() {
 
     for (const item of cart) {
       if (item.isManual) continue
+
+      // EMAIL-type bundle: per-component email split
+      if (bundleCompSplit[item.id]?.length > 0) {
+        const bundle_email_ids = []
+        for (const e of bundleCompSplit[item.id]) {
+          if (!selectedEmails[e.splitKey]) {
+            alert(`กรุณาเลือก Email สำหรับ "${e.name}"`); return
+          }
+          bundle_email_ids.push({ component_product_id: e.product_id, email_id: Number(selectedEmails[e.splitKey]), quantity: e.quantity || 1 })
+        }
+        orderItems.push({ product_id: item.id, quantity: item.quantity, bundle_email_ids })
+        continue
+      }
+
       if (usesEmailCredits(item.fill_type, emailTypes)) {
         const splits = splitState[item.id]
         if (splits && splits.length > 0) {
@@ -861,6 +952,8 @@ export default function POSPage() {
               <div className="mb-6 space-y-3">
                 {cart.filter(i => usesEmailCredits(i.fill_type, emailTypes)).map(item => {
                   const splits = splitState[item.id]
+                  const isBundleEmail = item.is_bundle && usesEmailCredits(item.fill_type, emailTypes) && !isRazerBehavior(item.fill_type, emailTypes)
+                  const compSplit = bundleCompSplit[item.id]
                   return (
                     <div key={item.id} className="border border-blue-200 rounded-xl p-4 bg-blue-50 space-y-3">
                       {/* Header */}
@@ -868,27 +961,78 @@ export default function POSPage() {
                         <p className="text-sm font-semibold text-blue-800">
                           {item.name} × {item.quantity}
                         </p>
-                        {!splits ? (
-                          (item.quantity > 1 || (!isRazerBehavior(item.fill_type, emailTypes) && usesEmailCredits(item.fill_type, emailTypes))) && (
+                        {isBundleEmail ? (
+                          compSplit ? (
                             <button
-                              onClick={() => activateSplit(item)}
-                              className="text-xs px-2.5 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg cursor-pointer"
-                            >
-                              Split
-                            </button>
+                              onClick={() => deactivateBundleCompSplit(item.id)}
+                              className="text-xs px-2.5 py-1 bg-slate-400 hover:bg-slate-500 text-white rounded-lg cursor-pointer"
+                            >รวมกลับ</button>
+                          ) : (
+                            <button
+                              onClick={() => activateBundleCompSplit(item)}
+                              className="text-xs px-2.5 py-1 bg-purple-500 hover:bg-purple-600 text-white rounded-lg cursor-pointer"
+                            >แยก Email ตาม Component</button>
                           )
                         ) : (
-                          <button
-                            onClick={() => deactivateSplit(item.id)}
-                            className="text-xs px-2.5 py-1 bg-slate-400 hover:bg-slate-500 text-white rounded-lg cursor-pointer"
-                          >
-                            รวมกลับ
-                          </button>
+                          !splits ? (
+                            (item.quantity > 1 || (!isRazerBehavior(item.fill_type, emailTypes) && usesEmailCredits(item.fill_type, emailTypes))) && (
+                              <button
+                                onClick={() => activateSplit(item)}
+                                className="text-xs px-2.5 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg cursor-pointer"
+                              >Split</button>
+                            )
+                          ) : (
+                            <button
+                              onClick={() => deactivateSplit(item.id)}
+                              className="text-xs px-2.5 py-1 bg-slate-400 hover:bg-slate-500 text-white rounded-lg cursor-pointer"
+                            >รวมกลับ</button>
+                          )
                         )}
                       </div>
 
-                      {splits ? (
-                        /* --- Split mode --- */
+                      {isBundleEmail ? (
+                        compSplit ? (
+                          /* --- Bundle component split mode --- */
+                          <div className="space-y-2">
+                            {compSplit.map(e => {
+                              const totalCredits = e.credits * (e.quantity || 1)
+                              return (
+                                <div key={e.splitKey} className="bg-white rounded-lg p-3 border border-purple-100">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <p className="text-xs text-slate-600 font-medium">
+                                      {e.name}{e.quantity > 1 ? ` × ${e.quantity}` : ''} — {totalCredits.toFixed(2)} เครดิต
+                                    </p>
+                                    {e.quantity > 1 ? (
+                                      <button
+                                        onClick={() => splitBundleCompEntry(item.id, e.splitKey)}
+                                        className="text-xs px-2 py-0.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded cursor-pointer"
+                                      >Split</button>
+                                    ) : compSplit.filter(x => x.product_id === e.product_id).length > 1 ? (
+                                      <button
+                                        onClick={() => mergeBundleCompEntries(item.id, e.product_id)}
+                                        className="text-xs px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer"
+                                      >รวมกลับ</button>
+                                    ) : null}
+                                  </div>
+                                  <EmailSelector
+                                    stateKey={e.splitKey}
+                                    fill_type={item.fill_type}
+                                    neededLabel={`${totalCredits.toFixed(2)} เครดิต`}
+                                  />
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          /* --- Bundle single email mode --- */
+                          <EmailSelector
+                            stateKey={item.id}
+                            fill_type={item.fill_type}
+                            neededLabel={`${creditsNeeded(item, emailTypes, item.quantity).toFixed(2)} เครดิต`}
+                          />
+                        )
+                      ) : splits ? (
+                        /* --- Split mode (non-bundle) --- */
                         <div className="space-y-3">
                           {splits.map((s, idx) => (
                             <div key={s.splitKey} className="bg-white rounded-lg p-3 border border-blue-100">
@@ -915,7 +1059,6 @@ export default function POSPage() {
                                 )}
                               </div>
 
-                              {/* Razer credit input per split */}
                               {isRazerBehavior(item.fill_type, emailTypes) && (
                                 <div className="mb-2">
                                   <input type="number" step="0.01" min="0"
@@ -944,16 +1087,13 @@ export default function POSPage() {
                             </div>
                           ))}
 
-                          {/* ปุ่มเพิ่ม split entry */}
                           <button
                             onClick={() => addSplitEntry(item)}
                             className="w-full py-2 border-2 border-dashed border-blue-300 text-blue-500 hover:bg-blue-100 rounded-lg text-sm cursor-pointer"
-                          >
-                            + เพิ่มรายการ
-                          </button>
+                          >+ เพิ่มรายการ</button>
                         </div>
                       ) : (
-                        /* --- Non-split mode --- */
+                        /* --- Non-split mode (non-bundle) --- */
                         <>
                           {isRazerBehavior(item.fill_type, emailTypes) && (
                             <div>

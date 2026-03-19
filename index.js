@@ -53,6 +53,8 @@ function requireLogin(req, res, next) {
   res.status(401).json({ error: 'กรุณา Login ก่อนครับ' })
 }
 
+const reservationSseClients = new Set()
+
 initDB().then(() => {
   const db = getDB()
 
@@ -314,12 +316,12 @@ initDB().then(() => {
 
   app.get('/products/:id/bundle-components', requireLogin, (req, res) => {
     const result = db.exec(
-      `SELECT pb.component_id, pb.quantity, p.name FROM product_bundles pb
+      `SELECT pb.component_id, pb.quantity, p.name, p.price, p.price_usd FROM product_bundles pb
        JOIN products p ON p.id = pb.component_id
        WHERE pb.product_id=?`, [req.params.id]
     )
     const components = result[0] ? result[0].values.map(row => ({
-      product_id: row[0], quantity: row[1], name: row[2]
+      product_id: row[0], quantity: row[1], name: row[2], price: row[3], price_usd: row[4]
     })) : []
     res.json(components)
   })
@@ -398,6 +400,14 @@ initDB().then(() => {
     return m ? Number(m[1]) : price
   }
 
+  // สำหรับ bundle email component: parse จากชื่อก่อน ("4$" → 4) ถ้าไม่มี $ จึงใช้ price_usd
+  function parseBundleCompCredit(name, price, price_usd) {
+    const m = /(\d+(?:\.\d+)?)\$/.exec(name)
+    if (m) return Number(m[1])
+    if (price_usd != null) return Number(price_usd)
+    return price
+  }
+
   function deductFromEmail(email_id, amount) {
     db.run('UPDATE emails SET credits = credits - ? WHERE id=?', [amount, email_id])
   }
@@ -451,7 +461,6 @@ initDB().then(() => {
 
   app.post('/orders', requireLogin, (req, res) => {
     const { items, manualItems = [], transfer_amount, transfer_time, channel, tw, reservation_id } = req.body
-
     // Validate stock before proceeding
     const emailPendingDeductions = {} // track total deductions per email_id in this order
     for (const item of items) {
@@ -463,16 +472,33 @@ initDB().then(() => {
         const catRes0 = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
         const bundleFillType0 = catRes0[0]?.values[0][0] || 'UID'
         if (usesEmailCredits(bundleFillType0)) {
-          // EMAIL-type bundle: validate email credits เหมือน regular EMAIL product
-          if (!item.email_id) return res.status(400).json({ error: `กรุณาเลือก Email สำหรับ "${name}"` })
-          const needed = parseCreditPerUnit(name, price, price_usd_val) * item.quantity
-          const emailRes = db.exec('SELECT credits FROM emails WHERE id=? AND fill_type=?', [item.email_id, bundleFillType0])
-          if (!emailRes[0]) return res.status(400).json({ error: `ไม่พบ Email ที่เลือกสำหรับ "${name}"` })
-          const emailCredits = emailRes[0].values[0][0]
-          const alreadyPending = emailPendingDeductions[item.email_id] || 0
-          if (emailCredits - alreadyPending < needed)
-            return res.status(400).json({ error: `Email ที่เลือกมีเครดิตไม่พอสำหรับ "${name}" (เหลือ ${Number(emailCredits - alreadyPending).toFixed(2)} ต้องการ ${needed})` })
-          emailPendingDeductions[item.email_id] = alreadyPending + needed
+          // EMAIL-type bundle: validate email credits
+          if (item.bundle_email_ids && item.bundle_email_ids.length > 0) {
+            // Per-component email validation — server คำนวณ credits เอง
+            for (const be of item.bundle_email_ids) {
+              if (!be.email_id) return res.status(400).json({ error: `กรุณาเลือก Email สำหรับ "${name}"` })
+              // คำนวณ credits จาก component product (parse จากชื่อก่อน × quantity)
+              const compRes = db.exec('SELECT name, price, price_usd FROM products WHERE id=?', [be.component_product_id])
+              const compCredits = compRes[0] ? parseBundleCompCredit(...compRes[0].values[0]) * (be.quantity || 1) : 0
+              const emailRes = db.exec('SELECT credits FROM emails WHERE id=? AND fill_type=?', [be.email_id, bundleFillType0])
+              if (!emailRes[0]) return res.status(400).json({ error: `ไม่พบ Email ที่เลือกสำหรับ "${name}"` })
+              const emailCredits = emailRes[0].values[0][0]
+              const alreadyPending = emailPendingDeductions[be.email_id] || 0
+              if (emailCredits - alreadyPending < compCredits)
+                return res.status(400).json({ error: `Email มีเครดิตไม่พอสำหรับ "${name}" (เหลือ ${Number(emailCredits - alreadyPending).toFixed(2)} ต้องการ ${compCredits})` })
+              emailPendingDeductions[be.email_id] = alreadyPending + compCredits
+            }
+          } else {
+            if (!item.email_id) return res.status(400).json({ error: `กรุณาเลือก Email สำหรับ "${name}"` })
+            const needed = parseCreditPerUnit(name, price, price_usd_val) * item.quantity
+            const emailRes = db.exec('SELECT credits FROM emails WHERE id=? AND fill_type=?', [item.email_id, bundleFillType0])
+            if (!emailRes[0]) return res.status(400).json({ error: `ไม่พบ Email ที่เลือกสำหรับ "${name}"` })
+            const emailCredits = emailRes[0].values[0][0]
+            const alreadyPending = emailPendingDeductions[item.email_id] || 0
+            if (emailCredits - alreadyPending < needed)
+              return res.status(400).json({ error: `Email ที่เลือกมีเครดิตไม่พอสำหรับ "${name}" (เหลือ ${Number(emailCredits - alreadyPending).toFixed(2)} ต้องการ ${needed})` })
+            emailPendingDeductions[item.email_id] = alreadyPending + needed
+          }
         } else {
           // ตรวจสอบ stock ของ components
           const comps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [item.product_id])
@@ -551,14 +577,35 @@ initDB().then(() => {
         const catRes1 = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
         const bundleFillType1 = catRes1[0]?.values[0][0] || 'UID'
         if (usesEmailCredits(bundleFillType1)) {
-          // EMAIL-type bundle: deduct email credits เหมือน regular EMAIL product
-          creditDeducted = parseCreditPerUnit(productName, price, price_usd) * item.quantity
-          emailIdUsed = item.email_id
-          deductFromEmail(item.email_id, creditDeducted)
-          priceUsdUsed = price_usd != null ? price_usd * item.quantity : null
-          const ec = db.exec('SELECT cost FROM emails WHERE id=?', [item.email_id])
-          const ecCost = ec[0]?.values[0][0]
-          if (ecCost != null && ecCost > 0) costUsed = ecCost
+          // EMAIL-type bundle: deduct email credits
+          if (item.bundle_email_ids && item.bundle_email_ids.length > 0) {
+            // Per-component deduction — server คำนวณ credits เอง
+            let totalCredits = 0
+            const bundleEmailLog = []
+            for (const be of item.bundle_email_ids) {
+              const compRes2 = db.exec('SELECT name, price, price_usd FROM products WHERE id=?', [be.component_product_id])
+              const compCredits = compRes2[0] ? parseBundleCompCredit(...compRes2[0].values[0]) * (be.quantity || 1) : 0
+              const emailAddr = db.exec('SELECT email FROM emails WHERE id=?', [be.email_id])[0]?.values[0][0] || ''
+              deductFromEmail(be.email_id, compCredits)
+              totalCredits += compCredits
+              bundleEmailLog.push({ component_product_id: be.component_product_id, email_id: be.email_id, credits: compCredits, email: emailAddr, quantity: be.quantity || 1 })
+            }
+            creditDeducted = totalCredits
+            emailIdUsed = null
+            bundleLotInfo = JSON.stringify({ bundle_email_ids: bundleEmailLog })
+            priceUsdUsed = price_usd != null ? price_usd * item.quantity : null
+            const ec = db.exec('SELECT cost FROM emails WHERE id=?', [item.bundle_email_ids[0].email_id])
+            const ecCost = ec[0]?.values[0][0]
+            if (ecCost != null && ecCost > 0) costUsed = ecCost
+          } else {
+            creditDeducted = parseCreditPerUnit(productName, price, price_usd) * item.quantity
+            emailIdUsed = item.email_id
+            deductFromEmail(item.email_id, creditDeducted)
+            priceUsdUsed = price_usd != null ? price_usd * item.quantity : null
+            const ec = db.exec('SELECT cost FROM emails WHERE id=?', [item.email_id])
+            const ecCost = ec[0]?.values[0][0]
+            if (ecCost != null && ecCost > 0) costUsed = ecCost
+          }
         } else {
           let totalCompPriceUsd = 0
           let hasCompPriceUsd = false
@@ -659,6 +706,7 @@ initDB().then(() => {
     }
 
     save()
+    broadcastReservations()
     res.json({ order_id: orderId, total })
   })
 
@@ -675,17 +723,26 @@ initDB().then(() => {
     const id = req.params.id
     const items = db.exec(`
       SELECT oi.product_id, oi.quantity, oi.price, oi.credit_deducted, oi.email_id_used,
-             COALESCE(p.is_bundle, 0), oi.lot_id_used, c.fill_type, oi.topup_breakdown
+             COALESCE(p.is_bundle, 0), oi.lot_id_used, c.fill_type, oi.topup_breakdown, oi.bundle_lot_info
       FROM order_items oi
       LEFT JOIN products p ON p.id = oi.product_id
       LEFT JOIN categories c ON c.id = p.category_id
       WHERE oi.order_id=?`, [id])
     if (items[0]) {
-      for (const [product_id, quantity, price, credit_deducted, email_id_used, is_bundle, lot_id_used, fill_type, topup_breakdown] of items[0].values) {
+      for (const [product_id, quantity, price, credit_deducted, email_id_used, is_bundle, lot_id_used, fill_type, topup_breakdown, bundle_lot_info] of items[0].values) {
         if (is_bundle) {
           if (credit_deducted != null && email_id_used != null) {
-            // EMAIL-type bundle: คืน email credits (credit_deducted ถูก set ไว้ตอน process)
+            // EMAIL-type bundle (single email): คืน email credits
             restoreRazerFIFO(email_id_used, credit_deducted, topup_breakdown)
+          } else if (credit_deducted != null && bundle_lot_info) {
+            // EMAIL-type bundle (multi-email component split): คืน credits แต่ละ email
+            let parsed = null
+            try { parsed = JSON.parse(bundle_lot_info) } catch (e) {}
+            if (parsed?.bundle_email_ids) {
+              for (const be of parsed.bundle_email_ids) {
+                db.run('UPDATE emails SET credits = credits + ? WHERE id=?', [be.credits, be.email_id])
+              }
+            }
           } else {
             // คืน stock ให้ components (เช็คก่อนสุด ไม่สนใจ fill_type ของ bundle เอง)
             const comps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [product_id])
@@ -736,7 +793,7 @@ initDB().then(() => {
   })
 
   // --- Reservations ---
-  app.get('/reservations', requireLogin, (req, res) => {
+  function getReservationsData() {
     const result = db.exec('SELECT id, customer_name, transfer_amount, reserve_time, channel, created_at FROM reservations ORDER BY id DESC')
     const reservations = result[0] ? result[0].values.map(row => ({
       id: row[0], customer_name: row[1], transfer_amount: row[2],
@@ -753,7 +810,29 @@ initDB().then(() => {
         product_id: row[0], quantity: row[1], name: row[2], price: row[3], category_name: row[4],
       })) : []
     }
-    res.json(reservations)
+    return reservations
+  }
+
+  function broadcastReservations() {
+    const data = JSON.stringify(getReservationsData())
+    for (const client of reservationSseClients) {
+      try { client.write(`data: ${data}\n\n`) } catch (e) { reservationSseClients.delete(client) }
+    }
+  }
+
+  app.get('/reservations', requireLogin, (req, res) => {
+    res.json(getReservationsData())
+  })
+
+  app.get('/reservations/events', requireLogin, (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Connection', 'keep-alive')
+    res.flushHeaders()
+    // ส่งข้อมูลปัจจุบันทันที
+    try { res.write(`data: ${JSON.stringify(getReservationsData())}\n\n`) } catch (e) {}
+    reservationSseClients.add(res)
+    req.on('close', () => reservationSseClients.delete(res))
   })
 
   app.post('/reservations', requireLogin, (req, res) => {
@@ -768,6 +847,7 @@ initDB().then(() => {
         [reservationId, item.product_id, item.quantity])
     }
     save()
+    broadcastReservations()
     res.json({ id: reservationId, message: 'บันทึกการจองสำเร็จ' })
   })
 
@@ -775,6 +855,7 @@ initDB().then(() => {
     db.run('DELETE FROM reservation_items WHERE reservation_id=?', [req.params.id])
     db.run('DELETE FROM reservations WHERE id=?', [req.params.id])
     save()
+    broadcastReservations()
     res.json({ message: 'ลบการจองสำเร็จ' })
   })
 
@@ -996,6 +1077,7 @@ initDB().then(() => {
     }
 
     const orderMap = new Map()
+    let exportEmailIdMap = null
     for (const row of itemsRes[0].values) {
       const [order_id, transfer_amount, ts,
              product_name, quantity, item_price, credit_deducted, price_usd_used,
@@ -1030,23 +1112,46 @@ initDB().then(() => {
       if (is_bundle === 1 && actualBundleLotInfo) {
         try {
           const components = JSON.parse(actualBundleLotInfo)
-          const needsEnrich = components.some(c => c.price_usd == null)
-          if (needsEnrich) {
-            const compRows = db.exec(
-              'SELECT p.name, p.price_usd, pb.quantity FROM product_bundles pb JOIN products p ON p.id = pb.component_id WHERE pb.product_id=?',
-              [product_id]
-            )
-            if (compRows[0]) {
-              const priceMap = {}
-              for (const [cName, cPriceUsd, cQty] of compRows[0].values) {
-                priceMap[cName] = { price_usd: cPriceUsd, qty: cQty }
+          // กรณี bundle_email_ids: enrich email + cost จาก emails table
+          if (components.bundle_email_ids) {
+            const needsEnrich = components.bundle_email_ids.some(be => (!be.email && be.email_id) || be.cost == null)
+            if (needsEnrich) {
+              if (!exportEmailIdMap) {
+                const emailMapRes = db.exec('SELECT id, email, cost FROM emails')
+                exportEmailIdMap = {}
+                if (emailMapRes[0]) {
+                  for (const [id, email, cost] of emailMapRes[0].values) exportEmailIdMap[id] = { email, cost: cost ?? 0 }
+                }
               }
-              const enriched = components.map(c => ({
-                ...c,
-                price_usd: c.price_usd ?? priceMap[c.name]?.price_usd ?? null,
-                qty: c.qty ?? priceMap[c.name]?.qty ?? 1,
-              }))
-              enrichedBundleLotInfo = JSON.stringify(enriched)
+              enrichedBundleLotInfo = JSON.stringify({
+                ...components,
+                bundle_email_ids: components.bundle_email_ids.map(be => ({
+                  ...be,
+                  email: be.email || exportEmailIdMap[be.email_id]?.email || null,
+                  cost: be.cost ?? exportEmailIdMap[be.email_id]?.cost ?? 0,
+                }))
+              })
+            }
+          } else {
+            // กรณี array components: enrich price_usd จาก products table
+            const needsEnrich = components.some(c => c.price_usd == null)
+            if (needsEnrich) {
+              const compRows = db.exec(
+                'SELECT p.name, p.price_usd, pb.quantity FROM product_bundles pb JOIN products p ON p.id = pb.component_id WHERE pb.product_id=?',
+                [product_id]
+              )
+              if (compRows[0]) {
+                const priceMap = {}
+                for (const [cName, cPriceUsd, cQty] of compRows[0].values) {
+                  priceMap[cName] = { price_usd: cPriceUsd, qty: cQty }
+                }
+                const enriched = components.map(c => ({
+                  ...c,
+                  price_usd: c.price_usd ?? priceMap[c.name]?.price_usd ?? null,
+                  qty: c.qty ?? priceMap[c.name]?.qty ?? 1,
+                }))
+                enrichedBundleLotInfo = JSON.stringify(enriched)
+              }
             }
           }
         } catch {}
@@ -1070,6 +1175,13 @@ initDB().then(() => {
   })
 
   app.get('/order-items', requireLogin, (req, res) => {
+    // Pre-load email map for enriching old bundle records that lack email field
+    const emailMapRes = db.exec('SELECT id, email FROM emails')
+    const emailIdMap = {}
+    if (emailMapRes[0]) {
+      for (const [id, email] of emailMapRes[0].values) emailIdMap[id] = email
+    }
+
     const result = db.exec(`
       SELECT o.id, o.transfer_time, o.created_at, o.transfer_amount, o.total,
              p.name, oi.quantity, oi.price, oi.credit_deducted, e.email, oi.price_usd_used, c.name, oi.cost_used,
@@ -1101,6 +1213,24 @@ initDB().then(() => {
           item.product_name = md.product_name || item.product_name || '(manual)'
           item.category_name = md.game_name || item.category_name
           item.cost_used = md.cost != null ? Number(md.cost) : item.cost_used
+        } catch {}
+      }
+      // Enrich bundle_lot_info: fill missing email field from emailIdMap
+      if (item.bundle_lot_info) {
+        try {
+          const parsed = JSON.parse(item.bundle_lot_info)
+          if (parsed.bundle_email_ids) {
+            const needsEnrich = parsed.bundle_email_ids.some(be => !be.email && be.email_id)
+            if (needsEnrich) {
+              item.bundle_lot_info = JSON.stringify({
+                ...parsed,
+                bundle_email_ids: parsed.bundle_email_ids.map(be => ({
+                  ...be,
+                  email: be.email || emailIdMap[be.email_id] || null,
+                }))
+              })
+            }
+          }
         } catch {}
       }
       return item

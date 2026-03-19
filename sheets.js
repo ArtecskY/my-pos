@@ -180,32 +180,102 @@ async function exportDailyOrders(spreadsheetId, orders) {
       const time = toTimeOnly(o.transfer_time)
 
       // สร้างแถวสำหรับแต่ละ item — ยอดโอนและกำไรคิดแยกต่อแพ็ก
+      // นับ row index รวมทุก item (รวม expanded bundle rows)
+      let globalRowIdx = 0
       itemDataList.forEach(({ item, data }, i) => {
-        // ยอดโอนต่อ item = ราคาขาย (oi.price * quantity)
-        // ถ้า item ไม่มี price (manual order หรือ price=0) ใช้ transfer_amount ทั้งออเดอร์
-        const itemPrice = item.price != null && Number(item.price) > 0
-          ? Number(item.price) * (Number(item.quantity) || 1)
-          : (i === 0 ? (o.transfer_amount ?? '') : '')
+        // ตรวจว่า bundle item มี bundle_email_ids หรือเปล่า
+        let bundleEmailRows = null
+        if (item.bundle_lot_info) {
+          try {
+            const parsed = JSON.parse(item.bundle_lot_info)
+            if (parsed.bundle_email_ids) {
+              const em = {}
+              parsed.bundle_email_ids.forEach(be => {
+                const k = be.email || '?'
+                if (!em[k]) em[k] = 0
+                em[k] += Number(be.credits)
+              })
+              bundleEmailRows = Object.entries(em)
+            }
+          } catch {}
+        }
 
-        // กำไรต่อ item = ยอดโอน - ต้นทุนรวม
-        const itemProfit = item.price != null && Number(item.price) > 0
-          ? Number(item.price) * (Number(item.quantity) || 1) - data.totalCost
-          : (i === 0 ? (o.transfer_amount ?? 0) - data.totalCost : '')
+        if (bundleEmailRows?.length) {
+          // Build email→cost map from bundle_email_ids (cost per credit per email)
+          let emailCostMap = {}
+          try {
+            const parsed = JSON.parse(item.bundle_lot_info)
+            if (parsed.bundle_email_ids) {
+              parsed.bundle_email_ids.forEach(be => {
+                if (be.email) emailCostMap[be.email] = be.cost ?? 0
+              })
+            }
+          } catch {}
 
-        rows.push([
-          i === 0 ? `#${orderIdx + 1}` : '',           // No.
-          itemPrice,                                     // ยอดโอน (฿) — แยกต่อแพ็ก
-          i === 0 ? (o.category_name || '') : '',       // ชื่อเกม
-          i === 0 ? (o.channel || '') : '',             // ช่องทาง (ระหว่างชื่อเกมกับเวลาโอน)
-          i === 0 ? time : '',                          // เวลาโอน
-          item.product_name,                            // รายการสินค้า
-          data.unitQty,                                 // จำนวนเหรียญ/ต้นทุน
-          item.email_used || '-',                       // Email ที่ใช้
-          fmt(data.cost),                               // ต้นทุน
-          fmt(data.totalCost),                          // ต้นทุนรวม
-          item.price != null && Number(item.price) > 0 ? fmt(itemProfit) : (i === 0 ? fmt(itemProfit) : ''), // กำไรต่อแพ็ก
-          data.note,                                    // หมายเหตุ
-        ])
+          // ราคาขายรวมทั้ง bundle + credits รวม (สำหรับแบ่งตามสัดส่วน)
+          const bundleSellPrice = item.price != null && Number(item.price) > 0
+            ? Number(item.price) * (Number(item.quantity) || 1)
+            : (o.transfer_amount ?? 0)
+          const totalCreditsAll = bundleEmailRows.reduce((s, [, c]) => s + c, 0)
+
+          // Expand bundle into per-email rows — คิดกำไรแยกทุก email
+          bundleEmailRows.forEach(([email, credits], si) => {
+            const isFirstRow = globalRowIdx === 0
+            // ต้นทุนต่อ email row = credits × cost per credit ของ email นั้น
+            const rowCostPerCredit = emailCostMap[email] ?? 0
+            const rowTotalCost = credits * rowCostPerCredit
+
+            // ยอดโอนต่อ email = proportional ตาม credits
+            const rowSellPrice = totalCreditsAll > 0
+              ? bundleSellPrice * (credits / totalCreditsAll)
+              : 0
+            const rowProfit = rowSellPrice - rowTotalCost
+
+            rows.push([
+              isFirstRow && si === 0 ? `#${orderIdx + 1}` : '',  // No.
+              fmt(rowSellPrice),                                   // ยอดโอน (฿) — แบ่งตามสัดส่วน
+              isFirstRow && si === 0 ? (o.category_name || '') : '', // ชื่อเกม
+              isFirstRow && si === 0 ? (o.channel || '') : '',    // ช่องทาง
+              isFirstRow && si === 0 ? time : '',                 // เวลาโอน
+              si === 0 ? item.product_name : '',                  // รายการสินค้า
+              Number(credits).toFixed(2),                         // จำนวนเหรียญ/ต้นทุน
+              email,                                              // Email ที่ใช้
+              fmt(rowCostPerCredit),                              // ต้นทุน (ต่อเครดิต)
+              fmt(rowTotalCost),                                  // ต้นทุนรวม
+              fmt(rowProfit),                                     // กำไร (แยกต่อ email)
+              si === 0 ? data.note : '',                          // หมายเหตุ
+            ])
+            globalRowIdx++
+          })
+        } else {
+          // ยอดโอนต่อ item = ราคาขาย (oi.price * quantity)
+          // ถ้า item ไม่มี price (manual order หรือ price=0) ใช้ transfer_amount ทั้งออเดอร์
+          const isFirstRow = globalRowIdx === 0
+          const itemPrice = item.price != null && Number(item.price) > 0
+            ? Number(item.price) * (Number(item.quantity) || 1)
+            : (isFirstRow ? (o.transfer_amount ?? '') : '')
+
+          // กำไรต่อ item = ยอดโอน - ต้นทุนรวม
+          const itemProfit = item.price != null && Number(item.price) > 0
+            ? Number(item.price) * (Number(item.quantity) || 1) - data.totalCost
+            : (isFirstRow ? (o.transfer_amount ?? 0) - data.totalCost : '')
+
+          rows.push([
+            isFirstRow ? `#${orderIdx + 1}` : '',           // No.
+            itemPrice,                                        // ยอดโอน (฿) — แยกต่อแพ็ก
+            isFirstRow ? (o.category_name || '') : '',       // ชื่อเกม
+            isFirstRow ? (o.channel || '') : '',             // ช่องทาง
+            isFirstRow ? time : '',                          // เวลาโอน
+            item.product_name,                               // รายการสินค้า
+            data.unitQty,                                    // จำนวนเหรียญ/ต้นทุน
+            item.email_used || '-',                          // Email ที่ใช้
+            fmt(data.cost),                                  // ต้นทุน
+            fmt(data.totalCost),                             // ต้นทุนรวม
+            item.price != null && Number(item.price) > 0 ? fmt(itemProfit) : (isFirstRow ? fmt(itemProfit) : ''), // กำไรต่อแพ็ก
+            data.note,                                       // หมายเหตุ
+          ])
+          globalRowIdx++
+        }
       })
     }
 
