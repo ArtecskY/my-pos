@@ -525,6 +525,11 @@ export default function OrdersPage() {
                   g.bundles.push({ name: row.item.product_name, credits: Number(row.credits), entries: row.entries || [] })
                 })
 
+                // รวม credit_deducted ทั้ง order — สำหรับ order ที่มีหลาย EMAIL items
+                const orderEmailTotal = order.items.reduce((s, i) => s + (Number(i.credit_deducted) || 0), 0)
+                const emailItems = order.items.filter(i => Number(i.credit_deducted) > 0)
+                const isEmailOrder = emailItems.length > 1 && !hasIdPass && !hasManual
+
                 return (
                   <tbody key={order.order_id} className="border-t border-slate-100">
                     {displayRows.map((row, di) => { const item = row.item; return (
@@ -646,7 +651,19 @@ export default function OrdersPage() {
                           </td>
                         ) : null}
                         {/* จำนวน / เครดิต */}
-                        {row.split ? (() => {
+                        {isEmailOrder ? (
+                          di === 0 ? (
+                            <td rowSpan={displayRows.length} className="py-2.5 px-3 text-right align-middle whitespace-nowrap">
+                              <span className="text-slate-700 font-semibold text-sm inline-flex items-center gap-0.5">
+                                {orderEmailTotal.toFixed(2)}
+                                <InfoTooltip>
+                                  {emailItems.map(i => `${i.product_name} ใช้เครดิต ${Number(i.credit_deducted ?? 0).toFixed(2)}`).join('\n')}
+                                  {`\n─────────────────────\nรวม ${orderEmailTotal.toFixed(2)} เครดิต`}
+                                </InfoTooltip>
+                              </span>
+                            </td>
+                          ) : null
+                        ) : row.split ? (() => {
                           const emailKey = row.email || '?'
                           const eg = splitEmailGroupMap[emailKey]
                           const isFirst = eg?.firstIdx === di
