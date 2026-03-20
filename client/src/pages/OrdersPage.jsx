@@ -155,13 +155,16 @@ export default function OrdersPage() {
       }
       const order = dateGroup.orderMap[item.order_id]
 
-      if (item.credit_deducted != null && item.email_used) {
+      if (item.credit_deducted != null && item.email_used && item.is_bundle) {
         const existing = order.items.find(
-          i => i.category_name === item.category_name && i.email_used === item.email_used && i.credit_deducted != null
+          i => i.category_name === item.category_name && i.email_used === item.email_used && i.credit_deducted != null && i.is_bundle
         )
         if (existing) {
           const prevCredits = Number(existing.credit_deducted)
           existing.credit_deducted = prevCredits + Number(item.credit_deducted)
+          if (item.price_usd_used != null) {
+            existing.price_usd_used = (Number(existing.price_usd_used) || 0) + Number(item.price_usd_used)
+          }
           existing.merged = true
           // Track individual components for ⓘ tooltip
           if (!existing.mergedItems) {
@@ -498,9 +501,11 @@ export default function OrdersPage() {
                   if (i.price_usd_used == null) return s
                   return s + Number(i.price_usd_used) * (i.bundle_lot_info || i.is_bundle ? 1 : Number(i.quantity))
                 }, 0)
-                const hasUsd = orderUsdTotal > 0 && !hasManual
                 const hasIdPass = order.items.some(i => i.fill_type === 'ID_PASS')
                 const usdRows = displayRows.filter(row => !row.split && row.item.price_usd_used != null)
+                // hasUsd: only combine when all usdRows share the same email (or have no email)
+                const usdEmails = [...new Set(usdRows.map(r => r.item.email_used).filter(Boolean))]
+                const hasUsd = orderUsdTotal > 0 && !hasManual && usdEmails.length <= 1
 
                 // Type span map for consecutive same fill_types
                 const typeSpanByIdx = {}
@@ -525,10 +530,6 @@ export default function OrdersPage() {
                   g.bundles.push({ name: row.item.product_name, credits: Number(row.credits), entries: row.entries || [] })
                 })
 
-                // รวม credit_deducted ทั้ง order — สำหรับ order ที่มีหลาย EMAIL items
-                const orderEmailTotal = order.items.reduce((s, i) => s + (Number(i.credit_deducted) || 0), 0)
-                const emailItems = order.items.filter(i => Number(i.credit_deducted) > 0)
-                const isEmailOrder = emailItems.length > 1 && !hasIdPass && !hasManual
 
                 return (
                   <tbody key={order.order_id} className="border-t border-slate-100">
@@ -651,19 +652,7 @@ export default function OrdersPage() {
                           </td>
                         ) : null}
                         {/* จำนวน / เครดิต */}
-                        {isEmailOrder ? (
-                          di === 0 ? (
-                            <td rowSpan={displayRows.length} className="py-2.5 px-3 text-right align-middle whitespace-nowrap">
-                              <span className="text-slate-700 font-semibold text-sm inline-flex items-center gap-0.5">
-                                {orderEmailTotal.toFixed(2)}
-                                <InfoTooltip>
-                                  {emailItems.map(i => `${i.product_name} ใช้เครดิต ${Number(i.credit_deducted ?? 0).toFixed(2)}`).join('\n')}
-                                  {`\n─────────────────────\nรวม ${orderEmailTotal.toFixed(2)} เครดิต`}
-                                </InfoTooltip>
-                              </span>
-                            </td>
-                          ) : null
-                        ) : row.split ? (() => {
+                        {row.split ? (() => {
                           const emailKey = row.email || '?'
                           const eg = splitEmailGroupMap[emailKey]
                           const isFirst = eg?.firstIdx === di
