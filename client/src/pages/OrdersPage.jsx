@@ -837,7 +837,13 @@ export default function OrdersPage() {
                         <td className="py-2.5 px-3 font-mono text-xs text-slate-400">
                           {(
                             item.email_used ? item.email_used : (() => {
-                              if (!item.bundle_lot_info) return <span className="text-slate-200">—</span>
+                              if (!item.bundle_lot_info) {
+                                const isUid = item.fill_type === 'UID' || item.fill_type === 'OTHER_UID' ||
+                                  customTypes.find(t => t.key === item.fill_type)?.behavior === 'UID'
+                                return isUid
+                                  ? <span className="text-slate-400 text-xs">24</span>
+                                  : <span className="text-slate-200">—</span>
+                              }
                               try {
                                 const parsed = JSON.parse(item.bundle_lot_info)
                                 if (!parsed.bundle_email_ids) return <span className="text-slate-200">—</span>
