@@ -1062,7 +1062,8 @@ initDB().then(() => {
              e.email, e.cost AS email_cost,
              oi.lot_cost_used, oi.bundle_lot_info,
              c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used, p.id AS product_id,
-             c.name AS category_name, oi.manual_data, o.channel, oi.topup_breakdown
+             c.name AS category_name, oi.manual_data, o.channel, oi.topup_breakdown,
+             o.transfer_time2
       FROM orders o
       JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
@@ -1082,7 +1083,8 @@ initDB().then(() => {
       const [order_id, transfer_amount, ts,
              product_name, quantity, item_price, credit_deducted, price_usd_used,
              email_used, email_cost, lot_cost_used, bundle_lot_info,
-             fill_type, is_bundle, cost_used, product_id, category_name, manual_data_str, order_channel, topup_breakdown_raw] = row
+             fill_type, is_bundle, cost_used, product_id, category_name, manual_data_str, order_channel, topup_breakdown_raw,
+             transfer_time2] = row
 
       // Handle manual orders
       let actualProductName = product_name
@@ -1104,7 +1106,7 @@ initDB().then(() => {
       }
 
       if (!orderMap.has(order_id)) {
-        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, category_name: actualCategoryName, channel: order_channel || null, items: [] })
+        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, transfer_time2: transfer_time2 || null, category_name: actualCategoryName, channel: order_channel || null, items: [] })
       }
 
       // สำหรับ bundle ที่ component ไม่มี price_usd (order เก่า) ให้ดึงจาก products table
@@ -1364,7 +1366,8 @@ initDB().then(() => {
              e.email, e.cost AS email_cost,
              oi.lot_cost_used, oi.bundle_lot_info,
              c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used, p.id AS product_id,
-             c.name AS category_name, oi.manual_data, o.channel, oi.topup_breakdown
+             c.name AS category_name, oi.manual_data, o.channel, oi.topup_breakdown,
+             o.transfer_time2
       FROM orders o
       JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
@@ -1383,7 +1386,8 @@ initDB().then(() => {
       const [order_id, transfer_amount, ts,
              product_name, quantity, item_price, credit_deducted, price_usd_used,
              email_used, email_cost, lot_cost_used, bundle_lot_info,
-             fill_type, is_bundle, cost_used, product_id, category_name, manual_data_str, order_channel, topup_breakdown_raw] = row
+             fill_type, is_bundle, cost_used, product_id, category_name, manual_data_str, order_channel, topup_breakdown_raw,
+             transfer_time2] = row
 
       let actualProductName = product_name
       let actualCategoryName = category_name || ''
@@ -1404,7 +1408,7 @@ initDB().then(() => {
       }
 
       if (!orderMap.has(order_id)) {
-        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, category_name: actualCategoryName, channel: order_channel || null, items: [] })
+        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, transfer_time2: transfer_time2 || null, category_name: actualCategoryName, channel: order_channel || null, items: [] })
       }
 
       let enrichedBundleLotInfo = actualBundleLotInfo

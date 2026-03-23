@@ -177,7 +177,9 @@ async function exportDailyOrders(spreadsheetId, orders) {
         return { item, data: d }
       })
 
-      const time = toTimeOnly(o.transfer_time)
+      const time = o.transfer_time2
+        ? `${toTimeOnly(o.transfer_time)}+${toTimeOnly(o.transfer_time2)}`
+        : toTimeOnly(o.transfer_time)
 
       // สร้างแถวสำหรับแต่ละ item — ยอดโอนและกำไรคิดแยกต่อแพ็ก
       // นับ row index รวมทุก item (รวม expanded bundle rows)
@@ -268,7 +270,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
             time,                                            // เวลาโอน
             item.product_name,                               // รายการสินค้า
             data.unitQty,                                    // จำนวนเหรียญ/ต้นทุน
-            item.email_used || '-',                          // Email ที่ใช้
+            item.email_used || (['UID', 'OTHER_UID'].includes(item.fill_type) ? String.fromCharCode(50,52) : '-'), // Email ที่ใช้
             fmt(data.cost),                                  // ต้นทุน
             fmt(data.totalCost),                             // ต้นทุนรวม
             item.price != null && Number(item.price) > 0 ? fmt(itemProfit) : (isFirstRow ? fmt(itemProfit) : ''), // กำไรต่อแพ็ก
