@@ -1321,6 +1321,13 @@ initDB().then(() => {
     res.status(401).json({ error: 'ยังไม่ได้ Login' })
   })
 
+  // TEMP: Download DB endpoint (ลบออกหลังใช้งาน)
+  app.get('/admin/download-db', (req, res) => {
+    if (req.query.token !== 'pos-download-2026') return res.status(403).json({ error: 'Forbidden' })
+    const dbPath = path.join(process.env.DATA_DIR || __dirname, 'pos.db')
+    res.download(dbPath, 'pos.db')
+  })
+
   app.get('/users', requireLogin, requireAdmin, (req, res) => {
     const result = db.exec('SELECT id, username, is_admin FROM users ORDER BY id')
     const users = result[0] ? result[0].values.map(r => ({ id: r[0], username: r[1], is_admin: r[2] === 1 })) : []
@@ -1443,7 +1450,7 @@ initDB().then(() => {
   cron.schedule('0 5 * * *', async () => {
     const yesterday = new Date()
     yesterday.setDate(yesterday.getDate() - 1)
-    const dateStr = yesterday.toISOString().split('T')[0]
+    const dateStr = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Bangkok' }).format(yesterday)
     console.log(`[Auto Export] เริ่ม export วันที่ ${dateStr}`)
     try {
       const { orderCount, dayCount } = await runSheetExport(dateStr, dateStr)
