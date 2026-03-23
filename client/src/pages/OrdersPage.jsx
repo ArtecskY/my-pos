@@ -588,13 +588,17 @@ export default function OrdersPage() {
                                   className="border border-blue-400 rounded px-1 py-0.5 text-xs font-mono w-24 focus:outline-none"
                                   autoFocus
                                 />
-                                <input
-                                  type="time"
-                                  value={editTimeValue2}
-                                  onChange={e => setEditTimeValue2(e.target.value)}
-                                  className="border border-slate-300 rounded px-1 py-0.5 text-xs font-mono w-24 focus:outline-none"
-                                  placeholder="เวลา 2"
-                                />
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="time"
+                                    value={editTimeValue2}
+                                    onChange={e => setEditTimeValue2(e.target.value)}
+                                    className="border border-slate-300 rounded px-1 py-0.5 text-xs font-mono w-24 focus:outline-none"
+                                  />
+                                  {editTimeValue2 && (
+                                    <button onClick={() => setEditTimeValue2('')} className="text-slate-400 hover:text-red-500 text-xs cursor-pointer">✕</button>
+                                  )}
+                                </div>
                                 <div className="flex gap-1">
                                   <button onClick={() => saveEditTime(order.order_id)} className="text-green-500 hover:text-green-700 text-xs cursor-pointer">✓</button>
                                   <button onClick={() => setEditTimeOrderId(null)} className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer">✕</button>
