@@ -36,7 +36,7 @@ export default function App() {
   if (!user) return <AuthScreen onLogin={setUser} />
 
   return (
-    <div className="bg-slate-100 min-h-screen">
+    <div className="bg-slate-100 min-h-screen overflow-x-hidden">
       {/* Sticky header */}
       <div className="sticky top-0 z-40 bg-slate-100 border-b border-slate-200 px-3 sm:px-6 pt-3 sm:pt-5">
         <div className="flex flex-wrap justify-between items-center gap-2 mb-3">

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 function nowLocalTime() {
   const d = new Date()
@@ -508,8 +508,29 @@ export default function POSPage() {
     )
   }
 
+  const cartRef = useRef(null)
+  const cartTotalQty = cart.reduce((s, i) => s + i.quantity, 0)
+
   return (
-    <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
+    <>
+    {/* Mobile: floating cart bar — fixed to viewport, outside flex container */}
+    {cartTotalQty > 0 && (
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 px-3 pb-safe pb-3 pt-2 bg-white border-t border-slate-200 shadow-lg">
+        <button
+          onClick={() => cartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          className="w-full flex items-center justify-between bg-blue-500 active:bg-blue-600 text-white rounded-xl px-4 py-3"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="bg-white text-blue-500 rounded-full w-6 h-6 text-xs font-bold flex items-center justify-center leading-none">
+              {cartTotalQty}
+            </span>
+            <span className="font-medium text-sm">ดูตะกร้า</span>
+          </div>
+          <span className="font-bold">฿{total.toLocaleString()}</span>
+        </button>
+      </div>
+    )}
+    <div className={`flex flex-col lg:flex-row gap-4 lg:gap-6${cartTotalQty > 0 ? ' pb-24 lg:pb-0' : ''}`}>
       <div className="flex-[2] min-w-0 space-y-5">
         {/* Filter bar */}
         <div className="space-y-2">
@@ -592,7 +613,7 @@ export default function POSPage() {
       </div>
 
       {/* Right column: Cart + Reservation list */}
-      <div className="flex-1 lg:sticky lg:top-[120px] lg:self-start lg:max-h-[calc(100vh-130px)] lg:overflow-y-auto space-y-4">
+      <div ref={cartRef} className="flex-1 lg:sticky lg:top-[120px] lg:self-start lg:max-h-[calc(100vh-130px)] lg:overflow-y-auto space-y-4">
 
         {/* Cart */}
         <div className="bg-white rounded-xl p-4">
@@ -1157,5 +1178,6 @@ export default function POSPage() {
         </div>
       )}
     </div>
+    </>
   )
 }

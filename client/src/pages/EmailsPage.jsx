@@ -24,7 +24,7 @@ function FillTypeBadge({ fill_type, allTypes }) {
   const cfg = allTypes[fill_type]
   if (!cfg) return null
   return (
-    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${cfg.color}`}>
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${cfg.color}`}>
       {cfg.label}
     </span>
   )
@@ -492,14 +492,14 @@ export default function EmailsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-500 text-left">
-                    <th className="pb-2 px-2 font-medium">ประเภท</th>
-                    <th className="pb-2 px-2 font-medium text-right">ต้นทุน</th>
-                    <th className="pb-2 px-2 font-medium text-right">เครดิต</th>
-                    <th className="pb-2 px-2 font-medium">Email / Supplier</th>
-                    <th className="pb-2 px-2 font-medium">Password</th>
-                    <th className="pb-2 px-2 font-medium">หมายเหตุ</th>
-                    <th className="pb-2 px-2 font-medium text-center">OTP</th>
-                    <th className="pb-2 px-2 font-medium text-right">เครดิตเริ่มต้น</th>
+                    <th className="pb-2 px-2 font-medium whitespace-nowrap">ประเภท</th>
+                    <th className="pb-2 px-2 font-medium text-right whitespace-nowrap">ต้นทุน</th>
+                    <th className="pb-2 px-2 font-medium text-right whitespace-nowrap">เครดิต</th>
+                    <th className="pb-2 px-2 font-medium whitespace-nowrap">Email / Supplier</th>
+                    <th className="pb-2 px-2 font-medium whitespace-nowrap">Password</th>
+                    <th className="pb-2 px-2 font-medium whitespace-nowrap">หมายเหตุ</th>
+                    <th className="pb-2 px-2 font-medium text-center whitespace-nowrap">OTP</th>
+                    <th className="pb-2 px-2 font-medium text-right whitespace-nowrap">เครดิตเริ่มต้น</th>
                     <th className="pb-2 px-2"></th>
                   </tr>
                 </thead>

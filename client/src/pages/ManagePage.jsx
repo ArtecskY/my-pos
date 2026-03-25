@@ -691,8 +691,8 @@ export default function ManagePage() {
                             onDragOver={e => handleDragOver(e, cat.id, idx)}
                             onDrop={() => handleDrop(cat.id)}
                           >
-                            <td className="py-2 px-1 w-6 text-slate-300 cursor-grab active:cursor-grabbing text-center select-none">⠿</td>
-                            <td className="py-2 px-2 w-12">
+                            <td className="hidden sm:table-cell py-2 px-1 w-6 text-slate-300 cursor-grab active:cursor-grabbing text-center select-none">⠿</td>
+                            <td className="hidden sm:table-cell py-2 px-2 w-12">
                               {p.image
                                 ? <img src={p.image} alt={p.name} className="w-10 h-10 object-cover rounded-lg" />
                                 : <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-lg">{p.is_bundle ? '📦' : '🛍️'}</div>
@@ -750,13 +750,13 @@ export default function ManagePage() {
                                     setEditBundleComps([])
                                   }
                                 }}
-                                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-md mr-1.5 cursor-pointer text-xs"
+                                className="px-2 sm:px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-md mr-1 sm:mr-1.5 cursor-pointer text-xs"
                               >
                                 แก้ไข
                               </button>
                               <button
                                 onClick={() => deleteProduct(p.id)}
-                                className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-md cursor-pointer text-xs"
+                                className="px-2 sm:px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-md cursor-pointer text-xs"
                               >
                                 ลบ
                               </button>
