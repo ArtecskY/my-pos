@@ -895,6 +895,13 @@ initDB().then(() => {
     res.json({ message: 'อัปเดตช่องทางสำเร็จ' })
   })
 
+  app.patch('/orders/:id/note', requireLogin, (req, res) => {
+    const { note } = req.body
+    db.run('UPDATE orders SET order_note=? WHERE id=?', [note || null, req.params.id])
+    save()
+    res.json({ message: 'อัปเดตบันทึกสำเร็จ' })
+  })
+
   app.patch('/order-items/:id', requireLogin, (req, res) => {
     const itemRes = db.exec(
       `SELECT oi.quantity, oi.credit_deducted, oi.email_id_used, oi.product_id, c.fill_type, oi.lot_id_used
@@ -1063,7 +1070,7 @@ initDB().then(() => {
              oi.lot_cost_used, oi.bundle_lot_info,
              c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used, p.id AS product_id,
              c.name AS category_name, oi.manual_data, o.channel, oi.topup_breakdown,
-             o.transfer_time2
+             o.transfer_time2, o.order_note, o.tw
       FROM orders o
       JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
@@ -1084,7 +1091,7 @@ initDB().then(() => {
              product_name, quantity, item_price, credit_deducted, price_usd_used,
              email_used, email_cost, lot_cost_used, bundle_lot_info,
              fill_type, is_bundle, cost_used, product_id, category_name, manual_data_str, order_channel, topup_breakdown_raw,
-             transfer_time2] = row
+             transfer_time2, order_note, tw] = row
 
       // Handle manual orders
       let actualProductName = product_name
@@ -1106,7 +1113,7 @@ initDB().then(() => {
       }
 
       if (!orderMap.has(order_id)) {
-        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, transfer_time2: transfer_time2 || null, category_name: actualCategoryName, channel: order_channel || null, items: [] })
+        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, transfer_time2: transfer_time2 || null, category_name: actualCategoryName, channel: order_channel || null, order_note: order_note || null, tw: tw === 1, items: [] })
       }
 
       // สำหรับ bundle ที่ component ไม่มี price_usd (order เก่า) ให้ดึงจาก products table
@@ -1206,7 +1213,8 @@ initDB().then(() => {
       SELECT o.id, o.transfer_time, o.created_at, o.transfer_amount, o.total,
              p.name, oi.quantity, oi.price, oi.credit_deducted, e.email, oi.price_usd_used, c.name, oi.cost_used,
              COALESCE(oi.lot_cost_used, pl.cost) as lot_cost_used, oi.bundle_lot_info, o.channel, c.fill_type,
-             o.transfer_time2, o.tw, oi.manual_data, oi.id AS item_id, oi.topup_breakdown, COALESCE(p.is_bundle, 0) as is_bundle, oi.product_id
+             o.transfer_time2, o.tw, oi.manual_data, oi.id AS item_id, oi.topup_breakdown, COALESCE(p.is_bundle, 0) as is_bundle, oi.product_id,
+             o.order_note
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
@@ -1226,6 +1234,7 @@ initDB().then(() => {
         bundle_lot_info: row[14] ?? null, channel: row[15] || null, fill_type: row[16] || null,
         transfer_time2: row[17] || null, tw: row[18] === 1, manual_data: row[19] ?? null,
         item_id: row[20] ?? null, topup_breakdown: row[21] ?? null, is_bundle: row[22] === 1, product_id: row[23] ?? null,
+        order_note: row[24] ?? null,
       }
       if (item.manual_data) {
         try {
@@ -1367,7 +1376,7 @@ initDB().then(() => {
              oi.lot_cost_used, oi.bundle_lot_info,
              c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used, p.id AS product_id,
              c.name AS category_name, oi.manual_data, o.channel, oi.topup_breakdown,
-             o.transfer_time2
+             o.transfer_time2, o.order_note, o.tw
       FROM orders o
       JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
@@ -1387,7 +1396,7 @@ initDB().then(() => {
              product_name, quantity, item_price, credit_deducted, price_usd_used,
              email_used, email_cost, lot_cost_used, bundle_lot_info,
              fill_type, is_bundle, cost_used, product_id, category_name, manual_data_str, order_channel, topup_breakdown_raw,
-             transfer_time2] = row
+             transfer_time2, order_note, tw] = row
 
       let actualProductName = product_name
       let actualCategoryName = category_name || ''
@@ -1408,7 +1417,7 @@ initDB().then(() => {
       }
 
       if (!orderMap.has(order_id)) {
-        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, transfer_time2: transfer_time2 || null, category_name: actualCategoryName, channel: order_channel || null, items: [] })
+        orderMap.set(order_id, { order_id, transfer_amount, transfer_time: ts, transfer_time2: transfer_time2 || null, category_name: actualCategoryName, channel: order_channel || null, order_note: order_note || null, tw: tw === 1, items: [] })
       }
 
       let enrichedBundleLotInfo = actualBundleLotInfo

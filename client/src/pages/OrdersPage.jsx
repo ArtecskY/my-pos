@@ -117,6 +117,8 @@ export default function OrdersPage() {
   const [editChannelOrderId, setEditChannelOrderId] = useState(null)
   const [editItemId, setEditItemId] = useState(null)
   const [editItemValue, setEditItemValue] = useState('')
+  const [editNoteOrderId, setEditNoteOrderId] = useState(null)
+  const [editNoteValue, setEditNoteValue] = useState('')
 
   useEffect(() => {
     function loadData() {
@@ -148,6 +150,7 @@ export default function OrdersPage() {
           total: item.total,
           channel: item.channel || null,
           tw: item.tw || false,
+          order_note: item.order_note || null,
           items: [],
         }
         dateGroup.orderMap[item.order_id] = g
@@ -291,6 +294,24 @@ export default function OrdersPage() {
       i.order_id === orderId ? { ...i, channel: channel || null } : i
     ))
     setEditChannelOrderId(null)
+  }
+
+  function startEditNote(order) {
+    setEditNoteOrderId(order.order_id)
+    setEditNoteValue(order.order_note || '')
+  }
+
+  async function saveEditNote(orderId) {
+    const res = await fetch(`/orders/${orderId}/note`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: editNoteValue || null }),
+    })
+    if (!res.ok) { alert('บันทึกไม่สำเร็จ'); return }
+    setOrderItems(prev => prev.map(i =>
+      i.order_id === orderId ? { ...i, order_note: editNoteValue || null } : i
+    ))
+    setEditNoteOrderId(null)
   }
 
   function startEditItem(itemId, currentValue) {
@@ -454,6 +475,7 @@ export default function OrdersPage() {
                   <th className="pb-3 pt-4 px-3 font-medium">Email ที่ใช้</th>
                   <th className="pb-3 pt-4 px-3 font-medium text-center">ช่องทาง</th>
                   <th className="pb-3 pt-4 px-3 font-medium text-center">ประเภท</th>
+                  <th className="pb-3 pt-4 px-3 font-medium">บันทึก</th>
                   <th className="pb-3 pt-4 px-2"></th>
                 </tr>
               </thead>
@@ -926,6 +948,39 @@ export default function OrdersPage() {
                             )}
                           </td>
                         ) : null}
+                        {/* บันทึก */}
+                        {di === 0 && (
+                          <td rowSpan={displayRows.length} className="py-3 px-3 align-middle min-w-[120px]">
+                            {editNoteOrderId === order.order_id ? (
+                              <div className="flex flex-col gap-1">
+                                <input
+                                  type="text"
+                                  value={editNoteValue}
+                                  onChange={e => setEditNoteValue(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveEditNote(order.order_id)
+                                    if (e.key === 'Escape') setEditNoteOrderId(null)
+                                  }}
+                                  className="border border-blue-400 rounded px-1.5 py-0.5 text-xs w-full focus:outline-none"
+                                  placeholder="บันทึกสั้นๆ"
+                                  autoFocus
+                                />
+                                <div className="flex gap-1">
+                                  <button onClick={() => saveEditNote(order.order_id)} className="text-green-500 hover:text-green-700 text-xs cursor-pointer">✓</button>
+                                  <button onClick={() => setEditNoteOrderId(null)} className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer">✕</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <span
+                                className="text-xs text-slate-500 cursor-pointer hover:text-blue-500 hover:underline whitespace-pre-wrap"
+                                onClick={() => startEditNote(order)}
+                                title="คลิกเพื่อแก้ไขบันทึก"
+                              >
+                                {order.order_note || <span className="text-slate-200">—</span>}
+                              </span>
+                            )}
+                          </td>
+                        )}
                         {/* ปุ่มลบ */}
                         {di === 0 && (
                           <td rowSpan={displayRows.length} className="py-3 px-2 align-top">

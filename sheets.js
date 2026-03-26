@@ -146,8 +146,16 @@ function fmt(num) {
   return Number(num).toFixed(2)
 }
 
+// สร้างข้อความช่องทาง รวม TW ถ้ามี
+function channelText(o) {
+  const ch = o.channel || ''
+  const tw = o.tw ? 'TW' : ''
+  if (ch && tw) return `${ch}, ${tw}`
+  return ch || tw
+}
+
 // export ออเดอร์แบบรายวัน — แต่ละวันไปอยู่ tab ชื่อวันที่พ.ศ.
-// คอลัมน์: No., ยอดโอน (฿), ชื่อเกม, ช่องทาง, เวลาโอน, รายการสินค้า, จำนวนเหรียญ/ต้นทุน, Email ที่ใช้, ต้นทุน, ต้นทุนรวม, กำไร, หมายเหตุ
+// คอลัมน์: No., ยอดโอน (฿), ชื่อเกม, ช่องทาง, เวลาโอน, รายการสินค้า, จำนวนเหรียญ/ต้นทุน, Email ที่ใช้, ต้นทุน, ต้นทุนรวม, กำไร, หมายเหตุ, บันทึก
 async function exportDailyOrders(spreadsheetId, orders) {
   const auth = getClient()
   const sheets = google.sheets({ version: 'v4', auth })
@@ -237,7 +245,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
               isFirstRow && si === 0 ? `#${orderIdx + 1}` : '',  // No.
               isFirstRow && si === 0 ? fmt(bundleSellPrice) : '', // ยอดโอน (฿) — แสดงเต็มแค่ row แรก
               o.category_name || '',                              // ชื่อเกม — ทุกแถวเพื่อ Filter
-              o.channel || '',                                    // ช่องทาง
+              channelText(o),                                     // ช่องทาง (รวม TW)
               time,                                               // เวลาโอน
               si === 0 ? item.product_name : '',                  // รายการสินค้า
               Number(credits).toFixed(2),                         // จำนวนเหรียญ/ต้นทุน
@@ -246,6 +254,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
               fmt(rowTotalCost),                                  // ต้นทุนรวม
               fmt(rowProfit),                                     // กำไร (แยกต่อ email)
               si === 0 ? data.note : '',                          // หมายเหตุ
+              isFirstRow && si === 0 ? (o.order_note || '') : '', // บันทึก
             ])
             globalRowIdx++
           })
@@ -266,7 +275,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
             isFirstRow ? `#${orderIdx + 1}` : '',           // No.
             itemPrice,                                        // ยอดโอน (฿) — แยกต่อแพ็ก
             o.category_name || '',                           // ชื่อเกม — ทุกแถวเพื่อ Filter
-            o.channel || '',                                 // ช่องทาง
+            channelText(o),                                  // ช่องทาง (รวม TW)
             time,                                            // เวลาโอน
             item.product_name,                               // รายการสินค้า
             data.unitQty,                                    // จำนวนเหรียญ/ต้นทุน
@@ -275,6 +284,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
             fmt(data.totalCost),                             // ต้นทุนรวม
             item.price != null && Number(item.price) > 0 ? fmt(itemProfit) : (isFirstRow ? fmt(itemProfit) : ''), // กำไรต่อแพ็ก
             data.note,                                       // หมายเหตุ
+            isFirstRow ? (o.order_note || '') : '',          // บันทึก
           ])
           globalRowIdx++
         }
@@ -284,7 +294,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
     const range = `'${tabName}'!A1`
     await sheets.spreadsheets.values.clear({
       spreadsheetId,
-      range: `'${tabName}'!A:L`,
+      range: `'${tabName}'!A:M`,
     })
     await sheets.spreadsheets.values.update({
       spreadsheetId,
@@ -292,7 +302,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
       valueInputOption: 'USER_ENTERED',
       requestBody: {
         values: [
-          ['No.', 'ยอดโอน (฿)', 'ชื่อเกม', 'ช่องทาง', 'เวลาโอน', 'รายการสินค้า', 'จำนวนเหรียญ/ต้นทุน', 'Email ที่ใช้', 'ต้นทุน', 'ต้นทุนรวม', 'กำไร', 'หมายเหตุ'],
+          ['No.', 'ยอดโอน (฿)', 'ชื่อเกม', 'ช่องทาง', 'เวลาโอน', 'รายการสินค้า', 'จำนวนเหรียญ/ต้นทุน', 'Email ที่ใช้', 'ต้นทุน', 'ต้นทุนรวม', 'กำไร', 'หมายเหตุ', 'บันทึก'],
           ...rows,
         ],
       },
