@@ -116,6 +116,8 @@ async function initDB() {
     created_at TEXT DEFAULT (datetime('now','localtime'))
   )`)
   try { db.run('ALTER TABLE order_items ADD COLUMN topup_breakdown TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE categories ADD COLUMN shop_name TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN shop_name TEXT') } catch (e) { /* column exists */ }
   db.run(`CREATE TABLE IF NOT EXISTS email_types (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     key TEXT NOT NULL UNIQUE,

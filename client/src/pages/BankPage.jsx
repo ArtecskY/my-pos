@@ -1,27 +1,36 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 export default function BankPage() {
-  const [config, setConfig] = useState({ username: '', hasPassword: false, screenshot: null, snapshotTime: null })
+  const [status, setStatus] = useState({
+    sessionActive: false, cooldownRemaining: 0, botRunning: false,
+    username: '', hasPassword: false, screenshot: null, snapshotTime: null,
+  })
   const [showConfig, setShowConfig] = useState(false)
   const [formUsername, setFormUsername] = useState('')
   const [formPassword, setFormPassword] = useState('')
   const [configMsg, setConfigMsg] = useState('')
-  const [running, setRunning] = useState(false)
   const [log, setLog] = useState([])
   const [error, setError] = useState('')
+  const [actionRunning, setActionRunning] = useState(false) // login หรือ snapshot กำลังทำงาน
+  const pollingRef = useRef(null)
 
-  async function loadConfig() {
-    const res = await fetch('/bank/config')
-    const data = await res.json()
-    setConfig(data)
+  async function loadStatus() {
+    try {
+      const res = await fetch('/bank/status')
+      if (res.ok) setStatus(await res.json())
+    } catch {}
   }
 
-  useEffect(() => { loadConfig() }, [])
+  useEffect(() => {
+    loadStatus()
+    pollingRef.current = setInterval(loadStatus, 3000)
+    return () => clearInterval(pollingRef.current)
+  }, [])
 
   function openConfig() {
     setConfigMsg('')
     setFormPassword('')
-    setFormUsername(config.username || '')
+    setFormUsername(status.username || '')
     setShowConfig(true)
   }
 
@@ -32,146 +41,176 @@ export default function BankPage() {
       const body = { username: formUsername.trim() }
       if (formPassword) body.password = formPassword
       const res = await fetch('/bank/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) { setConfigMsg('❌ ' + (data.error || 'เกิดข้อผิดพลาด')); return }
       setConfigMsg('✅ บันทึกสำเร็จ')
-      setConfig(prev => ({ ...prev, username: formUsername.trim(), hasPassword: !!(formPassword || prev.hasPassword) }))
       setFormPassword('')
-    } catch (e) {
-      setConfigMsg('❌ ' + e.message)
-    }
+      loadStatus()
+    } catch (e) { setConfigMsg('❌ ' + e.message) }
+  }
+
+  async function runLogin() {
+    setActionRunning(true)
+    setLog([])
+    setError('')
+    try {
+      const res = await fetch('/bank/login', { method: 'POST' })
+      const data = await res.json()
+      setLog(data.log || [])
+      if (!res.ok) setError(data.error || 'เกิดข้อผิดพลาด')
+      else loadStatus()
+    } catch (e) { setError(e.message) }
+    finally { setActionRunning(false) }
   }
 
   async function runSnapshot() {
-    setRunning(true)
+    setActionRunning(true)
     setLog([])
     setError('')
     try {
       const res = await fetch('/bank/snapshot', { method: 'POST' })
       const data = await res.json()
       setLog(data.log || [])
-      if (!res.ok) {
-        setError(data.error || 'เกิดข้อผิดพลาด')
-      } else {
-        setConfig(prev => ({ ...prev, screenshot: data.screenshot, snapshotTime: data.snapshotTime }))
+      if (!res.ok) { setError(data.error || 'เกิดข้อผิดพลาด') }
+      else {
+        setStatus(prev => ({ ...prev, screenshot: data.screenshot, snapshotTime: data.snapshotTime }))
       }
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setRunning(false)
-    }
+    } catch (e) { setError(e.message) }
+    finally { setActionRunning(false) }
   }
+
+  const cooldown = status.cooldownRemaining || 0
+  const canLogin = !actionRunning && !status.botRunning && cooldown === 0
+  const canSnapshot = !actionRunning && !status.botRunning && status.sessionActive
+  const isWorking = actionRunning || status.botRunning
 
   return (
     <div className="space-y-4 max-w-3xl mx-auto">
+
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-lg font-bold text-slate-800">เช็คเงินเข้า</h2>
           <p className="text-xs text-slate-400 mt-0.5">KBank KBiz — ดึงข้อมูลบัญชีอัตโนมัติ</p>
         </div>
-        <div className="flex gap-2">
+        <button
+          onClick={openConfig}
+          className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm cursor-pointer"
+        >
+          ⚙️ ตั้งค่า
+        </button>
+      </div>
+
+      {/* Session status + buttons */}
+      <div className="bg-white rounded-xl shadow-sm p-4 flex flex-wrap items-center gap-3">
+        {/* Status badge */}
+        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${
+          status.sessionActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+        }`}>
+          <span className={`w-2 h-2 rounded-full ${status.sessionActive ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+          {status.sessionActive ? 'Session เปิดอยู่' : 'ยังไม่ได้ Login'}
+        </div>
+
+        <div className="flex gap-2 ml-auto flex-wrap">
+          {/* ปุ่ม Login */}
           <button
-            onClick={openConfig}
-            className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg text-sm cursor-pointer"
-          >
-            ⚙️ ตั้งค่า
-          </button>
-          <button
-            onClick={runSnapshot}
-            disabled={running}
-            className={`px-4 py-2 rounded-lg text-sm font-medium cursor-pointer ${
-              running
-                ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                : 'bg-green-500 hover:bg-green-600 text-white'
+            onClick={runLogin}
+            disabled={!canLogin}
+            className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 ${
+              !canLogin
+                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                : 'bg-blue-500 hover:bg-blue-600 text-white cursor-pointer'
             }`}
           >
-            {running ? '⏳ กำลังดึงข้อมูล...' : '🔄 อัพเดท'}
+            🔑 {isWorking && !status.sessionActive ? 'กำลัง Login...'
+              : cooldown > 0 ? `Login (${cooldown}s)`
+              : 'Login'}
+          </button>
+
+          {/* ปุ่ม อัพเดท */}
+          <button
+            onClick={runSnapshot}
+            disabled={!canSnapshot}
+            className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 ${
+              !canSnapshot
+                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                : 'bg-green-500 hover:bg-green-600 text-white cursor-pointer'
+            }`}
+          >
+            🔄 {isWorking && status.sessionActive ? 'กำลังดึงข้อมูล...' : 'อัพเดท'}
           </button>
         </div>
       </div>
 
-      {/* แจ้งเตือนขณะ bot ทำงาน */}
-      {running && (
+      {/* แจ้งเตือนขณะ login */}
+      {isWorking && !status.sessionActive && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+          <p className="text-blue-800 font-medium text-sm mb-1">🔑 กำลัง Login...</p>
+          <p className="text-blue-600 text-xs">หน้าต่าง Browser จะเปิดขึ้น — กรุณาทำ reCAPTCHA → กด Login → รอ OTP ถ้ามี</p>
+          <LogList log={log} color="blue" />
+        </div>
+      )}
+
+      {/* แจ้งเตือนขณะ snapshot */}
+      {isWorking && status.sessionActive && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <p className="text-amber-800 font-medium text-sm mb-1">🤖 Bot กำลังทำงาน...</p>
-          <p className="text-amber-600 text-xs">หน้าต่าง Browser จะเปิดขึ้น — กรุณาทำขั้นตอน Login และ OTP ในหน้าต่างนั้น</p>
-          {log.length > 0 && (
-            <div className="mt-3 space-y-0.5">
-              {log.map((l, i) => (
-                <p key={i} className="text-xs text-amber-700 font-mono">{l}</p>
-              ))}
-            </div>
-          )}
+          <p className="text-amber-800 font-medium text-sm mb-1">🔄 กำลังดึงข้อมูล...</p>
+          <LogList log={log} color="amber" />
         </div>
       )}
 
       {/* Error */}
-      {error && !running && (
+      {error && !isWorking && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
           <p className="text-red-700 font-medium text-sm">❌ {error}</p>
-          {log.length > 0 && (
-            <div className="mt-2 space-y-0.5">
-              {log.map((l, i) => (
-                <p key={i} className="text-xs text-red-500 font-mono">{l}</p>
-              ))}
-            </div>
-          )}
+          <LogList log={log} color="red" />
         </div>
       )}
 
       {/* Screenshot */}
-      {config.screenshot ? (
+      {status.screenshot ? (
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
             <div>
               <p className="text-sm font-medium text-slate-700">ข้อมูลล่าสุด</p>
-              {config.snapshotTime && (
-                <p className="text-xs text-slate-400 mt-0.5">อัพเดทเมื่อ: {config.snapshotTime}</p>
+              {status.snapshotTime && (
+                <p className="text-xs text-slate-400 mt-0.5">อัพเดทเมื่อ: {status.snapshotTime}</p>
               )}
             </div>
-            <a
-              href={config.screenshot}
-              target="_blank"
-              rel="noreferrer"
-              className="text-xs text-blue-500 hover:text-blue-700 cursor-pointer"
-            >
+            <a href={status.screenshot} target="_blank" rel="noreferrer"
+              className="text-xs text-blue-500 hover:text-blue-700 cursor-pointer">
               เปิดรูปเต็ม ↗
             </a>
           </div>
           <div className="p-2">
             <img
-              src={`${config.screenshot}?t=${Date.now()}`}
+              src={`${status.screenshot}?t=${status.snapshotTime}`}
               alt="Bank statement"
               className="w-full rounded-lg border border-slate-100"
-              key={config.screenshot}
             />
           </div>
         </div>
-      ) : !running && (
+      ) : !isWorking && (
         <div className="bg-white rounded-xl shadow-sm p-14 text-center">
           <p className="text-slate-400 text-4xl mb-3">🏦</p>
           <p className="text-slate-500 font-medium mb-1">ยังไม่มีข้อมูล</p>
-          <p className="text-slate-400 text-sm">กด "อัพเดท" เพื่อดึงข้อมูลจาก KBank KBiz</p>
-          {!config.hasPassword && (
-            <p className="text-amber-500 text-xs mt-3">⚠️ กรุณาตั้งค่า username/password ก่อน</p>
-          )}
+          {!status.hasPassword
+            ? <p className="text-amber-500 text-xs mt-2">⚠️ กรุณาตั้งค่า username/password ก่อน</p>
+            : !status.sessionActive
+            ? <p className="text-slate-400 text-sm mt-1">กด "Login" เพื่อเชื่อมต่อ KBiz</p>
+            : <p className="text-slate-400 text-sm mt-1">กด "อัพเดท" เพื่อดึงข้อมูล</p>
+          }
         </div>
       )}
 
-      {/* Log after done */}
-      {!running && !error && log.length > 0 && (
+      {/* Log หลัง done */}
+      {!isWorking && !error && log.length > 0 && (
         <div className="bg-slate-50 rounded-xl p-4">
           <p className="text-xs text-slate-400 mb-2 font-medium">Log การทำงาน:</p>
-          <div className="space-y-0.5">
-            {log.map((l, i) => (
-              <p key={i} className="text-xs text-slate-600 font-mono">{l}</p>
-            ))}
-          </div>
+          <LogList log={log} color="slate" />
         </div>
       )}
 
@@ -184,26 +223,17 @@ export default function BankPage() {
             <div className="space-y-3">
               <div>
                 <label className="block text-sm text-slate-500 mb-1">Username</label>
-                <input
-                  type="text"
-                  value={formUsername}
-                  onChange={e => setFormUsername(e.target.value)}
+                <input type="text" value={formUsername} onChange={e => setFormUsername(e.target.value)}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
-                  placeholder="username ของ KBiz"
-                  autoFocus
-                />
+                  placeholder="username ของ KBiz" autoFocus />
               </div>
               <div>
                 <label className="block text-sm text-slate-500 mb-1">
-                  Password {config.hasPassword && <span className="text-emerald-500 text-xs">(บันทึกแล้ว)</span>}
+                  Password {status.hasPassword && <span className="text-emerald-500 text-xs">(บันทึกแล้ว)</span>}
                 </label>
-                <input
-                  type="password"
-                  value={formPassword}
-                  onChange={e => setFormPassword(e.target.value)}
+                <input type="password" value={formPassword} onChange={e => setFormPassword(e.target.value)}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
-                  placeholder={config.hasPassword ? 'เว้นว่างถ้าไม่ต้องการเปลี่ยน' : 'รหัสผ่าน'}
-                />
+                  placeholder={status.hasPassword ? 'เว้นว่างถ้าไม่ต้องการเปลี่ยน' : 'รหัสผ่าน'} />
               </div>
             </div>
             {configMsg && (
@@ -212,23 +242,33 @@ export default function BankPage() {
               </p>
             )}
             <div className="flex gap-2 mt-5">
-              <button
-                onClick={saveConfig}
-                className="flex-1 bg-slate-700 hover:bg-slate-800 text-white py-2.5 rounded-lg text-sm cursor-pointer font-medium"
-              >
+              <button onClick={saveConfig}
+                className="flex-1 bg-slate-700 hover:bg-slate-800 text-white py-2.5 rounded-lg text-sm cursor-pointer font-medium">
                 บันทึก
               </button>
-              <button
-                onClick={() => { setShowConfig(false); setConfigMsg('') }}
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-2.5 rounded-lg text-sm cursor-pointer"
-              >
+              <button onClick={() => { setShowConfig(false); setConfigMsg('') }}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-2.5 rounded-lg text-sm cursor-pointer">
                 ปิด
               </button>
             </div>
           </div>
         </div>
       )}
+    </div>
+  )
+}
 
+function LogList({ log, color }) {
+  if (!log || log.length === 0) return null
+  const cls = {
+    blue: 'text-blue-700',
+    amber: 'text-amber-700',
+    red: 'text-red-500',
+    slate: 'text-slate-600',
+  }[color] || 'text-slate-600'
+  return (
+    <div className="mt-2 space-y-0.5">
+      {log.map((l, i) => <p key={i} className={`text-xs font-mono ${cls}`}>{l}</p>)}
     </div>
   )
 }

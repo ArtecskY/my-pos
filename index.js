@@ -59,17 +59,17 @@ initDB().then(() => {
   const db = getDB()
 
   app.get('/categories', (req, res) => {
-    const result = db.exec('SELECT id, name, fill_type FROM categories ORDER BY name')
+    const result = db.exec('SELECT id, name, fill_type, shop_name FROM categories ORDER BY name')
     const categories = result[0] ? result[0].values.map(row => ({
-      id: row[0], name: row[1], fill_type: row[2] || 'UID'
+      id: row[0], name: row[1], fill_type: row[2] || 'UID', shop_name: row[3] || null
     })) : []
     res.json(categories)
   })
 
   app.post('/categories', requireLogin, (req, res) => {
-    const { name, fill_type } = req.body
+    const { name, fill_type, shop_name } = req.body
     try {
-      db.run('INSERT INTO categories (name, fill_type) VALUES (?, ?)', [name, fill_type || 'UID'])
+      db.run('INSERT INTO categories (name, fill_type, shop_name) VALUES (?, ?, ?)', [name, fill_type || 'UID', shop_name || null])
       const result = db.exec('SELECT last_insert_rowid()')
       const id = result[0].values[0][0]
       save()
@@ -80,11 +80,11 @@ initDB().then(() => {
   })
 
   app.put('/categories/:id', requireLogin, (req, res) => {
-    const { name, fill_type } = req.body
+    const { name, fill_type, shop_name } = req.body
     if (name !== undefined) {
-      db.run('UPDATE categories SET name=?, fill_type=? WHERE id=?', [name, fill_type, req.params.id])
+      db.run('UPDATE categories SET name=?, fill_type=?, shop_name=? WHERE id=?', [name, fill_type, shop_name ?? null, req.params.id])
     } else {
-      db.run('UPDATE categories SET fill_type=? WHERE id=?', [fill_type, req.params.id])
+      db.run('UPDATE categories SET fill_type=?, shop_name=? WHERE id=?', [fill_type, shop_name ?? null, req.params.id])
     }
     save()
     res.json({ message: 'อัปเดตหมวดหมู่สำเร็จ' })
@@ -572,7 +572,7 @@ initDB().then(() => {
       const orderItemId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
 
       let creditDeducted = null, emailIdUsed = null, lotIdUsed = null, priceUsdUsed = null
-      let costUsed = null, lotCostUsed = null, bundleLotInfo = null, topupBreakdown = null
+      let costUsed = null, lotCostUsed = null, bundleLotInfo = null, topupBreakdown = null, shopNameToStore = null
       if (is_bundle) {
         const catRes1 = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
         const bundleFillType1 = catRes1[0]?.values[0][0] || 'UID'
@@ -649,8 +649,9 @@ initDB().then(() => {
           if (bundleComponents.length > 0) bundleLotInfo = JSON.stringify(bundleComponents)
         }
       } else {
-        const catRes = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
+        const catRes = db.exec('SELECT fill_type, shop_name FROM categories WHERE id=?', [category_id])
         const fill_type = catRes[0]?.values[0][0] || 'UID'
+        shopNameToStore = catRes[0]?.values[0][1] || null
         if (fill_type === 'ID_PASS') {
           priceUsdUsed = price_usd
           let remaining = item.quantity
@@ -684,8 +685,8 @@ initDB().then(() => {
           if (c != null && c > 0) costUsed = c
         }
       }
-      db.run('UPDATE order_items SET credit_deducted=?, email_id_used=?, lot_id_used=?, price_usd_used=?, cost_used=?, lot_cost_used=?, bundle_lot_info=?, topup_breakdown=? WHERE id=?',
-        [creditDeducted, emailIdUsed, lotIdUsed, priceUsdUsed, costUsed, lotCostUsed, bundleLotInfo, topupBreakdown || null, orderItemId])
+      db.run('UPDATE order_items SET credit_deducted=?, email_id_used=?, lot_id_used=?, price_usd_used=?, cost_used=?, lot_cost_used=?, bundle_lot_info=?, topup_breakdown=?, shop_name=? WHERE id=?',
+        [creditDeducted, emailIdUsed, lotIdUsed, priceUsdUsed, costUsed, lotCostUsed, bundleLotInfo, topupBreakdown || null, shopNameToStore, orderItemId])
     }
 
     for (const mi of manualItems) {
@@ -938,6 +939,8 @@ initDB().then(() => {
       const newCost = Number(req.body.cost_used)
       if (isNaN(newCost) || newCost < 0) return res.status(400).json({ error: 'ต้นทุนไม่ถูกต้อง' })
       db.run('UPDATE order_items SET cost_used=? WHERE id=?', [newCost, req.params.id])
+    } else if (req.body.shop_name !== undefined) {
+      db.run('UPDATE order_items SET shop_name=? WHERE id=?', [req.body.shop_name || null, req.params.id])
     } else {
       return res.status(400).json({ error: 'ไม่มีข้อมูลที่ต้องการแก้ไข' })
     }
@@ -1066,7 +1069,7 @@ initDB().then(() => {
     const itemsRes = db.exec(`
       SELECT o.id, o.transfer_amount, COALESCE(o.transfer_time, o.created_at) AS ts,
              p.name, oi.quantity, oi.price, oi.credit_deducted, oi.price_usd_used,
-             e.email, e.cost AS email_cost,
+             COALESCE(e.email, oi.shop_name), e.cost AS email_cost,
              oi.lot_cost_used, oi.bundle_lot_info,
              c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used, p.id AS product_id,
              c.name AS category_name, oi.manual_data, o.channel, oi.topup_breakdown,
@@ -1171,6 +1174,7 @@ initDB().then(() => {
         email_used: actualEmailUsed, email_cost, lot_cost_used, bundle_lot_info: enrichedBundleLotInfo,
         fill_type: actualFillType, is_bundle: is_bundle === 1, cost_used: actualCostUsed,
         topup_breakdown: manual_data_str ? null : (topup_breakdown_raw ?? null),
+        category_name: actualCategoryName,
       })
     }
 
@@ -1211,7 +1215,7 @@ initDB().then(() => {
 
     const result = db.exec(`
       SELECT o.id, o.transfer_time, o.created_at, o.transfer_amount, o.total,
-             p.name, oi.quantity, oi.price, oi.credit_deducted, e.email, oi.price_usd_used, c.name, oi.cost_used,
+             p.name, oi.quantity, oi.price, oi.credit_deducted, COALESCE(e.email, oi.shop_name), oi.price_usd_used, c.name, oi.cost_used,
              COALESCE(oi.lot_cost_used, pl.cost) as lot_cost_used, oi.bundle_lot_info, o.channel, c.fill_type,
              o.transfer_time2, o.tw, oi.manual_data, oi.id AS item_id, oi.topup_breakdown, COALESCE(p.is_bundle, 0) as is_bundle, oi.product_id,
              o.order_note
@@ -1354,10 +1358,6 @@ initDB().then(() => {
     res.json({ message: 'ลบผู้ใช้สำเร็จ' })
   })
 
-  // SPA fallback — ส่ง React index.html สำหรับทุก route ที่ไม่ใช่ API
-  app.get('/{*path}', (req, res) => {
-    res.sendFile(path.join(__dirname, 'client/dist/index.html'))
-  })
 
   // Helper: ดึงข้อมูล orders สำหรับ export (ใช้ร่วมกันระหว่าง endpoint และ cron)
   async function runSheetExport(dateFrom, dateTo) {
@@ -1372,7 +1372,7 @@ initDB().then(() => {
     const itemsRes = db.exec(`
       SELECT o.id, o.transfer_amount, COALESCE(o.transfer_time, o.created_at) AS ts,
              p.name, oi.quantity, oi.price, oi.credit_deducted, oi.price_usd_used,
-             e.email, e.cost AS email_cost,
+             COALESCE(e.email, oi.shop_name), e.cost AS email_cost,
              oi.lot_cost_used, oi.bundle_lot_info,
              c.fill_type, COALESCE(p.is_bundle, 0), oi.cost_used, p.id AS product_id,
              c.name AS category_name, oi.manual_data, o.channel, oi.topup_breakdown,
@@ -1451,6 +1451,7 @@ initDB().then(() => {
         email_used: actualEmailUsed, email_cost, lot_cost_used, bundle_lot_info: enrichedBundleLotInfo,
         fill_type: actualFillType, is_bundle: is_bundle === 1, cost_used: actualCostUsed,
         topup_breakdown: manual_data_str ? null : (topup_breakdown_raw ?? null),
+        category_name: actualCategoryName,
       })
     }
 
@@ -1473,9 +1474,112 @@ initDB().then(() => {
     }
   }, { timezone: 'Asia/Bangkok' })
 
+  // ── Bank KBiz routes ────────────────────────────────────────
+  const { loginKBiz, snapshotKBiz, getSessionStatus, closeKBiz } = require('./bank-bot')
+  const BANK_CONFIG_FILE = path.join(__dirname, '.kbiz-config.json')
+  const BANK_SCREENSHOTS_DIR = path.join(__dirname, 'public', 'bank-screenshots')
+  if (!fs.existsSync(BANK_SCREENSHOTS_DIR)) fs.mkdirSync(BANK_SCREENSHOTS_DIR, { recursive: true })
+  app.use('/bank-screenshots', express.static(BANK_SCREENSHOTS_DIR))
+
+  function loadBankConfig() {
+    try { return JSON.parse(fs.readFileSync(BANK_CONFIG_FILE, 'utf8')) } catch { return {} }
+  }
+  function saveBankConfig(data) {
+    fs.writeFileSync(BANK_CONFIG_FILE, JSON.stringify(data, null, 2))
+  }
+
+  let bankBotRunning = false
+  let loginCooldownUntil = 0  // timestamp ms
+
+  // GET /bank/status — session status + cooldown + last screenshot
+  app.get('/bank/status', requireLogin, (req, res) => {
+    const cfg = loadBankConfig()
+    const now = Date.now()
+    res.json({
+      sessionActive: getSessionStatus().active,
+      cooldownRemaining: Math.max(0, Math.ceil((loginCooldownUntil - now) / 1000)),
+      botRunning: bankBotRunning,
+      username: cfg.username || '',
+      hasPassword: !!cfg.password,
+      screenshot: cfg.screenshot || null,
+      snapshotTime: cfg.snapshotTime || null,
+    })
+  })
+
+  // GET /bank/config — ตั้งค่า
+  app.get('/bank/config', requireLogin, (req, res) => {
+    const cfg = loadBankConfig()
+    res.json({ username: cfg.username || '', hasPassword: !!cfg.password })
+  })
+
+  // POST /bank/config — บันทึก username/password
+  app.post('/bank/config', requireLogin, (req, res) => {
+    const { username, password } = req.body || {}
+    if (!username) return res.status(400).json({ error: 'กรุณากรอก username' })
+    const cfg = loadBankConfig()
+    cfg.username = username
+    if (password) cfg.password = password
+    saveBankConfig(cfg)
+    res.json({ ok: true })
+  })
+
+  // POST /bank/login — เปิด browser + login (cooldown 5 นาที)
+  app.post('/bank/login', requireLogin, async (req, res) => {
+    const now = Date.now()
+    if (bankBotRunning) return res.status(409).json({ error: 'Bot กำลังทำงานอยู่' })
+    if (loginCooldownUntil > now) {
+      const secs = Math.ceil((loginCooldownUntil - now) / 1000)
+      return res.status(429).json({ error: `รอ ${secs} วินาทีก่อนกด Login ใหม่` })
+    }
+    const cfg = loadBankConfig()
+    if (!cfg.username || !cfg.password) return res.status(400).json({ error: 'กรุณาตั้งค่า username/password ก่อน' })
+    bankBotRunning = true
+    loginCooldownUntil = now + 5 * 60 * 1000  // cooldown 5 นาทีทันที
+    try {
+      const { log } = await loginKBiz({ username: cfg.username, password: cfg.password })
+      res.json({ ok: true, log })
+    } catch (err) {
+      loginCooldownUntil = 0  // ถ้า error ล้าง cooldown ให้กดใหม่ได้
+      res.status(500).json({ error: err.message, log: err.log || [] })
+    } finally {
+      bankBotRunning = false
+    }
+  })
+
+  // POST /bank/snapshot — กดค้นหา + screenshot (ใช้ session เดิม)
+  app.post('/bank/snapshot', requireLogin, async (req, res) => {
+    if (bankBotRunning) return res.status(409).json({ error: 'Bot กำลังทำงานอยู่' })
+    if (!getSessionStatus().active) return res.status(400).json({ error: 'ยังไม่ได้ Login กรุณากดปุ่ม Login ก่อน' })
+    bankBotRunning = true
+    try {
+      const { fileName, log } = await snapshotKBiz({ screenshotDir: BANK_SCREENSHOTS_DIR })
+      const snapshotTime = new Intl.DateTimeFormat('th-TH', {
+        timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short'
+      }).format(new Date())
+      const cfg = loadBankConfig()
+      cfg.screenshot = `/bank-screenshots/${fileName}`
+      cfg.snapshotTime = snapshotTime
+      saveBankConfig(cfg)
+      res.json({ ok: true, screenshot: cfg.screenshot, snapshotTime, log })
+    } catch (err) {
+      res.status(500).json({ error: err.message, log: err.log || [] })
+    } finally {
+      bankBotRunning = false
+    }
+  })
+
+  // SPA fallback — ต้องอยู่หลัง API routes ทั้งหมด
+  app.use((req, res) => {
+    res.sendFile(path.join(__dirname, 'client/dist/index.html'))
+  })
+
   const PORT = process.env.PORT || 3000
   const server = app.listen(PORT, () => {
     console.log(`Server รันอยู่ที่ port ${PORT}`)
   })
   server.timeout = 600000 // 10 นาที สำหรับ bot snapshot
+
+  // Graceful shutdown: ปิด browser KBiz ด้วย
+  process.on('SIGINT', async () => { await closeKBiz(); process.exit(0) })
+  process.on('SIGTERM', async () => { await closeKBiz(); process.exit(0) })
 })

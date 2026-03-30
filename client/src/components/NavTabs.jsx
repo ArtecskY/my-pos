@@ -5,6 +5,7 @@ export default function NavTabs({ page, onChangePage, user }) {
     ['emails', 'จัดการ Email'],
     ['orders', 'ประวัติรายการ'],
     ['dashboard', 'Dashboard'],
+    // ['bank', 'เช็คเงินเข้า'], // TODO: เปิดเมื่อระบบพร้อม
 ...(user?.is_admin ? [['users', 'จัดการผู้ใช้']] : []),
   ]
   return (

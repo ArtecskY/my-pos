@@ -7,6 +7,7 @@ import OrdersPage from './pages/OrdersPage'
 import EmailsPage from './pages/EmailsPage'
 import UsersPage from './pages/UsersPage'
 import DashboardPage from './pages/DashboardPage'
+import BankPage from './pages/BankPage'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -61,6 +62,7 @@ export default function App() {
         {page === 'emails' && <EmailsPage />}
         {page === 'orders' && <OrdersPage />}
         {page === 'dashboard' && <DashboardPage />}
+        {page === 'bank' && <BankPage />}
 {page === 'users' && user?.is_admin && <UsersPage currentUser={user} />}
       </div>
     </div>

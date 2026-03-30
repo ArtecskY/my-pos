@@ -117,6 +117,8 @@ export default function OrdersPage() {
   const [editChannelOrderId, setEditChannelOrderId] = useState(null)
   const [editItemId, setEditItemId] = useState(null)
   const [editItemValue, setEditItemValue] = useState('')
+  const [editShopNameItemId, setEditShopNameItemId] = useState(null)
+  const [editShopNameValue, setEditShopNameValue] = useState('')
   const [editNoteOrderId, setEditNoteOrderId] = useState(null)
   const [editNoteValue, setEditNoteValue] = useState('')
 
@@ -317,6 +319,18 @@ export default function OrdersPage() {
   function startEditItem(itemId, currentValue) {
     setEditItemId(itemId)
     setEditItemValue(String(currentValue))
+  }
+
+  async function saveEditShopName(itemId) {
+    const value = editShopNameValue.trim()
+    const res = await fetch(`/order-items/${itemId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shop_name: value || null }),
+    })
+    if (!res.ok) { const d = await res.json(); alert(d.error || 'แก้ไขไม่สำเร็จ'); setEditShopNameItemId(null); return }
+    setOrderItems(prev => prev.map(i => i.item_id === itemId ? { ...i, email_used: value || null } : i))
+    setEditShopNameItemId(null)
   }
 
   async function saveEditItem(itemId, field) {
@@ -861,14 +875,44 @@ export default function OrdersPage() {
                           )
                         })() : (
                         <td className="py-2.5 px-3 font-mono text-xs text-slate-400">
-                          {(
-                            item.email_used ? item.email_used : (() => {
+                          {(() => {
+                            const isUid = !item.bundle_lot_info && (
+                              item.fill_type === 'UID' || item.fill_type === 'OTHER_UID' ||
+                              customTypes.find(t => t.key === item.fill_type)?.behavior === 'UID'
+                            )
+                            if (isUid && !item.merged && item.item_id) {
+                              if (editShopNameItemId === item.item_id) {
+                                return (
+                                  <span className="inline-flex items-center gap-1">
+                                    <input
+                                      type="text"
+                                      value={editShopNameValue}
+                                      onChange={e => setEditShopNameValue(e.target.value)}
+                                      onKeyDown={e => {
+                                        if (e.key === 'Enter') saveEditShopName(item.item_id)
+                                        if (e.key === 'Escape') setEditShopNameItemId(null)
+                                      }}
+                                      className="border border-blue-400 rounded px-1 py-0.5 text-xs font-mono w-28 focus:outline-none"
+                                      autoFocus
+                                    />
+                                    <button onClick={() => saveEditShopName(item.item_id)} className="text-green-500 hover:text-green-700 text-xs cursor-pointer">✓</button>
+                                    <button onClick={() => setEditShopNameItemId(null)} className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer">✕</button>
+                                  </span>
+                                )
+                              }
+                              return (
+                                <span
+                                  className="cursor-pointer hover:text-blue-500 hover:underline"
+                                  onClick={() => { setEditShopNameItemId(item.item_id); setEditShopNameValue(item.email_used || '') }}
+                                  title="คลิกเพื่อแก้ไขชื่อร้าน"
+                                >
+                                  {item.email_used || <span className="text-slate-300">24</span>}
+                                </span>
+                              )
+                            }
+                            return item.email_used ? item.email_used : (() => {
                               if (!item.bundle_lot_info) {
-                                const isUid = item.fill_type === 'UID' || item.fill_type === 'OTHER_UID' ||
-                                  customTypes.find(t => t.key === item.fill_type)?.behavior === 'UID'
-                                return isUid
-                                  ? <span className="text-slate-400 text-xs">24</span>
-                                  : <span className="text-slate-200">—</span>
+                                return <span className="text-slate-200">—</span>
                               }
                               try {
                                 const parsed = JSON.parse(item.bundle_lot_info)
@@ -890,7 +934,7 @@ export default function OrdersPage() {
                                 )
                               } catch { return <span className="text-slate-200">—</span> }
                             })()
-                          )}
+                          })()}
                         </td>
                         )}
                         {/* ช่องทาง */}

@@ -244,7 +244,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
             rows.push([
               isFirstRow && si === 0 ? `#${orderIdx + 1}` : '',  // No.
               isFirstRow && si === 0 ? fmt(bundleSellPrice) : '', // ยอดโอน (฿) — แสดงเต็มแค่ row แรก
-              o.category_name || '',                              // ชื่อเกม — ทุกแถวเพื่อ Filter
+              item.category_name || o.category_name || '',        // ชื่อเกม — ทุกแถวเพื่อ Filter
               channelText(o),                                     // ช่องทาง (รวม TW)
               time,                                               // เวลาโอน
               si === 0 ? item.product_name : '',                  // รายการสินค้า
@@ -274,7 +274,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
           rows.push([
             isFirstRow ? `#${orderIdx + 1}` : '',           // No.
             itemPrice,                                        // ยอดโอน (฿) — แยกต่อแพ็ก
-            o.category_name || '',                           // ชื่อเกม — ทุกแถวเพื่อ Filter
+            item.category_name || o.category_name || '',     // ชื่อเกม — ทุกแถวเพื่อ Filter
             channelText(o),                                  // ช่องทาง (รวม TW)
             time,                                            // เวลาโอน
             item.product_name,                               // รายการสินค้า

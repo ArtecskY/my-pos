@@ -84,6 +84,7 @@ export default function ManagePage() {
   const [newGameName, setNewGameName] = useState('')
   const [newGameTypeKey, setNewGameTypeKey] = useState('UID')
   const [newGameOtherStock, setNewGameOtherStock] = useState('UID')
+  const [newGameShopName, setNewGameShopName] = useState('')
   const [newGameTemplate, setNewGameTemplate] = useState('')
   const [addGameError, setAddGameError] = useState('')
 
@@ -209,7 +210,7 @@ export default function ManagePage() {
     const res = await fetch('/categories', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newGameName.trim(), fill_type }),
+      body: JSON.stringify({ name: newGameName.trim(), fill_type, shop_name: newGameShopName.trim() || null }),
     })
     const data = await res.json()
     if (!res.ok) { setAddGameError(data.error); return }
@@ -225,6 +226,7 @@ export default function ManagePage() {
     setNewGameName('')
     setNewGameTypeKey('UID')
     setNewGameOtherStock('UID')
+    setNewGameShopName('')
     setNewGameTemplate('')
     loadAll()
   }
@@ -246,7 +248,7 @@ export default function ManagePage() {
     await fetch(`/categories/${editGameModal.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: editGameModal.name.trim(), fill_type }),
+      body: JSON.stringify({ name: editGameModal.name.trim(), fill_type, shop_name: editGameModal.shop_name || null }),
     })
     setEditGameModal(null)
     loadAll()
@@ -1008,7 +1010,7 @@ export default function ManagePage() {
                 autoFocus
               />
             </div>
-            <div className="mb-6">
+            <div className="mb-4">
               <label className="block text-sm text-slate-500 mb-2">ประเภทการเติม</label>
               <TypeButtons
                 typeKey={newGameTypeKey} onTypeKey={setNewGameTypeKey}
@@ -1016,6 +1018,18 @@ export default function ManagePage() {
                 customTypes={customEmailTypes}
               />
             </div>
+            {['UID', 'OTHER_UID'].includes(computedFillType(newGameTypeKey, newGameOtherStock)) && (
+              <div className="mb-4">
+                <label className="block text-sm text-slate-500 mb-1.5">ชื่อร้าน <span className="text-slate-300">(ไม่บังคับ)</span></label>
+                <input
+                  type="text"
+                  value={newGameShopName}
+                  onChange={e => setNewGameShopName(e.target.value)}
+                  placeholder="เช่น ร้าน A, TopupShop..."
+                  className={`w-full ${inputCls}`}
+                />
+              </div>
+            )}
             <div className="mb-5">
               <label className="block text-sm text-slate-500 mb-1.5">Copy สินค้าจาก Template (ไม่บังคับ)</label>
               <select
@@ -1058,7 +1072,7 @@ export default function ManagePage() {
                 autoFocus
               />
             </div>
-            <div className="mb-6">
+            <div className="mb-4">
               <label className="block text-sm text-slate-500 mb-2">ประเภทการเติม</label>
               <TypeButtons
                 typeKey={editGameTypeKey} onTypeKey={setEditGameTypeKey}
@@ -1066,6 +1080,18 @@ export default function ManagePage() {
                 customTypes={customEmailTypes}
               />
             </div>
+            {['UID', 'OTHER_UID'].includes(computedFillType(editGameTypeKey, editGameOtherStock)) && (
+              <div className="mb-5">
+                <label className="block text-sm text-slate-500 mb-1.5">ชื่อร้าน <span className="text-slate-300">(ไม่บังคับ)</span></label>
+                <input
+                  type="text"
+                  value={editGameModal?.shop_name || ''}
+                  onChange={e => setEditGameModal(m => ({ ...m, shop_name: e.target.value }))}
+                  placeholder="เช่น ร้าน A, TopupShop..."
+                  className={`w-full ${inputCls}`}
+                />
+              </div>
+            )}
             <div className="flex gap-2.5">
               <button onClick={saveEditGame} className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2.5 rounded-lg cursor-pointer font-medium">
                 บันทึก
