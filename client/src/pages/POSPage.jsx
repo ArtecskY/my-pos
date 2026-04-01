@@ -288,7 +288,6 @@ export default function POSPage() {
 
   // ---- Payment modal ----
   async function openPayModal() {
-    if (cart.length === 0) return alert('กรุณาเลือกสินค้าก่อนครับ')
 
     const activeRes = activeReservationId ? reservations.find(r => r.id === activeReservationId) : null
     if (activeRes) {
@@ -405,7 +404,6 @@ export default function POSPage() {
 
   // ---- Reservation actions ----
   async function saveReservation() {
-    if (cart.length === 0) return alert('กรุณาเลือกสินค้าก่อนครับ')
     const res = await fetch('/reservations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -743,7 +741,7 @@ export default function POSPage() {
           {/* Buy mode: channel + TW + checkout button */}
           {cartMode === 'buy' && (
             <>
-              {cart.length > 0 && (
+              {true && (
                 <div className="mt-3">
                   <p className="text-xs text-slate-400 mb-1.5">ช่องทาง</p>
                   <div className="flex gap-2">
@@ -792,7 +790,7 @@ export default function POSPage() {
           {/* Reserve mode: reservation form + save button */}
           {cartMode === 'reserve' && (
             <>
-              {cart.length > 0 && (
+              {true && (
                 <div className="mt-3 space-y-2.5">
                   <p className="text-xs font-semibold text-orange-600">ข้อมูลการจอง</p>
                   <input

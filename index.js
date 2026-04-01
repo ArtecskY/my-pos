@@ -837,8 +837,7 @@ initDB().then(() => {
   })
 
   app.post('/reservations', requireLogin, (req, res) => {
-    const { customer_name, transfer_amount, reserve_time, channel, items } = req.body
-    if (!items || items.length === 0) return res.status(400).json({ error: 'กรุณาเลือกสินค้า' })
+    const { customer_name, transfer_amount, reserve_time, channel, items = [] } = req.body
     db.run('INSERT INTO reservations (customer_name, transfer_amount, reserve_time, channel) VALUES (?,?,?,?)',
       [customer_name || null, transfer_amount || null, reserve_time || null, channel || null])
     const r = db.exec('SELECT last_insert_rowid()')
