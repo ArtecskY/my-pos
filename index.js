@@ -10,6 +10,7 @@ const { exportDailyOrders } = require('./sheets')
 const cron = require('node-cron')
 
 const app = express()
+app.set('trust proxy', 1)
 app.use(express.json())
 app.use(cors({
   origin: 'http://localhost:5173',
@@ -21,9 +22,14 @@ app.use(express.static(path.join(__dirname, 'client/dist')))
 app.use('/uploads', express.static(UPLOADS_DIR))
 app.use(express.static('public'))
 app.use(session({
-  secret: 'pos-secret-key',
+  secret: process.env.SESSION_SECRET || 'pos-secret-key',
   resave: false,
-  saveUninitialized: false
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000
+  }
 }))
 
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true })
