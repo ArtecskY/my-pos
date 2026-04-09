@@ -8,14 +8,18 @@ export default function AuthScreen({ onLogin }) {
   async function submit() {
     setError('')
     if (!username || !password) { setError('กรุณากรอก username และ password'); return }
-    const res = await fetch('/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    })
-    const data = await res.json()
-    if (!res.ok) { setError(data.error); return }
-    onLogin(data)
+    try {
+      const res = await fetch('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'เกิดข้อผิดพลาด'); return }
+      onLogin(data)
+    } catch (e) {
+      setError('ไม่สามารถเชื่อมต่อ server ได้ กรุณาลองใหม่')
+    }
   }
 
   return (
