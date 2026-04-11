@@ -466,7 +466,7 @@ initDB().then(() => {
   }
 
   app.post('/orders', requireLogin, (req, res) => {
-    const { items, manualItems = [], transfer_amount, transfer_time, channel, tw, reservation_id } = req.body
+    const { items, manualItems = [], transfer_amount, transfer_time, transfer_time2, channel, tw, reservation_id } = req.body
     // Validate stock before proceeding
     const emailPendingDeductions = {} // track total deductions per email_id in this order
     for (const item of items) {
@@ -564,8 +564,8 @@ initDB().then(() => {
       total += result[0].values[0][0] * item.quantity
     }
 
-    db.run('INSERT INTO orders (total, transfer_amount, transfer_time, channel, tw) VALUES (?, ?, ?, ?, ?)',
-      [total, transfer_amount || null, transfer_time || null, channel || null, tw ? 1 : 0])
+    db.run('INSERT INTO orders (total, transfer_amount, transfer_time, transfer_time2, channel, tw) VALUES (?, ?, ?, ?, ?, ?)',
+      [total, transfer_amount || null, transfer_time || null, transfer_time2 || null, channel || null, tw ? 1 : 0])
     const orderResult = db.exec('SELECT last_insert_rowid()')
     const orderId = orderResult[0].values[0][0]
 

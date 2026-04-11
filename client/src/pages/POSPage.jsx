@@ -50,6 +50,7 @@ export default function POSPage() {
   const [showPayModal, setShowPayModal] = useState(false)
   const [transferAmount, setTransferAmount] = useState('')
   const [transferTime, setTransferTime] = useState('')
+  const [transferTime2, setTransferTime2] = useState('')
 
   // keyed by item.id (non-split) หรือ splitKey (split)
   const [razerAmounts, setRazerAmounts] = useState({})
@@ -383,6 +384,7 @@ export default function POSPage() {
         manualItems,
         transfer_amount: transferAmount ? Number(transferAmount) : null,
         transfer_time: transferTime || null,
+        transfer_time2: transferTime2 ? `${transferTime.slice(0, 10)}T${transferTime2}` : null,
         channel: channel || null,
         tw: tw ? 1 : 0,
         reservation_id: activeReservationId || null,
@@ -395,6 +397,7 @@ export default function POSPage() {
     setCart([])
     setChannel(null)
     setTw(false)
+    setTransferTime2('')
     if (activeReservationId) {
       setActiveReservationId(null)
       loadReservations()
@@ -960,10 +963,36 @@ export default function POSPage() {
                 placeholder="0.00" />
             </div>
             <div className="mb-6">
-              <label className="block text-sm text-slate-500 mb-1.5">เวลาโอน</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-sm text-slate-500">เวลาโอน</label>
+                {!transferTime2 ? (
+                  <button
+                    type="button"
+                    onClick={() => setTransferTime2('00:00')}
+                    className="text-xs text-blue-500 hover:text-blue-700 cursor-pointer flex items-center gap-0.5"
+                  >+ เพิ่มเวลาที่ 2</button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setTransferTime2('')}
+                    className="text-xs text-slate-400 hover:text-red-500 cursor-pointer"
+                  >ลบเวลาที่ 2</button>
+                )}
+              </div>
               <input type="datetime-local" value={transferTime}
                 onChange={e => setTransferTime(e.target.value)}
                 className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" />
+              {transferTime2 !== '' && (
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-slate-400 font-bold text-sm">+</span>
+                  <input
+                    type="time"
+                    value={transferTime2}
+                    onChange={e => setTransferTime2(e.target.value)}
+                    className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Email-credit items */}
