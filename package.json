@@ -25,11 +25,13 @@
     "googleapis": "^171.4.0",
     "multer": "^2.1.0",
     "node-cron": "^4.2.1",
-    "puppeteer": "^24.38.0",
-    "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "sql.js": "^1.14.0",
     "tailwindcss": "^4.2.1"
+  },
+  "optionalDependencies": {
+    "puppeteer": "^24.38.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

@@ -1,11 +1,13 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "npm install && npm run build"
+buildCommand = "npm install --omit=optional && npm run build"
 
 [deploy]
 startCommand = "npm start"
 restartPolicyType = "ON_FAILURE"
 
 # ตั้ง Environment Variable ใน Railway Dashboard:
-#   DATA_DIR = /data
-# แล้ว mount Railway Volume ที่ /data
+#   DATA_DIR = /data          (mount Railway Volume ที่ /data สำหรับ pos.db)
+#   NODE_ENV = production
+#   SESSION_SECRET = <random string>
+#   PUPPETEER_SKIP_DOWNLOAD = true  (ข้าม download Chromium ถ้าไม่ใช้ bank bot)

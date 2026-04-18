@@ -1480,7 +1480,16 @@ initDB().then(() => {
   }, { timezone: 'Asia/Bangkok' })
 
   // ── Bank KBiz routes ────────────────────────────────────────
-  const { loginKBiz, snapshotKBiz, getSessionStatus, closeKBiz } = require('./bank-bot')
+  let loginKBiz, snapshotKBiz, getSessionStatus, closeKBiz
+  try {
+    ;({ loginKBiz, snapshotKBiz, getSessionStatus, closeKBiz } = require('./bank-bot'))
+  } catch (e) {
+    console.warn('⚠️  bank-bot ไม่พร้อมใช้งาน (puppeteer อาจไม่ได้ติดตั้ง):', e.message)
+    loginKBiz = async () => { throw new Error('Bank bot ไม่พร้อมใช้งานบน server นี้') }
+    snapshotKBiz = async () => { throw new Error('Bank bot ไม่พร้อมใช้งานบน server นี้') }
+    getSessionStatus = () => ({ active: false })
+    closeKBiz = async () => {}
+  }
   const BANK_CONFIG_FILE = path.join(__dirname, '.kbiz-config.json')
   const BANK_SCREENSHOTS_DIR = path.join(__dirname, 'public', 'bank-screenshots')
   if (!fs.existsSync(BANK_SCREENSHOTS_DIR)) fs.mkdirSync(BANK_SCREENSHOTS_DIR, { recursive: true })
@@ -1587,4 +1596,7 @@ initDB().then(() => {
   // Graceful shutdown: ปิด browser KBiz ด้วย
   process.on('SIGINT', async () => { await closeKBiz(); process.exit(0) })
   process.on('SIGTERM', async () => { await closeKBiz(); process.exit(0) })
+}).catch(err => {
+  console.error('❌ เกิดข้อผิดพลาดในการเริ่มต้น server:', err)
+  process.exit(1)
 })
