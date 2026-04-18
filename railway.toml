@@ -5,6 +5,8 @@ buildCommand = "npm install --omit=optional && npm run build"
 [deploy]
 startCommand = "npm start"
 restartPolicyType = "ON_FAILURE"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
 
 # ตั้ง Environment Variable ใน Railway Dashboard:
 #   DATA_DIR = /data          (mount Railway Volume ที่ /data สำหรับ pos.db)

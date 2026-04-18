@@ -61,6 +61,9 @@ function requireLogin(req, res, next) {
 
 const reservationSseClients = new Set()
 
+// Health check — Railway ใช้ตรวจสอบว่า server ทำงานอยู่
+app.get('/health', (req, res) => res.json({ status: 'ok' }))
+
 initDB().then(() => {
   const db = getDB()
 
