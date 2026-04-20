@@ -107,6 +107,19 @@ async function initDB() {
   try { db.run('ALTER TABLE emails ADD COLUMN broken INTEGER DEFAULT 0') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE order_items ADD COLUMN manual_data TEXT') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE orders ADD COLUMN order_note TEXT') } catch (e) { /* column exists */ }
+  try { db.run("ALTER TABLE emails ADD COLUMN backup_codes TEXT NOT NULL DEFAULT '[]'") } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE emails ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE emails ADD COLUMN razer_account_type TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE categories ADD COLUMN razer_account_type TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE orders ADD COLUMN razer_url TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE orders ADD COLUMN razer_status TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE orders ADD COLUMN razer_note TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE products ADD COLUMN credits_min REAL') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE products ADD COLUMN credits_max REAL') } catch (e) { /* column exists */ }
+  db.run(`CREATE TABLE IF NOT EXISTS razer_account_types (
+    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE
+  )`)
   db.run(`CREATE TABLE IF NOT EXISTS email_topups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email_id INTEGER NOT NULL,

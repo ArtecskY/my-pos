@@ -8,6 +8,8 @@ const path = require('path')
 const fs = require('fs')
 const { exportDailyOrders } = require('./sheets')
 const cron = require('node-cron')
+let razerBot = null
+try { razerBot = require('./razer-bot') } catch (e) { console.warn('[razer-bot] puppeteer ไม่พร้อม:', e.message) }
 
 const app = express()
 app.set('trust proxy', 1)
@@ -68,17 +70,18 @@ initDB().then(() => {
   const db = getDB()
 
   app.get('/categories', (req, res) => {
-    const result = db.exec('SELECT id, name, fill_type, shop_name FROM categories ORDER BY name')
+    const result = db.exec('SELECT id, name, fill_type, shop_name, razer_account_type FROM categories ORDER BY name')
     const categories = result[0] ? result[0].values.map(row => ({
-      id: row[0], name: row[1], fill_type: row[2] || 'UID', shop_name: row[3] || null
+      id: row[0], name: row[1], fill_type: row[2] || 'UID', shop_name: row[3] || null, razer_account_type: row[4] || null
     })) : []
     res.json(categories)
   })
 
   app.post('/categories', requireLogin, (req, res) => {
-    const { name, fill_type, shop_name } = req.body
+    const { name, fill_type, shop_name, razer_account_type } = req.body
     try {
-      db.run('INSERT INTO categories (name, fill_type, shop_name) VALUES (?, ?, ?)', [name, fill_type || 'UID', shop_name || null])
+      db.run('INSERT INTO categories (name, fill_type, shop_name, razer_account_type) VALUES (?, ?, ?, ?)',
+        [name, fill_type || 'UID', shop_name || null, razer_account_type || null])
       const result = db.exec('SELECT last_insert_rowid()')
       const id = result[0].values[0][0]
       save()
@@ -89,11 +92,13 @@ initDB().then(() => {
   })
 
   app.put('/categories/:id', requireLogin, (req, res) => {
-    const { name, fill_type, shop_name } = req.body
+    const { name, fill_type, shop_name, razer_account_type } = req.body
     if (name !== undefined) {
-      db.run('UPDATE categories SET name=?, fill_type=?, shop_name=? WHERE id=?', [name, fill_type, shop_name ?? null, req.params.id])
+      db.run('UPDATE categories SET name=?, fill_type=?, shop_name=?, razer_account_type=? WHERE id=?',
+        [name, fill_type, shop_name ?? null, razer_account_type || null, req.params.id])
     } else {
-      db.run('UPDATE categories SET fill_type=?, shop_name=? WHERE id=?', [fill_type, shop_name ?? null, req.params.id])
+      db.run('UPDATE categories SET fill_type=?, shop_name=?, razer_account_type=? WHERE id=?',
+        [fill_type, shop_name ?? null, razer_account_type || null, req.params.id])
     }
     save()
     res.json({ message: 'อัปเดตหมวดหมู่สำเร็จ' })
@@ -110,7 +115,7 @@ initDB().then(() => {
     const result = db.exec(`
       SELECT p.id, p.name, p.price, p.stock, p.image, p.category_id, c.name, c.fill_type, p.is_bundle,
         COALESCE((SELECT SUM(e.credits) FROM emails e WHERE e.fill_type = c.fill_type), 0),
-        p.price_usd, p.cost
+        p.price_usd, p.cost, p.credits_min, p.credits_max
       FROM products p
       LEFT JOIN categories c ON c.id = p.category_id
       ORDER BY p.sort_order ASC, p.id ASC
@@ -125,6 +130,8 @@ initDB().then(() => {
         category_name: row[6] || null, fill_type, is_bundle,
         price_usd: row[10] ?? null,
         cost: row[11] ?? 0,
+        credits_min: row[12] ?? null,
+        credits_max: row[13] ?? null,
       }
     }) : []
     // คำนวณ stock ของ bundle และ ID_PASS จาก sub-tables
@@ -167,9 +174,9 @@ initDB().then(() => {
   })
 
   app.post('/products', requireLogin, (req, res) => {
-    const { name, price, stock, category_id, is_bundle, price_usd, cost } = req.body
-    db.run('INSERT INTO products (name, price, stock, category_id, is_bundle, price_usd, cost) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [name, price, stock, category_id || null, is_bundle ? 1 : 0, price_usd ?? null, cost ?? 0])
+    const { name, price, stock, category_id, is_bundle, price_usd, cost, credits_min, credits_max } = req.body
+    db.run('INSERT INTO products (name, price, stock, category_id, is_bundle, price_usd, cost, credits_min, credits_max) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [name, price, stock, category_id || null, is_bundle ? 1 : 0, price_usd ?? null, cost ?? 0, credits_min ?? null, credits_max ?? null])
     const result = db.exec('SELECT last_insert_rowid()')
     const id = result[0].values[0][0]
     save()
@@ -189,9 +196,9 @@ initDB().then(() => {
   })
 
   app.put('/products/:id', requireLogin, (req, res) => {
-    const { name, price, stock, category_id, price_usd, cost } = req.body
-    db.run('UPDATE products SET name=?, price=?, stock=?, category_id=?, price_usd=?, cost=? WHERE id=?',
-      [name, price, stock, category_id || null, price_usd ?? null, cost ?? 0, req.params.id])
+    const { name, price, stock, category_id, price_usd, cost, credits_min, credits_max } = req.body
+    db.run('UPDATE products SET name=?, price=?, stock=?, category_id=?, price_usd=?, cost=?, credits_min=?, credits_max=? WHERE id=?',
+      [name, price, stock, category_id || null, price_usd ?? null, cost ?? 0, credits_min ?? null, credits_max ?? null, req.params.id])
     save()
     res.json({ message: 'แก้ไขสินค้าสำเร็จ' })
   })
@@ -371,6 +378,62 @@ initDB().then(() => {
     return r[0]?.values[0][0] || 'EMAIL'
   }
 
+  // ── Razer Order Queue (ทำทีละ 1 รายการ) ─────────────────────
+  const razerQueue = []
+  let razerQueueRunning = false
+
+  function enqueueRazerOrder(orderId, order) {
+    razerQueue.push({ orderId, order })
+    console.log(`[razer-queue] เพิ่ม order#${orderId} เข้าคิว (คิวรวม: ${razerQueue.length})`)
+    processRazerQueue()
+  }
+
+  function processRazerQueue() {
+    if (razerQueueRunning || razerQueue.length === 0) return
+    const { orderId, order } = razerQueue.shift()
+    razerQueueRunning = true
+    console.log(`[razer-queue] เริ่ม order#${orderId} (คิวรอ: ${razerQueue.length})`)
+    razerBot.runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccounts, db, save })
+      .catch(e => {
+        console.error(`[razer-queue] order#${orderId} failed:`, e.message)
+        db.run('UPDATE orders SET razer_status=?, razer_note=? WHERE id=?', ['failed', e.message, orderId])
+        save()
+      })
+      .finally(() => {
+        razerQueueRunning = false
+        console.log(`[razer-queue] order#${orderId} เสร็จ — คิวรอ: ${razerQueue.length}`)
+        processRazerQueue()  // ดึงรายการถัดไป
+      })
+  }
+  // ────────────────────────────────────────────────────────────
+
+  function loadRazerAccounts() {
+    const r = db.exec(
+      'SELECT id, email, password, credits, broken, is_locked, backup_codes, razer_account_type FROM emails WHERE fill_type=\'RAZER\''
+    )
+    if (!r[0]) return []
+    return r[0].values.map(row => ({
+      id: row[0],
+      email: row[1],
+      password: row[2],
+      credits: row[3] || 0,
+      broken: row[4] || 0,
+      is_locked: row[5] || 0,
+      backup_codes: (() => { try { return JSON.parse(row[6] || '[]') } catch { return [] } })(),
+      razer_account_type: row[7] || null,
+    }))
+  }
+
+  function saveRazerAccounts(accounts) {
+    for (const acc of accounts) {
+      db.run(
+        'UPDATE emails SET credits=?, is_locked=?, backup_codes=? WHERE id=?',
+        [acc.credits, acc.is_locked ? 1 : 0, JSON.stringify(acc.backup_codes || []), acc.id]
+      )
+    }
+    save()
+  }
+
   // --- Email Types (custom) ---
   app.get('/email-types', requireLogin, (req, res) => {
     const result = db.exec('SELECT id, key, label, color, behavior FROM email_types ORDER BY id ASC')
@@ -469,13 +532,19 @@ initDB().then(() => {
   }
 
   app.post('/orders', requireLogin, (req, res) => {
-    const { items, manualItems = [], transfer_amount, transfer_time, transfer_time2, channel, tw, reservation_id } = req.body
+    const { items, manualItems = [], transfer_amount, transfer_time, transfer_time2, channel, tw, reservation_id, razer_url } = req.body
     // Validate stock before proceeding
     const emailPendingDeductions = {} // track total deductions per email_id in this order
     for (const item of items) {
       const pRes = db.exec('SELECT stock, name, category_id, price, is_bundle, price_usd FROM products WHERE id=?', [item.product_id])
       if (!pRes[0]) return res.status(400).json({ error: 'ไม่พบสินค้า' })
       const [stock, name, category_id, price, is_bundle, price_usd_val] = pRes[0].values[0]
+
+      // RAZER_AUTO: ข้าม validation email/credit (บอทจัดการเอง)
+      if (!is_bundle) {
+        const catCheck = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
+        if (catCheck[0]?.values[0][0] === 'RAZER_AUTO') continue
+      }
 
       if (is_bundle) {
         const catRes0 = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
@@ -661,7 +730,9 @@ initDB().then(() => {
         const catRes = db.exec('SELECT fill_type, shop_name FROM categories WHERE id=?', [category_id])
         const fill_type = catRes[0]?.values[0][0] || 'UID'
         shopNameToStore = catRes[0]?.values[0][1] || null
-        if (fill_type === 'ID_PASS') {
+        if (fill_type === 'RAZER_AUTO') {
+          // บอทจะจัดการ deduct credits + บันทึก email_id_used หลัง checkout สำเร็จ
+        } else if (fill_type === 'ID_PASS') {
           priceUsdUsed = price_usd
           let remaining = item.quantity
           const lots = db.exec('SELECT id, stock, cost FROM product_lots WHERE product_id=? AND stock > 0 AND (disabled IS NULL OR disabled=0) ORDER BY cost DESC', [item.product_id])
@@ -715,16 +786,49 @@ initDB().then(() => {
       db.run('DELETE FROM reservations WHERE id=?', [reservation_id])
     }
 
+    // ตรวจว่ามี RAZER_AUTO item ไหม
+    const hasRazerAuto = items.some(item => {
+      const p = db.exec('SELECT category_id FROM products WHERE id=?', [item.product_id])
+      const catId = p[0]?.values[0][0]
+      if (!catId) return false
+      const c = db.exec('SELECT fill_type FROM categories WHERE id=?', [catId])
+      return c[0]?.values[0][0] === 'RAZER_AUTO'
+    })
+
+    if (hasRazerAuto && razer_url) {
+      db.run('UPDATE orders SET razer_url=?, razer_status=? WHERE id=?', [razer_url, 'pending', orderId])
+    }
+
     save()
     broadcastReservations()
     res.json({ order_id: orderId, total })
+
+    // ยิง Razer bot async หลัง response
+    if (hasRazerAuto && razer_url && razerBot) {
+      const razerItem = items.find(item => {
+        const p = db.exec('SELECT category_id FROM products WHERE id=?', [item.product_id])
+        const catId = p[0]?.values[0][0]
+        if (!catId) return false
+        const c = db.exec('SELECT fill_type FROM categories WHERE id=?', [catId])
+        return c[0]?.values[0][0] === 'RAZER_AUTO'
+      })
+      if (razerItem) {
+        const p = db.exec('SELECT category_id FROM products WHERE id=?', [razerItem.product_id])
+        const gameId = p[0]?.values[0][0]
+        enqueueRazerOrder(
+          orderId,
+          { gameId, packageId: razerItem.product_id, userFields: { urlLink: razer_url } }
+        )
+      }
+    }
   })
 
   app.get('/orders', requireLogin, (req, res) => {
-    const result = db.exec('SELECT id, total, created_at, transfer_amount, transfer_time, channel FROM orders ORDER BY transfer_time DESC NULLS LAST, id DESC')
+    const result = db.exec('SELECT id, total, created_at, transfer_amount, transfer_time, channel, razer_status, razer_note FROM orders ORDER BY transfer_time DESC NULLS LAST, id DESC')
     const orders = result[0] ? result[0].values.map(row => ({
       id: row[0], total: row[1], created_at: row[2],
-      transfer_amount: row[3], transfer_time: row[4], channel: row[5] || null
+      transfer_amount: row[3], transfer_time: row[4], channel: row[5] || null,
+      razer_status: row[6] || null, razer_note: row[7] || null,
     })) : []
     res.json(orders)
   })
@@ -973,7 +1077,9 @@ initDB().then(() => {
   app.get('/emails', requireLogin, (req, res) => {
     const result = db.exec(`
       SELECT e.id, e.email, e.password, e.link_sms, e.credits, e.note, e.cost, e.fill_type,
-             COALESCE(e.initial_credits, e.credits) as initial_credits, e.created_date, COALESCE(e.broken, 0) as broken
+             COALESCE(e.initial_credits, e.credits) as initial_credits, e.created_date, COALESCE(e.broken, 0) as broken,
+             COALESCE(e.backup_codes, '[]') as backup_codes, COALESCE(e.is_locked, 0) as is_locked,
+             e.razer_account_type
       FROM emails e
       ORDER BY e.id DESC
     `)
@@ -981,6 +1087,9 @@ initDB().then(() => {
       id: row[0], email: row[1], password: row[2], link_sms: row[3] || '',
       credits: row[4], note: row[5] || '', cost: row[6] || 0, fill_type: row[7] || null,
       initial_credits: row[8] ?? 0, created_date: row[9] || null, broken: row[10] === 1,
+      backup_codes: (() => { try { return JSON.parse(row[11] || '[]') } catch { return [] } })(),
+      is_locked: row[12] === 1,
+      razer_account_type: row[13] || null,
     })) : []
     res.json(emails)
   })
@@ -1005,9 +1114,12 @@ initDB().then(() => {
   })
 
   app.put('/emails/:id', requireLogin, (req, res) => {
-    const { email, password, link_sms, credits, note, cost, fill_type, broken, created_date } = req.body
-    db.run('UPDATE emails SET email=?, password=?, link_sms=?, credits=?, note=?, cost=?, fill_type=?, broken=?, created_date=? WHERE id=?',
-      [email, password || '', link_sms || null, credits || 0, note || null, cost || 0, fill_type || null, broken ? 1 : 0, created_date || null, req.params.id])
+    const { email, password, link_sms, credits, note, cost, fill_type, broken, created_date, backup_codes, razer_account_type } = req.body
+    const backupCodesStr = Array.isArray(backup_codes) ? JSON.stringify(backup_codes) : (backup_codes || '[]')
+    db.run(
+      'UPDATE emails SET email=?, password=?, link_sms=?, credits=?, note=?, cost=?, fill_type=?, broken=?, created_date=?, backup_codes=?, razer_account_type=? WHERE id=?',
+      [email, password || '', link_sms || null, credits || 0, note || null, cost || 0, fill_type || null, broken ? 1 : 0, created_date || null, backupCodesStr, razer_account_type || null, req.params.id]
+    )
     save()
     res.json({ message: 'แก้ไข Email สำเร็จ' })
   })
@@ -1023,6 +1135,74 @@ initDB().then(() => {
     db.run('DELETE FROM emails WHERE id=?', [req.params.id])
     save()
     res.json({ message: 'ลบ Email สำเร็จ' })
+  })
+
+  // ── Razer Account Types ──────────────────────────────────────
+  app.get('/razer-account-types', requireLogin, (req, res) => {
+    const r = db.exec('SELECT id, name FROM razer_account_types ORDER BY name')
+    res.json(r[0] ? r[0].values.map(row => ({ id: row[0], name: row[1] })) : [])
+  })
+
+  app.post('/razer-account-types', requireLogin, (req, res) => {
+    const { name } = req.body
+    if (!name?.trim()) return res.status(400).json({ error: 'กรุณากรอกชื่อประเภท' })
+    try {
+      db.run('INSERT INTO razer_account_types (name) VALUES (?)', [name.trim()])
+      const r = db.exec('SELECT last_insert_rowid()')
+      save()
+      res.json({ id: r[0].values[0][0], name: name.trim() })
+    } catch {
+      res.status(400).json({ error: 'ชื่อนี้มีอยู่แล้ว' })
+    }
+  })
+
+  app.delete('/razer-account-types/:id', requireLogin, (req, res) => {
+    db.run('DELETE FROM razer_account_types WHERE id=?', [req.params.id])
+    save()
+    res.json({ message: 'ลบสำเร็จ' })
+  })
+
+  // ── Razer Bot routes ─────────────────────────────────────────
+  app.post('/razer-accounts/:id/regen', requireLogin, (req, res) => {
+    if (!razerBot) return res.status(503).json({ error: 'Razer bot ไม่พร้อม (puppeteer ไม่ติดตั้ง)' })
+    const emailRes = db.exec('SELECT id, email, password, backup_codes FROM emails WHERE id=? AND fill_type=\'RAZER\'', [req.params.id])
+    if (!emailRes[0]) return res.status(404).json({ error: 'ไม่พบ Razer account' })
+    const row = emailRes[0].values[0]
+    const account = {
+      id: row[0], email: row[1], password: row[2],
+      backup_codes: (() => { try { return JSON.parse(row[3] || '[]') } catch { return [] } })(),
+    }
+    res.json({ message: 'เริ่ม regen backup codes แล้ว' })
+    razerBot.regenAccountBackupCodes(account, loadRazerAccounts, saveRazerAccounts)
+      .then(count => console.log(`[razer-bot] regen สำเร็จ: ${count} codes สำหรับ email ${account.id}`))
+      .catch(e => console.error(`[razer-bot] regen failed email ${account.id}:`, e.message))
+  })
+
+  app.get('/razer-status/:orderId', requireLogin, (req, res) => {
+    const r = db.exec('SELECT razer_status, razer_note FROM orders WHERE id=?', [req.params.orderId])
+    if (!r[0]) return res.status(404).json({ error: 'ไม่พบ order' })
+    const [status, note] = r[0].values[0]
+    res.json({ status: status || null, note: note || null })
+  })
+
+  app.get('/razer-orders', requireLogin, (req, res) => {
+    const r = db.exec(`
+      SELECT o.id, o.created_at, o.total, o.razer_status, o.razer_note, o.razer_url,
+             p.name AS product_name
+      FROM orders o
+      LEFT JOIN order_items oi ON oi.order_id = o.id
+      LEFT JOIN products p ON p.id = oi.product_id
+      WHERE o.razer_url IS NOT NULL
+      ORDER BY o.id DESC
+      LIMIT 30
+    `)
+    if (!r[0]) return res.json([])
+    const rows = r[0].values.map(v => ({
+      id: v[0], created_at: v[1], total: v[2],
+      razer_status: v[3], razer_note: v[4], razer_url: v[5],
+      product_name: v[6],
+    }))
+    res.json(rows)
   })
 
   app.post('/emails/:id/topup', requireLogin, (req, res) => {
@@ -1233,6 +1413,7 @@ initDB().then(() => {
       LEFT JOIN categories c ON c.id = p.category_id
       LEFT JOIN emails e ON e.id = oi.email_id_used
       LEFT JOIN product_lots pl ON pl.id = oi.lot_id_used
+      WHERE (o.razer_status IS NULL OR o.razer_status != 'failed')
       ORDER BY COALESCE(o.transfer_time, o.created_at) DESC, o.id DESC, oi.id ASC
     `)
     const items = result[0] ? result[0].values.map(row => {

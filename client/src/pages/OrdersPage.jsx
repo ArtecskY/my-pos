@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 
 const FILL_TYPE_BADGE = {
-  'UID':        { label: 'UID',      cls: 'bg-slate-100 text-slate-600' },
-  'EMAIL':      { label: 'Apple ID', cls: 'bg-blue-100 text-blue-700' },
-  'RAZER':      { label: 'Razer',    cls: 'bg-green-100 text-green-700' },
-  'ID_PASS':    { label: 'Stock77',  cls: 'bg-yellow-100 text-yellow-700' },
-  'OTHER_UID':  { label: 'UID',      cls: 'bg-slate-100 text-slate-600' },
-  'OTHER_EMAIL':{ label: 'Email',    cls: 'bg-purple-100 text-purple-700' },
+  'UID':         { label: 'UID',         cls: 'bg-slate-100 text-slate-600' },
+  'EMAIL':       { label: 'Apple ID',    cls: 'bg-blue-100 text-blue-700' },
+  'RAZER':       { label: 'Razer',       cls: 'bg-green-100 text-green-700' },
+  'RAZER_AUTO':  { label: 'Razer Auto',  cls: 'bg-orange-100 text-orange-700' },
+  'ID_PASS':     { label: 'Stock77',     cls: 'bg-yellow-100 text-yellow-700' },
+  'OTHER_UID':   { label: 'UID',         cls: 'bg-slate-100 text-slate-600' },
+  'OTHER_EMAIL': { label: 'Email',       cls: 'bg-purple-100 text-purple-700' },
 }
 
 function FillBadge({ fill_type, customTypes = [] }) {
@@ -987,7 +988,24 @@ export default function OrdersPage() {
                                   ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700">{md.supplier_name}</span>
                                   : <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">Manual</span>
                               } catch { return null }
-                            })() : (
+                            })() : item.fill_type === 'RAZER_AUTO' ? (
+                              <div className="flex flex-col items-center gap-1">
+                                <FillBadge fill_type={item.fill_type} customTypes={customTypes} />
+                                {order.razer_status && (
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                    order.razer_status === 'success' ? 'bg-green-100 text-green-700' :
+                                    order.razer_status === 'failed'  ? 'bg-red-100 text-red-700' :
+                                    order.razer_status === 'processing' ? 'bg-yellow-100 text-yellow-700' :
+                                    'bg-slate-100 text-slate-500'
+                                  }`} title={order.razer_note || ''}>
+                                    {order.razer_status === 'success' ? '✅ สำเร็จ' :
+                                     order.razer_status === 'failed'  ? '❌ ล้มเหลว' :
+                                     order.razer_status === 'processing' ? '⏳ กำลังเติม' :
+                                     '⌛ รอบอท'}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
                               <FillBadge fill_type={item.fill_type} customTypes={customTypes} />
                             )}
                           </td>

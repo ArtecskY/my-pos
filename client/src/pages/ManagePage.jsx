@@ -10,10 +10,11 @@ const TYPE_CONFIG = {
 }
 
 const TYPE_BUTTONS = [
-  { key: 'UID',     label: 'เติมผ่าน UID',      activeCls: 'bg-slate-600 text-white border-transparent' },
-  { key: 'EMAIL',   label: 'เติมผ่าน Apple ID',   activeCls: 'bg-blue-500 text-white border-transparent' },
-  { key: 'RAZER',   label: 'เติมผ่าน Razer',     activeCls: 'bg-green-500 text-white border-transparent' },
-  { key: 'ID_PASS', label: 'ID-PASS (Stock 77)', activeCls: 'bg-yellow-500 text-white border-transparent' },
+  { key: 'UID',        label: 'เติมผ่าน UID',         activeCls: 'bg-slate-600 text-white border-transparent' },
+  { key: 'EMAIL',      label: 'เติมผ่าน Apple ID',    activeCls: 'bg-blue-500 text-white border-transparent' },
+  { key: 'RAZER',      label: 'เติมผ่าน Razer',       activeCls: 'bg-green-500 text-white border-transparent' },
+  { key: 'RAZER_AUTO', label: 'Razer Auto (Bot)',     activeCls: 'bg-orange-500 text-white border-transparent' },
+  { key: 'ID_PASS',    label: 'ID-PASS (Stock 77)',   activeCls: 'bg-yellow-500 text-white border-transparent' },
 ]
 
 function usesEmailCredits(fill_type, customTypes = []) {
@@ -75,6 +76,7 @@ export default function ManagePage() {
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [customEmailTypes, setCustomEmailTypes] = useState([])
+  const [razerAccountTypes, setRazerAccountTypes] = useState([])
   const [search, setSearch] = useState('')
   const [selectedCat, setSelectedCat] = useState('')
   const [selectedFillType, setSelectedFillType] = useState('')
@@ -86,12 +88,14 @@ export default function ManagePage() {
   const [newGameOtherStock, setNewGameOtherStock] = useState('UID')
   const [newGameShopName, setNewGameShopName] = useState('')
   const [newGameTemplate, setNewGameTemplate] = useState('')
+  const [newGameRazerAccountType, setNewGameRazerAccountType] = useState('')
   const [addGameError, setAddGameError] = useState('')
 
   // Edit game modal
   const [editGameModal, setEditGameModal] = useState(null)
   const [editGameTypeKey, setEditGameTypeKey] = useState('UID')
   const [editGameOtherStock, setEditGameOtherStock] = useState('UID')
+  const [editGameRazerAccountType, setEditGameRazerAccountType] = useState('')
 
   // Inline add product per card
   const [expandedCard, setExpandedCard] = useState(null)
@@ -173,14 +177,16 @@ export default function ManagePage() {
 
 
   async function loadAll() {
-    const [p, c, et] = await Promise.all([
+    const [p, c, et, rat] = await Promise.all([
       fetch('/products').then(r => r.json()),
       fetch('/categories').then(r => r.json()),
       fetch('/email-types').then(r => r.json()),
+      fetch('/razer-account-types').then(r => r.json()),
     ])
     setProducts(p)
     setCategories(c)
     setCustomEmailTypes(et)
+    setRazerAccountTypes(rat)
     // Load bundle components for display
     const bundleProds = p.filter(prod => prod.is_bundle)
     if (bundleProds.length > 0) {
@@ -207,14 +213,20 @@ export default function ManagePage() {
     setAddGameError('')
     if (!newGameName.trim()) { setAddGameError('กรุณากรอกชื่อเกม'); return }
     const fill_type = computedFillType(newGameTypeKey, newGameOtherStock)
+    if (fill_type === 'RAZER_AUTO' && !newGameRazerAccountType.trim()) {
+      setAddGameError('กรุณาระบุ Razer Account Type สำหรับ RAZER_AUTO'); return
+    }
     const res = await fetch('/categories', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newGameName.trim(), fill_type, shop_name: newGameShopName.trim() || null }),
+      body: JSON.stringify({
+        name: newGameName.trim(), fill_type,
+        shop_name: newGameShopName.trim() || null,
+        razer_account_type: fill_type === 'RAZER_AUTO' ? newGameRazerAccountType.trim() : null,
+      }),
     })
     const data = await res.json()
     if (!res.ok) { setAddGameError(data.error); return }
-    // ถ้าเลือก template ให้ copy สินค้าจากเกมนั้นมาอัตโนมัติ
     if (newGameTemplate) {
       await fetch(`/categories/${data.id}/copy-products`, {
         method: 'POST',
@@ -228,11 +240,13 @@ export default function ManagePage() {
     setNewGameOtherStock('UID')
     setNewGameShopName('')
     setNewGameTemplate('')
+    setNewGameRazerAccountType('')
     loadAll()
   }
 
   function openEditGame(cat) {
     setEditGameModal({ ...cat })
+    setEditGameRazerAccountType(cat.razer_account_type || '')
     if (cat.fill_type === 'OTHER_UID') {
       setEditGameTypeKey('OTHER'); setEditGameOtherStock('UID')
     } else if (cat.fill_type === 'OTHER_EMAIL') {
@@ -248,7 +262,11 @@ export default function ManagePage() {
     await fetch(`/categories/${editGameModal.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: editGameModal.name.trim(), fill_type, shop_name: editGameModal.shop_name || null }),
+      body: JSON.stringify({
+        name: editGameModal.name.trim(), fill_type,
+        shop_name: editGameModal.shop_name || null,
+        razer_account_type: fill_type === 'RAZER_AUTO' ? editGameRazerAccountType.trim() || null : null,
+      }),
     })
     setEditGameModal(null)
     loadAll()
@@ -280,7 +298,8 @@ export default function ManagePage() {
     if (Number(form.price) < 0) { err('ราคาต้องไม่ติดลบ'); return }
 
     const isIDPassCat = isIDPass(cat.fill_type)
-    const needsStock = !usesEmailCredits(cat.fill_type, customEmailTypes) && !isIDPassCat
+    const isRazerAutoCat = cat.fill_type === 'RAZER_AUTO'
+    const needsStock = !usesEmailCredits(cat.fill_type, customEmailTypes) && !isIDPassCat && !isRazerAutoCat
     if (needsStock && !form.unlimitedStock && form.stock === '') { err('กรุณากรอกสต็อก'); return }
     if (needsStock && !form.unlimitedStock && Number(form.stock) < 0) { err('สต็อกต้องไม่ติดลบ'); return }
 
@@ -294,6 +313,8 @@ export default function ManagePage() {
         category_id: cat.id,
         price_usd: form.price_usd !== '' ? Number(form.price_usd) : null,
         cost: form.cost !== '' ? Number(form.cost) : 0,
+        ...(isRazerAutoCat && form.credits_min !== '' && form.credits_min != null ? { credits_min: Number(form.credits_min) } : {}),
+        ...(isRazerAutoCat && form.credits_max !== '' && form.credits_max != null ? { credits_max: Number(form.credits_max) } : {}),
       }),
     })
     const data = await res.json()
@@ -327,7 +348,7 @@ export default function ManagePage() {
   }
 
   async function saveEdit() {
-    const { id, name, price, stock, category_id, fill_type, price_usd, cost, is_bundle } = editModal
+    const { id, name, price, stock, category_id, fill_type, price_usd, cost, is_bundle, credits_min, credits_max } = editModal
     if (!name || price === '') return
 
     // For bundles, auto-compute price_usd from components
@@ -348,6 +369,8 @@ export default function ManagePage() {
         category_id: category_id || null,
         price_usd: finalPriceUsd,
         cost: cost !== '' && cost != null ? Number(cost) : 0,
+        credits_min: fill_type === 'RAZER_AUTO' && credits_min !== '' && credits_min != null ? Number(credits_min) : null,
+        credits_max: fill_type === 'RAZER_AUTO' && credits_max !== '' && credits_max != null ? Number(credits_max) : null,
       }),
     })
 
@@ -787,7 +810,22 @@ export default function ManagePage() {
                         onChange={e => setAddForm(cat.id, { price: e.target.value })}
                         className={`w-28 ${inputCls}`}
                       />
-                      {isIDPass(cat.fill_type) ? (
+                      {cat.fill_type === 'RAZER_AUTO' ? (
+                        <>
+                          <input
+                            type="number" step="0.01" placeholder="Min Credits"
+                            value={form.credits_min || ''}
+                            onChange={e => setAddForm(cat.id, { credits_min: e.target.value })}
+                            className={`w-28 ${inputCls}`}
+                          />
+                          <input
+                            type="number" step="0.01" placeholder="Max Credits"
+                            value={form.credits_max || ''}
+                            onChange={e => setAddForm(cat.id, { credits_max: e.target.value })}
+                            className={`w-28 ${inputCls}`}
+                          />
+                        </>
+                      ) : isIDPass(cat.fill_type) ? (
                         <>
                           <input
                             type="number" placeholder="Stock"
@@ -1030,6 +1068,25 @@ export default function ManagePage() {
                 />
               </div>
             )}
+            {computedFillType(newGameTypeKey, newGameOtherStock) === 'RAZER_AUTO' && (
+              <div className="mb-4">
+                <label className="block text-sm text-slate-500 mb-1.5">Razer Account Type <span className="text-red-400">*</span></label>
+                {razerAccountTypes.length === 0 ? (
+                  <p className="text-xs text-orange-500">ยังไม่มี Account Type — ไปสร้างในหน้า Razer Bot ก่อน</p>
+                ) : (
+                  <select
+                    value={newGameRazerAccountType}
+                    onChange={e => setNewGameRazerAccountType(e.target.value)}
+                    className={`w-full ${inputCls} text-slate-600`}
+                  >
+                    <option value="">— เลือก Account Type —</option>
+                    {razerAccountTypes.map(t => (
+                      <option key={t.id} value={t.name}>{t.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
             <div className="mb-5">
               <label className="block text-sm text-slate-500 mb-1.5">Copy สินค้าจาก Template (ไม่บังคับ)</label>
               <select
@@ -1090,6 +1147,25 @@ export default function ManagePage() {
                   placeholder="เช่น ร้าน A, TopupShop..."
                   className={`w-full ${inputCls}`}
                 />
+              </div>
+            )}
+            {computedFillType(editGameTypeKey, editGameOtherStock) === 'RAZER_AUTO' && (
+              <div className="mb-5">
+                <label className="block text-sm text-slate-500 mb-1.5">Razer Account Type <span className="text-red-400">*</span></label>
+                {razerAccountTypes.length === 0 ? (
+                  <p className="text-xs text-orange-500">ยังไม่มี Account Type — ไปสร้างในหน้า Razer Bot ก่อน</p>
+                ) : (
+                  <select
+                    value={editGameRazerAccountType}
+                    onChange={e => setEditGameRazerAccountType(e.target.value)}
+                    className={`w-full ${inputCls} text-slate-600`}
+                  >
+                    <option value="">— เลือก Account Type —</option>
+                    {razerAccountTypes.map(t => (
+                      <option key={t.id} value={t.name}>{t.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
             )}
             <div className="flex gap-2.5">
@@ -1463,6 +1539,31 @@ export default function ManagePage() {
                   placeholder="0.00"
                 />
                 )}
+              </div>
+            )}
+            {editModal.fill_type === 'RAZER_AUTO' && (
+              <div className="mb-3.5">
+                <label className="block text-sm text-slate-500 mb-1.5">
+                  ช่วงเครดิต Razer Gold <span className="text-slate-400">(Min – Max)</span>
+                </label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="number" step="0.01" min="0"
+                    value={editModal.credits_min ?? ''}
+                    onChange={e => setEditModal(m => ({ ...m, credits_min: e.target.value }))}
+                    className={`flex-1 ${inputCls}`}
+                    placeholder="Min"
+                  />
+                  <span className="text-slate-400 text-sm">–</span>
+                  <input
+                    type="number" step="0.01" min="0"
+                    value={editModal.credits_max ?? ''}
+                    onChange={e => setEditModal(m => ({ ...m, credits_max: e.target.value }))}
+                    className={`flex-1 ${inputCls}`}
+                    placeholder="Max"
+                  />
+                </div>
+                <p className="text-xs text-slate-400 mt-1">บอทจะเช็ค Order total ว่าอยู่ในช่วงนี้ก่อนเติม</p>
               </div>
             )}
             <div className="mb-3.5">

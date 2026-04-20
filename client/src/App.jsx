@@ -8,6 +8,7 @@ import EmailsPage from './pages/EmailsPage'
 import UsersPage from './pages/UsersPage'
 import DashboardPage from './pages/DashboardPage'
 import BankPage from './pages/BankPage'
+import RazerPage from './pages/RazerPage'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -57,13 +58,14 @@ export default function App() {
 
       {/* Page content */}
       <div className="px-3 sm:px-6 py-4 sm:py-6">
-        {page === 'pos' && <POSPage />}
+        {page === 'pos' && <POSPage onNavigate={setPage} />}
         {page === 'manage' && <ManagePage />}
         {page === 'emails' && <EmailsPage />}
         {page === 'orders' && <OrdersPage />}
         {page === 'dashboard' && <DashboardPage />}
         {page === 'bank' && <BankPage />}
-{page === 'users' && user?.is_admin && <UsersPage currentUser={user} />}
+        {page === 'razer' && user?.is_admin && <RazerPage />}
+        {page === 'users' && user?.is_admin && <UsersPage currentUser={user} />}
       </div>
     </div>
   )

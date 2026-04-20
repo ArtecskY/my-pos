@@ -6,7 +6,8 @@ export default function NavTabs({ page, onChangePage, user }) {
     ['orders', 'ประวัติรายการ'],
     ['dashboard', 'Dashboard'],
     // ['bank', 'เช็คเงินเข้า'], // TODO: เปิดเมื่อระบบพร้อม
-...(user?.is_admin ? [['users', 'จัดการผู้ใช้']] : []),
+    ...(user?.is_admin ? [['razer', 'Razer Bot']] : []),
+    ...(user?.is_admin ? [['users', 'จัดการผู้ใช้']] : []),
   ]
   return (
     <div className="flex gap-0.5 border-b-2 border-slate-200 mb-5 overflow-x-auto">

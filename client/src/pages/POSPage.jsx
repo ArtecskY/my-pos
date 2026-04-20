@@ -24,6 +24,10 @@ function isRazerBehavior(fill_type, emailTypes = []) {
   return et?.behavior === 'RAZER' || et?.behavior === 'CREDITS'
 }
 
+function isRazerAuto(fill_type) {
+  return fill_type === 'RAZER_AUTO'
+}
+
 const EMAIL_BUILTINS = ['EMAIL', 'OTHER_EMAIL']
 function creditsNeeded(item, emailTypes, qty) {
   const q = qty ?? item.quantity
@@ -40,7 +44,7 @@ function newSplitKey(itemId) {
   return `${itemId}-s-${++splitCounter}`
 }
 
-export default function POSPage() {
+export default function POSPage({ onNavigate }) {
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [selectedCat, setSelectedCat] = useState('')
@@ -65,6 +69,9 @@ export default function POSPage() {
   const [tw, setTw] = useState(false)
   const [emailTypes, setEmailTypes] = useState([])
   const [selectedFillType, setSelectedFillType] = useState('')
+
+  // RAZER_AUTO
+  const [razerUrls, setRazerUrls] = useState({}) // { [itemId]: url }
 
   // Manual order
   const [showManualOrder, setShowManualOrder] = useState(false)
@@ -107,10 +114,13 @@ export default function POSPage() {
     return emailTypes.find(t => t.key === ft)?.label || ft
   }
 
-  // fill types ที่มีสินค้า (stock > 0 หรือ -1) อยู่จริง
+  // fill types ที่มีสินค้า (stock > 0 หรือ -1 หรือ RAZER_AUTO) อยู่จริง
   const activeFillTypes = [...new Set(
     categories
-      .filter(cat => products.some(p => p.category_id === cat.id && (p.stock > 0 || p.stock === -1)))
+      .filter(cat => products.some(p =>
+        p.category_id === cat.id &&
+        (cat.fill_type === 'RAZER_AUTO' ? true : (p.stock > 0 || p.stock === -1))
+      ))
       .map(cat => cat.fill_type)
       .filter(Boolean)
   )]
@@ -125,7 +135,7 @@ export default function POSPage() {
         ...cat,
         products: products.filter(p =>
           p.category_id === cat.id &&
-          (p.stock > 0 || p.stock === -1) &&
+          (cat.fill_type === 'RAZER_AUTO' ? true : (p.stock > 0 || p.stock === -1)) &&
           (catMatch || p.name.toLowerCase().includes(searchLower))
         ),
       }
@@ -338,7 +348,13 @@ export default function POSPage() {
         continue
       }
 
-      if (usesEmailCredits(item.fill_type, emailTypes)) {
+      if (isRazerAuto(item.fill_type)) {
+        const url = razerUrls[item.id] || ''
+        if (!url.startsWith('https://pay.gold.razer.com')) {
+          alert(`กรุณากรอก Link pay.gold.razer.com สำหรับ "${item.name}"`); return
+        }
+        orderItems.push({ product_id: item.id, quantity: item.quantity })
+      } else if (usesEmailCredits(item.fill_type, emailTypes)) {
         const splits = splitState[item.id]
         if (splits && splits.length > 0) {
           // validate + build split entries
@@ -376,6 +392,10 @@ export default function POSPage() {
       }
     }
 
+    // หา razer_url สำหรับ RAZER_AUTO item
+    const razerAutoItem = cart.find(i => isRazerAuto(i.fill_type))
+    const razerUrl = razerAutoItem ? (razerUrls[razerAutoItem.id] || null) : null
+
     const res = await fetch('/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -388,6 +408,7 @@ export default function POSPage() {
         channel: channel || null,
         tw: tw ? 1 : 0,
         reservation_id: activeReservationId || null,
+        razer_url: razerUrl,
       }),
     })
     const order = await res.json()
@@ -395,6 +416,7 @@ export default function POSPage() {
     setShowPayModal(false)
     setReceipt(order)
     setCart([])
+    setRazerUrls({})
     setChannel(null)
     setTw(false)
     setTransferTime2('')
@@ -403,6 +425,11 @@ export default function POSPage() {
       loadReservations()
     }
     fetch('/products').then(r => r.json()).then(setProducts)
+
+    // ถ้ามี RAZER_AUTO ไปดูสถานะที่หน้า Razer Bot
+    if (razerUrl && onNavigate) {
+      onNavigate('razer')
+    }
   }
 
   // ---- Reservation actions ----
@@ -995,6 +1022,28 @@ export default function POSPage() {
               )}
             </div>
 
+            {/* RAZER_AUTO URL input */}
+            {cart.some(i => isRazerAuto(i.fill_type)) && (
+              <div className="mb-6 space-y-3">
+                {cart.filter(i => isRazerAuto(i.fill_type)).map(item => (
+                  <div key={item.id} className="border border-yellow-300 rounded-xl p-4 bg-yellow-50 space-y-2">
+                    <p className="text-sm font-semibold text-yellow-800">{item.name} × {item.quantity}</p>
+                    <label className="block text-xs text-slate-500">Link สำหรับเติม (pay.gold.razer.com)</label>
+                    <input
+                      type="url"
+                      value={razerUrls[item.id] || ''}
+                      onChange={e => setRazerUrls(prev => ({ ...prev, [item.id]: e.target.value }))}
+                      placeholder="https://pay.gold.razer.com/..."
+                      className="w-full border border-yellow-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 bg-white"
+                    />
+                    {razerUrls[item.id] && !razerUrls[item.id].startsWith('https://pay.gold.razer.com') && (
+                      <p className="text-xs text-red-500">Link ต้องขึ้นต้นด้วย https://pay.gold.razer.com</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Email-credit items */}
             {cart.some(i => usesEmailCredits(i.fill_type, emailTypes)) && (
               <div className="mb-6 space-y-3">
@@ -1205,6 +1254,7 @@ export default function POSPage() {
         </div>
       )}
     </div>
+
     </>
   )
 }
