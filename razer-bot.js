@@ -668,12 +668,16 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
         save()
 
         // auto-regen ถ้า codes เหลือน้อยกว่า 3
+        // ใช้ regenAccountBackupCodes (สร้าง browser ใหม่ของตัวเอง) แทน regenerateBackupCodes(browser,...)
+        // เพราะ browser หลักจะถูกปิดใน finally ทันทีหลัง return
         const remainingCodes = acc.backup_codes.slice(1)
         if (remainingCodes.length < 3) {
           const updAcc = loadRazerAccounts().find(a => a.id === acc.id)
           if (updAcc) {
-            regenerateBackupCodes(browser, updAcc, loadRazerAccounts, saveRazerAccounts)
-              .catch(e => console.error(`[razer-bot] auto-regen failed for email ${acc.id}:`, e.message))
+            console.log(`[razer-bot] auto-regen triggered for email#${acc.id} (codes เหลือ ${remainingCodes.length})`)
+            regenAccountBackupCodes(updAcc, loadRazerAccounts, saveRazerAccounts)
+              .then(n => console.log(`[razer-bot] auto-regen สำเร็จ email#${acc.id}: ${n} codes ใหม่`))
+              .catch(e => console.error(`[razer-bot] auto-regen failed for email#${acc.id}:`, e.message))
           }
         }
 
