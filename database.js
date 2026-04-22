@@ -114,6 +114,8 @@ async function initDB() {
   try { db.run('ALTER TABLE orders ADD COLUMN razer_url TEXT') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE orders ADD COLUMN razer_status TEXT') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE orders ADD COLUMN razer_note TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE orders ADD COLUMN razer_started_at TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE orders ADD COLUMN razer_finished_at TEXT') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE products ADD COLUMN credits_min REAL') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE products ADD COLUMN credits_max REAL') } catch (e) { /* column exists */ }
   db.run(`CREATE TABLE IF NOT EXISTS razer_account_types (

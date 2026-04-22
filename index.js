@@ -396,7 +396,7 @@ initDB().then(() => {
     razerBot.runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccounts, db, save })
       .catch(e => {
         console.error(`[razer-queue] order#${orderId} failed:`, e.message)
-        db.run('UPDATE orders SET razer_status=?, razer_note=? WHERE id=?', ['failed', e.message, orderId])
+        db.run('UPDATE orders SET razer_status=?, razer_note=?, razer_finished_at=? WHERE id=?', ['failed', e.message, new Date().toISOString(), orderId])
         save()
       })
       .finally(() => {
@@ -1188,7 +1188,7 @@ initDB().then(() => {
   app.get('/razer-orders', requireLogin, (req, res) => {
     const r = db.exec(`
       SELECT o.id, o.created_at, o.total, o.razer_status, o.razer_note, o.razer_url,
-             p.name AS product_name
+             p.name AS product_name, o.razer_started_at, o.razer_finished_at
       FROM orders o
       LEFT JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN products p ON p.id = oi.product_id
@@ -1200,7 +1200,7 @@ initDB().then(() => {
     const rows = r[0].values.map(v => ({
       id: v[0], created_at: v[1], total: v[2],
       razer_status: v[3], razer_note: v[4], razer_url: v[5],
-      product_name: v[6],
+      product_name: v[6], razer_started_at: v[7], razer_finished_at: v[8],
     }))
     res.json(rows)
   })

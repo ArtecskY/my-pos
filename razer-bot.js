@@ -105,7 +105,13 @@ async function getPageOrderAmount(page) {
 async function launchBrowser() {
   return puppeteerExtra.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--lang=en-US',
+      '--accept-lang=en-US,en',
+    ],
   })
 }
 
@@ -175,14 +181,14 @@ async function processCheckout(page, backupCode) {
   // Step 1: กด Proceed to Checkout
   const step1 = await page.waitForFunction(
     () => [...document.querySelectorAll('button,[role="button"],a')]
-      .some(b => /proceed|pay now|checkout|reload to checkout/i.test(b.textContent) && b.offsetParent !== null),
+      .some(b => /proceed|pay now|checkout|reload to checkout|ดำเนินการต่อ/i.test(b.textContent) && b.offsetParent !== null),
     { timeout: 8000 }
   ).catch(() => null)
   if (!step1) console.warn('[checkout] Step1: Proceed button ไม่พบภายใน 8s')
 
   const step1Clicked = await page.evaluate(() => {
     const el = [...document.querySelectorAll('button,[role="button"],a')]
-      .find(e => /proceed|pay now|checkout|reload to checkout/i.test(e.textContent) && e.offsetParent !== null)
+      .find(e => /proceed|pay now|checkout|reload to checkout|ดำเนินการต่อ/i.test(e.textContent) && e.offsetParent !== null)
     if (el) { el.click(); return el.textContent.trim() }
     return null
   })
@@ -214,7 +220,7 @@ async function processCheckout(page, backupCode) {
             .find(b => new RegExp(re).test(b.textContent) && b.offsetParent !== null)
           if (el) { el.click(); return el.textContent.trim() }
           return null
-        }, /different|change.*method/i.source)
+        }, /different|change.*method|เลือกวิธีการอื่น/i.source)
         if (clicked2) break
       } catch {}
     }
@@ -230,7 +236,7 @@ async function processCheckout(page, backupCode) {
       try {
         clicked3 = await ctx.evaluate(() => {
           const el = [...document.querySelectorAll('button,a,[role="button"]')]
-            .find(b => /backup/i.test(b.textContent) && b.offsetParent !== null)
+            .find(b => /backup|รหัสสำรอง/i.test(b.textContent) && b.offsetParent !== null)
           if (el) { el.click(); return el.textContent.trim() }
           return null
         })
@@ -292,7 +298,7 @@ async function processCheckout(page, backupCode) {
   for (let i = 0; i < 20; i++) {
     backClicked = await page.evaluate(() => {
       const el = [...document.querySelectorAll('button,a,[role="button"]')]
-        .find(b => /back.?to.?merchant/i.test(b.textContent) && b.offsetParent !== null)
+        .find(b => /back.?to.?merchant|กลับไปหน้าสินค้า/i.test(b.textContent) && b.offsetParent !== null)
       if (el) { el.click(); return el.textContent.trim() }
       return null
     }).catch(() => null)
@@ -399,7 +405,7 @@ async function regenerateBackupCodes(browser, account, loadRazerAccounts, saveRa
       await sleep(1000)
       hasGenerateBtn = await page.evaluate(() =>
         [...document.querySelectorAll('button,a,[role="button"]')]
-          .some(b => /generate new codes/i.test(b.textContent) && b.offsetParent !== null)
+          .some(b => /generate new codes|สร้างรหัสใหม่/i.test(b.textContent) && b.offsetParent !== null)
       )
       if (hasGenerateBtn) break
       const has2FA = await page.evaluate(() => !!document.querySelector('input[id^="otp-input-"]'))
@@ -417,7 +423,7 @@ async function regenerateBackupCodes(browser, account, loadRazerAccounts, saveRa
                 .find(b => new RegExp(re).test(b.textContent) && b.offsetParent !== null)
               if (el) { el.click(); return el.textContent.trim() }
               return null
-            }, /different|change.*method/i.source)
+            }, /different|change.*method|เลือกวิธีการอื่น/i.source)
             if (clicked2) break
           } catch {}
         }
@@ -431,7 +437,7 @@ async function regenerateBackupCodes(browser, account, loadRazerAccounts, saveRa
           try {
             clickedBackup = await ctx.evaluate(() => {
               const el = [...document.querySelectorAll('button,a,[role="button"]')]
-                .find(b => /backup/i.test(b.textContent) && b.offsetParent !== null)
+                .find(b => /backup|รหัสสำรอง/i.test(b.textContent) && b.offsetParent !== null)
               if (el) { el.click(); return el.textContent.trim() }
               return null
             })
@@ -494,7 +500,7 @@ async function regenerateBackupCodes(browser, account, loadRazerAccounts, saveRa
       try {
         clickedGenerate = await page.evaluate(() => {
           const el = [...document.querySelectorAll('button,a,[role="button"]')]
-            .find(b => /generate new codes/i.test(b.textContent) && b.offsetParent !== null)
+            .find(b => /generate new codes|สร้างรหัสใหม่/i.test(b.textContent) && b.offsetParent !== null)
           if (el) { el.click(); return el.textContent.trim() }
           return null
         })
@@ -587,7 +593,7 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
   if (!allAccounts.length)
     throw new Error('ไม่มี Razer account ที่พร้อมใช้งาน')
 
-  db.run('UPDATE orders SET razer_status=? WHERE id=?', ['processing', orderId])
+  db.run('UPDATE orders SET razer_status=?, razer_started_at=? WHERE id=?', ['processing', new Date().toISOString(), orderId])
   save()
 
   const browser = await launchBrowser()
@@ -605,6 +611,7 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
 
       const page = await browser.newPage()
       try {
+        await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' })
         await page.goto(payUrl, { waitUntil: 'networkidle2' })
         await loginOnPaymentPage(page, acc)
 
@@ -664,7 +671,7 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
           'UPDATE order_items SET email_id_used=?, credit_deducted=? WHERE order_id=?',
           [acc.id, goldToDeduct, orderId]
         )
-        db.run('UPDATE orders SET razer_status=? WHERE id=?', ['success', orderId])
+        db.run('UPDATE orders SET razer_status=?, razer_finished_at=? WHERE id=?', ['success', new Date().toISOString(), orderId])
         save()
 
         // auto-regen ถ้า codes เหลือน้อยกว่า 3

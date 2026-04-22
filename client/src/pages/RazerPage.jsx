@@ -142,11 +142,27 @@ export default function RazerPage() {
                   : status === 'failed'   ? <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-semibold whitespace-nowrap">❌ ล้มเหลว</span>
                   : status === 'processing' ? <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold whitespace-nowrap">⚙️ กำลังทำ</span>
                   : <span className="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-xs font-semibold whitespace-nowrap">⏳ รอ</span>
+
+                const toThai = iso => {
+                  if (!iso) return '—'
+                  return new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', hour12: false,
+                    year: 'numeric', month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                }
+
+                let durSec = null
+                if (o.razer_started_at && o.razer_finished_at) {
+                  durSec = Math.round((new Date(o.razer_finished_at) - new Date(o.razer_started_at)) / 1000)
+                }
+
                 return (
                   <div key={o.id} className="px-5 py-2.5 flex items-center gap-3 text-sm">
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-slate-700 truncate">{o.product_name || `Order #${o.id}`}</p>
-                      <p className="text-xs text-slate-400">{o.created_at} · ฿{Number(o.total).toFixed(2)}</p>
+                      <p className="text-xs text-slate-400">
+                        {toThai(o.created_at)} · ฿{Number(o.total).toFixed(2)}
+                        {durSec !== null && <span className="ml-2 text-slate-300">⏱ {durSec}s</span>}
+                      </p>
                       {o.razer_note && <p className="text-xs text-red-500 truncate max-w-sm">{o.razer_note}</p>}
                     </div>
                     <div className="flex-shrink-0">{badge}</div>
