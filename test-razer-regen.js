@@ -1,6 +1,5 @@
 /**
  * test-razer-regen.js — เทส Regen flow headless:false
- * หยุดก่อน Phase 3 (Generate New Codes) เพื่อดูปุ่มภาษาไทย
  * รัน: node test-razer-regen.js
  */
 
@@ -10,9 +9,10 @@ puppeteerExtra.use(StealthPlugin())
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
-const EMAIL       = 'funn1que.zxc@gmail.com'
-const PASSWORD    = '014785920Zxc'
-const BACKUP_CODE = '11911389'
+const EMAIL       = 'memicgansz8d@hotmail.com'
+const PASSWORD    = 'FCGLtD0Vu'
+const BACKUP_CODE = '53109849'
+const SECURITY_URL = 'https://razerid.razer.com/account/security/codes'
 
 async function fillReact(page, selectors, value) {
   return page.evaluate((sels, val) => {
@@ -32,7 +32,6 @@ async function fillReact(page, selectors, value) {
   }, selectors, value)
 }
 
-// dump ปุ่มที่มองเห็นทุกตัวบนหน้า
 async function dumpButtons(page, label) {
   const btns = await page.evaluate(() =>
     [...document.querySelectorAll('button,a,[role="button"]')]
@@ -43,7 +42,47 @@ async function dumpButtons(page, label) {
   btns.forEach((t, i) => console.log(`  [${i}] "${t}"`))
 }
 
+async function dismissCookiePopup(page) {
+  try {
+    const dismissed = await page.evaluate(() => {
+      const btns = [...document.querySelectorAll('button')]
+      const save = btns.find(b => /save my preferences/i.test(b.textContent) && b.offsetParent !== null)
+      if (save) { save.click(); return 'Save My Preferences' }
+      const accept = btns.find(b => /^(accept all|accept cookies|accept)$/i.test(b.textContent.trim()) && b.offsetParent !== null)
+      if (accept) { accept.click(); return accept.textContent.trim() }
+      return null
+    })
+    if (dismissed) {
+      console.log('[cookie] dismissed:', dismissed)
+      await sleep(600)
+      return dismissed
+    }
+  } catch {}
+  return null
+}
+
+async function waitForButton(page, regex, timeout = 15000) {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    for (const ctx of [page, ...page.frames().filter(f => f !== page.mainFrame())]) {
+      try {
+        const result = await ctx.evaluate((re) => {
+          const el = [...document.querySelectorAll('button,a,[role="button"]')]
+            .find(b => new RegExp(re, 'i').test(b.textContent) && b.offsetParent !== null)
+          if (el) { el.click(); return el.textContent.trim() }
+          return null
+        }, regex.source || regex)
+        if (result) return result
+      } catch {}
+    }
+    await sleep(300)
+  }
+  return null
+}
+
 ;(async () => {
+  const t0 = Date.now()
+  const lap = () => `+${((Date.now()-t0)/1000).toFixed(1)}s`
   console.log('=== Razer Regen Test — headless:false ===')
 
   const browser = await puppeteerExtra.launch({
@@ -62,37 +101,39 @@ async function dumpButtons(page, label) {
     const page = await browser.newPage()
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' })
 
+    // clear cookies + storage ก่อนเริ่ม
+    const cdp = await page.createCDPSession()
+    await cdp.send('Network.clearBrowserCookies')
+    await cdp.send('Network.clearBrowserCache')
+    console.log('[init] cleared cookies & cache')
+
     // ── Phase 0: เปิดหน้า security/codes ─────────────────────
-    console.log('\n[Phase 0] เปิด razerid.razer.com/account/security/codes...')
-    await page.goto('https://razerid.razer.com/account/security/codes',
-      { waitUntil: 'networkidle2', timeout: 30000 })
-    await sleep(3000)
-    console.log('[Phase 0] URL:', page.url())
+    console.log('\n[Phase 0] goto security/codes...')
+    await page.goto(SECURITY_URL, { waitUntil: 'networkidle2', timeout: 30000 })
+      .catch(e => console.warn('[Phase 0] goto warn:', e.message))
+    console.log(`[Phase 0] URL: ${page.url()} (${lap()})`)
 
     // ── Phase 0: Login ถ้ายังไม่ได้ login ────────────────────
-    if (!page.url().includes('/account/security')) {
-      console.log('\n[Phase 0] ต้อง login...')
+    const needLogin = !page.url().includes('/account/security') || page.url().includes('/login') || page.url().includes('/signin')
+    console.log(`[Phase 0] needLogin=${needLogin}`)
 
-      // Cookie popup
-      for (let attempt = 0; attempt < 4; attempt++) {
-        const dismissed = await page.evaluate(() => {
-          const saveBtn = [...document.querySelectorAll('button')]
-            .find(b => /save my preferences/i.test(b.textContent) && b.offsetParent !== null)
-          if (saveBtn) { saveBtn.click(); return 'Save My Preferences' }
-          const closeBtn = [...document.querySelectorAll('button,a')]
-            .find(el => /accept all|accept cookies|i agree/i.test(el.textContent) && el.offsetParent !== null)
-          if (closeBtn) { closeBtn.click(); return closeBtn.textContent.trim() }
-          return null
-        })
-        if (dismissed) { console.log('[Phase 0] cookie dismissed:', dismissed); await sleep(1000) }
-        else break
+    if (needLogin) {
+      // dismiss cookie popup ก่อน login
+      for (let i = 0; i < 3; i++) {
+        const d = await dismissCookiePopup(page)
+        if (!d) break
       }
 
+      console.log('[Phase 0] รอ email input...')
       await page.waitForSelector('#input-login-email, input[type="email"]', { timeout: 10000 })
-      await fillReact(page, ['#input-login-email', 'input[type="email"]'], EMAIL)
-      await sleep(300)
-      await fillReact(page, ['#input-login-password', 'input[type="password"]'], PASSWORD)
-      await sleep(300)
+      console.log(`[Phase 0] เจอ email input (${lap()})`)
+
+      const filledEmail = await fillReact(page, ['#input-login-email', 'input[type="email"]'], EMAIL)
+      console.log('[Phase 0] filled email via:', filledEmail)
+      await sleep(150)
+      const filledPass = await fillReact(page, ['#input-login-password', 'input[type="password"]'], PASSWORD)
+      console.log('[Phase 0] filled pass via:', filledPass)
+      await sleep(150)
 
       await page.waitForFunction(
         () => [...document.querySelectorAll('button')]
@@ -106,103 +147,146 @@ async function dumpButtons(page, label) {
         if (btn) { btn.click(); return btn.textContent.trim() }
         return null
       })
-      console.log('[Phase 0] login clicked:', loginClicked)
-      await sleep(5000)
+      console.log(`[Phase 0] login clicked: ${loginClicked} (${lap()})`)
 
-      // Post-login popups
+      // รอให้ OTP input โผล่ หรือ login form หายแล้ว redirect
+      console.log('[Phase 0] รอ OTP หรือ logged-in state...')
+      await page.waitForFunction(
+        () => {
+          const hasOtp = !!document.querySelector('input[id^="otp-input-"]')
+          const emailGone = !document.querySelector('#input-login-email')
+          return hasOtp || (emailGone && window.location.pathname !== '/')
+        },
+        { timeout: 25000, polling: 300 }
+      ).catch(() => {})
+      console.log(`[Phase 0] state check — URL: ${page.url()} (${lap()})`)
+
+      // ── ถ้าต้องกรอก OTP เพื่อ login (login 2FA) ──────────────
+      let loginOtpFound = false
+      try {
+        loginOtpFound = await page.evaluate(() => !!document.querySelector('input[id^="otp-input-"]'))
+      } catch {}
+
+      if (loginOtpFound) {
+        console.log(`[Phase 0] LOGIN 2FA — เจอ OTP input, กรอก: ${BACKUP_CODE}`)
+
+        // กด "Choose a different method" / "Backup Codes" ก่อนถ้ายังไม่ได้
+        const methodClicked = await page.evaluate(() => {
+          const el = [...document.querySelectorAll('button,a,[role="button"]')]
+            .find(b => /different|change.*method/i.test(b.textContent) && b.offsetParent !== null)
+          if (el) { el.click(); return el.textContent.trim() }
+          return null
+        }).catch(() => null)
+        if (methodClicked) {
+          console.log('[Phase 0] different method:', methodClicked)
+          await sleep(500)
+          await waitForButton(page, /backup|รหัสสำรอง/i, 5000)
+          await sleep(500)
+        }
+
+        // กรอก backup code
+        await page.waitForSelector('input[id^="otp-input-"]', { timeout: 5000 }).catch(() => {})
+        await page.evaluate(() => {
+          const el = document.querySelector('input[id="otp-input-0"]')
+          if (el) el.focus()
+        })
+        await sleep(100)
+        for (const ch of BACKUP_CODE.replace(/\s/g, ''))
+          await page.keyboard.type(ch, { delay: 50 })
+        await sleep(300)
+
+        const loginSubmit = await page.evaluate(() => {
+          const btn = document.querySelector('button[type="submit"]')
+            || [...document.querySelectorAll('button')]
+                 .find(b => /submit|confirm|verify|continue|ยืนยัน|log.?in/i.test(b.textContent) && b.offsetParent !== null && !b.disabled)
+          if (btn) { btn.click(); return btn.textContent.trim() || '(submit)' }
+          return null
+        })
+        if (!loginSubmit) await page.keyboard.press('Enter')
+        console.log(`[Phase 0] LOGIN 2FA submit: ${loginSubmit || 'Enter'} (${lap()})`)
+
+        // รอ login สำเร็จ — OTP หายไป
+        await page.waitForFunction(
+          () => !document.querySelector('input[id^="otp-input-"]'),
+          { timeout: 15000, polling: 300 }
+        ).catch(() => {})
+        await sleep(1000)
+        console.log(`[Phase 0] after login 2FA — URL: ${page.url()} (${lap()})`)
+      }
+
+      // dismiss post-login popups (terms, marketing)
       for (let i = 0; i < 8; i++) {
         const clicked = await page.evaluate(() => {
-          const isAgreement = /agreement|terms|ข้อตกลง/i.test(document.body.innerText)
-          if (isAgreement) {
+          if (/agreement|terms|ข้อตกลง/i.test(document.body.innerText)) {
             const btn = [...document.querySelectorAll('button,a,[role="button"]')]
               .find(b => /^(accept|ยอมรับ|同意)$/i.test(b.textContent.trim()) && b.offsetParent !== null)
             if (btn) { btn.click(); return 'accept:' + btn.textContent.trim() }
           }
-          const isPermission = /contact permission|marketing/i.test(document.body.innerText)
-          if (isPermission) {
+          if (/contact permission|marketing/i.test(document.body.innerText)) {
             const btn = [...document.querySelectorAll('button,a,[role="button"]')]
               .find(b => /^(skip|ข้าม)$/i.test(b.textContent.trim()) && b.offsetParent !== null)
             if (btn) { btn.click(); return 'skip:' + btn.textContent.trim() }
           }
           return null
-        })
-        if (clicked) { console.log('[Phase 0] popup:', clicked); await sleep(2000) }
+        }).catch(() => null)
+        if (clicked) { console.log('[Phase 0] popup:', clicked); await sleep(800) }
         else break
-        await sleep(1000)
+        await sleep(300)
       }
 
-      for (let i = 0; i < 30; i++) {
-        await sleep(1000)
-        if (page.url().includes('/account/security')) break
+      // ✅ Navigate กลับไป security/codes หลัง login สำเร็จ
+      console.log(`[Phase 0] navigate กลับไป security/codes... (${lap()})`)
+      await page.goto(SECURITY_URL, { waitUntil: 'networkidle2', timeout: 30000 })
+        .catch(e => console.warn('[Phase 0] goto2 warn:', e.message))
+      console.log(`[Phase 0] URL หลัง goto2: ${page.url()} (${lap()})`)
+
+      for (let i = 0; i < 3; i++) {
+        const d = await dismissCookiePopup(page)
+        if (!d) break
       }
     }
-
-    console.log('[Phase 0] URL หลัง login:', page.url())
 
     // ── Phase 1: รอ Generate New Codes หรือ 2FA ───────────────
-    console.log('\n[Phase 1] รอปุ่ม Generate New Codes หรือ OTP...')
-    let hasGenerateBtn = false
-    for (let i = 0; i < 10; i++) {
-      await sleep(1000)
-      hasGenerateBtn = await page.evaluate(() =>
-        [...document.querySelectorAll('button,a,[role="button"]')]
-          .some(b => /generate new codes|สร้างรหัสใหม่/i.test(b.textContent) && b.offsetParent !== null)
-      )
-      if (hasGenerateBtn) { console.log(`[Phase 1] ✅ เจอปุ่ม Generate New Codes (${i+1}s)`); break }
-      const has2FA = await page.evaluate(() => !!document.querySelector('input[id^="otp-input-"]'))
-      if (has2FA) { console.log(`[Phase 1] ⚠️ เจอ OTP input แทน (${i+1}s)`); break }
-      console.log(`  รอ... ${i+1}s`)
+    console.log(`\n[Phase 1] รอปุ่ม Generate New Codes หรือ OTP... (${lap()})`)
+
+    // dismiss cookie popup ที่อาจยังค้างอยู่
+    for (let i = 0; i < 3; i++) {
+      const d = await dismissCookiePopup(page)
+      if (!d) break
     }
 
+    let hasGenerateBtn = false
+    await page.waitForFunction(
+      () => {
+        const hasGen = [...document.querySelectorAll('button,a,[role="button"]')]
+          .some(b => /generate new codes|สร้างรหัสใหม่/i.test(b.textContent) && b.offsetParent !== null)
+        const has2FA = !!document.querySelector('input[id^="otp-input-"]')
+        return hasGen || has2FA
+      },
+      { timeout: 15000, polling: 300 }
+    ).catch(() => {})
+
+    hasGenerateBtn = await page.evaluate(() =>
+      [...document.querySelectorAll('button,a,[role="button"]')]
+        .some(b => /generate new codes|สร้างรหัสใหม่/i.test(b.textContent) && b.offsetParent !== null)
+    )
+    console.log(`[Phase 1] hasGenerateBtn=${hasGenerateBtn} (${lap()})`)
     await dumpButtons(page, 'Phase 1 end')
 
     // ── Phase 2: 2FA ถ้าต้องทำก่อน ────────────────────────────
     if (!hasGenerateBtn) {
       console.log('\n[Phase 2] ต้องผ่าน 2FA ก่อน...')
 
-      // กด different method
-      let clicked2 = null
-      for (let i = 0; i < 15; i++) {
-        for (const ctx of [page, ...page.frames().filter(f => f !== page.mainFrame())]) {
-          try {
-            clicked2 = await ctx.evaluate((re) => {
-              const el = [...document.querySelectorAll('button,a,[role="button"]')]
-                .find(b => new RegExp(re).test(b.textContent) && b.offsetParent !== null)
-              if (el) { el.click(); return el.textContent.trim() }
-              return null
-            }, /different|change.*method|เลือกวิธีการอื่น/i.source)
-            if (clicked2) break
-          } catch {}
-        }
-        if (clicked2) break
-        await sleep(1000)
-      }
+      const clicked2 = await waitForButton(page, /different|change.*method|เลือกวิธีการอื่น/i)
       console.log('[Phase 2] Different method:', clicked2 ? `✅ "${clicked2}"` : '❌ ไม่พบ')
-      await sleep(1000)
+      await sleep(400)
       await dumpButtons(page, 'Phase 2 after different method')
 
-      // กด Backup Codes
-      let clickedBackup = null
-      for (let i = 0; i < 12; i++) {
-        for (const ctx of [page, ...page.frames().filter(f => f !== page.mainFrame())]) {
-          try {
-            clickedBackup = await ctx.evaluate(() => {
-              const el = [...document.querySelectorAll('button,a,[role="button"]')]
-                .find(b => /backup|รหัสสำรอง/i.test(b.textContent) && b.offsetParent !== null)
-              if (el) { el.click(); return el.textContent.trim() }
-              return null
-            })
-            if (clickedBackup) break
-          } catch {}
-        }
-        if (clickedBackup) break
-        await sleep(1000)
-      }
+      const clickedBackup = await waitForButton(page, /backup|รหัสสำรอง/i)
       console.log('[Phase 2] Backup Codes:', clickedBackup ? `✅ "${clickedBackup}"` : '❌ ไม่พบ')
-      await sleep(1000)
+      await sleep(400)
       await dumpButtons(page, 'Phase 2 after backup codes click')
 
-      // รอ OTP input
       await page.waitForSelector('input[id^="otp-input-"]', { timeout: 10000 }).catch(() => {})
       let otpCtx = page
       for (const ctx of [page, ...page.frames()]) {
@@ -211,18 +295,17 @@ async function dumpButtons(page, label) {
             { otpCtx = ctx; break }
         } catch {}
       }
-      console.log('[Phase 2] OTP input found — กรอก code:', BACKUP_CODE)
+      console.log(`[Phase 2] OTP input — กรอก: ${BACKUP_CODE} (${lap()})`)
 
       await otpCtx.evaluate(() => {
         const el = document.querySelector('input[id="otp-input-0"]')
         if (el) el.focus()
       })
-      await sleep(200)
+      await sleep(100)
       for (const ch of BACKUP_CODE.replace(/\s/g, ''))
-        await page.keyboard.type(ch, { delay: 80 })
-      await sleep(300)
+        await page.keyboard.type(ch, { delay: 50 })
+      await sleep(200)
 
-      // Submit
       const submitClicked = await otpCtx.evaluate(() => {
         const btn = document.querySelector('button[type="submit"]')
           || [...document.querySelectorAll('button')]
@@ -233,56 +316,71 @@ async function dumpButtons(page, label) {
       if (!submitClicked) await page.keyboard.press('Enter')
       console.log('[Phase 2] Submit:', submitClicked ? `✅ "${submitClicked}"` : '⚠️ กด Enter แทน')
 
-      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {})
-      await sleep(2000)
-      console.log('[Phase 2] URL หลัง submit:', page.url())
+      await page.waitForFunction(
+        () => window.location.href.includes('/account/security'),
+        { timeout: 15000, polling: 300 }
+      ).catch(() => {})
+      console.log(`[Phase 2] URL หลัง 2FA: ${page.url()} (${lap()})`)
+
+      // dismiss cookie popup อีกรอบ
+      for (let i = 0; i < 3; i++) {
+        const d = await dismissCookiePopup(page)
+        if (!d) break
+      }
     }
 
     // ── Phase 3: กด Generate New Codes ───────────────────────
-    console.log('\n[Phase 3] กด Generate New Codes...')
+    console.log(`\n[Phase 3] กด Generate New Codes... (${lap()})`)
     await dumpButtons(page, 'Phase 3 before Generate')
 
-    let clickedGenerate = null
-    for (let i = 0; i < 15; i++) {
-      clickedGenerate = await page.evaluate(() => {
-        const el = [...document.querySelectorAll('button,a,[role="button"]')]
-          .find(b => /generate new codes|สร้างรหัสใหม่/i.test(b.textContent) && b.offsetParent !== null)
-        if (el) { el.click(); return el.textContent.trim() }
-        return null
-      }).catch(() => null)
-      if (clickedGenerate) break
-      await sleep(1000)
-    }
-    console.log('[Phase 3] Generate New Codes:', clickedGenerate ? `✅ "${clickedGenerate}"` : '❌ ไม่พบ')
-    await sleep(2000)
+    await page.waitForFunction(
+      () => [...document.querySelectorAll('button,a,[role="button"]')]
+        .some(b => /generate new codes|สร้างรหัสใหม่/i.test(b.textContent) && b.offsetParent !== null),
+      { timeout: 15000, polling: 300 }
+    ).catch(() => {})
+
+    const clickedGenerate = await page.evaluate(() => {
+      const el = [...document.querySelectorAll('button,a,[role="button"]')]
+        .find(b => /generate new codes|สร้างรหัสใหม่/i.test(b.textContent) && b.offsetParent !== null)
+      if (el) { el.click(); return el.textContent.trim() }
+      return null
+    }).catch(() => null)
+    console.log(`[Phase 3] Generate: ${clickedGenerate ? `✅ "${clickedGenerate}"` : '❌ ไม่พบ'} (${lap()})`)
 
     // ── Phase 4: Modal confirm ────────────────────────────────
-    console.log('\n[Phase 4] Modal confirm...')
+    console.log(`\n[Phase 4] Modal confirm... (${lap()})`)
+
+    await page.waitForFunction(
+      () => [...document.querySelectorAll('button,a,[role="button"]')]
+        .some(b => /^(generate|สร้าง)$/i.test(b.textContent.trim()) && b.offsetParent !== null),
+      { timeout: 8000, polling: 200 }
+    ).catch(() => {})
+
     await dumpButtons(page, 'Phase 4 modal')
 
-    const modalBtns = await page.evaluate(() =>
-      [...document.querySelectorAll('button')]
-        .filter(b => b.offsetParent !== null)
-        .map(b => ({ text: b.textContent.trim(), type: b.type, id: b.id }))
-    )
-    console.log('[Phase 4] All visible buttons:', JSON.stringify(modalBtns, null, 2))
-
-    let clickedConfirm = null
-    for (let i = 0; i < 10; i++) {
-      clickedConfirm = await page.evaluate(() => {
-        const el = [...document.querySelectorAll('button,a,[role="button"]')]
-          .find(b => /^(generate|สร้าง)$/i.test(b.textContent.trim()) && b.offsetParent !== null)
-        if (el) { el.click(); return el.textContent.trim() }
-        return null
-      }).catch(() => null)
-      if (clickedConfirm) break
-      await sleep(500)
-    }
-    console.log('[Phase 4] Confirm:', clickedConfirm ? `✅ "${clickedConfirm}"` : '❌ ไม่พบ')
-    await sleep(3000)
+    const clickedConfirm = await page.evaluate(() => {
+      const el = [...document.querySelectorAll('button,a,[role="button"]')]
+        .find(b => /^(generate|สร้าง)$/i.test(b.textContent.trim()) && b.offsetParent !== null)
+      if (el) { el.click(); return el.textContent.trim() }
+      return null
+    }).catch(() => null)
+    console.log(`[Phase 4] Confirm: ${clickedConfirm ? `✅ "${clickedConfirm}"` : '❌ ไม่พบ'} (${lap()})`)
 
     // ── Phase 5: อ่าน codes ใหม่ ────────────────────────────
-    console.log('\n[Phase 5] อ่าน backup codes ใหม่...')
+    console.log(`\n[Phase 5] รอ backup codes ใหม่... (${lap()})`)
+
+    await page.waitForFunction(
+      () => {
+        const codeRe = /^\d{6,12}$/
+        const found = [...document.querySelectorAll('*')]
+          .filter(el => el.childElementCount === 0 && el.offsetParent !== null)
+          .map(el => el.textContent.trim())
+          .filter(t => codeRe.test(t))
+        return [...new Set(found)].length >= 5
+      },
+      { timeout: 15000, polling: 300 }
+    ).catch(() => {})
+
     const newCodes = await page.evaluate(() => {
       const codeRe = /^\d{6,12}$/
       const fromEls = [...document.querySelectorAll('*')]
@@ -294,7 +392,7 @@ async function dumpButtons(page, label) {
     })
 
     console.log(`\n${'═'.repeat(40)}`)
-    console.log(`  พบ ${newCodes.length} backup codes ใหม่:`)
+    console.log(`  พบ ${newCodes.length} backup codes ใหม่: (${lap()})`)
     console.log('═'.repeat(40))
     newCodes.slice(0, 10).forEach((c, i) => console.log(`  [${i+1}] ${c}`))
     console.log('═'.repeat(40))
@@ -302,11 +400,11 @@ async function dumpButtons(page, label) {
     if (newCodes.length < 5) {
       console.error('❌ codes น้อยกว่า 5 — อาจอ่านไม่ครบ')
     } else {
-      console.log('✅ สำเร็จ — copy codes ด้านบนได้เลย')
+      console.log('✅ สำเร็จ')
     }
 
-    console.log('\n[รอ 30s ก่อนปิด browser]')
-    await sleep(30000)
+    console.log('\n[รอ 15s ก่อนปิด browser]')
+    await sleep(15000)
 
   } finally {
     await browser.close()

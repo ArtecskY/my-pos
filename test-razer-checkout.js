@@ -9,7 +9,7 @@ puppeteerExtra.use(StealthPlugin())
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
-const PAYMENT_URL = 'https://pay.gold.razer.com/order/eDQvMmNXYWFBM2RlbDVWcUhPOFlhL1doT2tPeVRjNUdwYlgwOWIvaWFmWT0'
+const PAYMENT_URL = 'https://pay.gold.razer.com/order/bW9lTWZjQTJMZjFBY0FJdzYwRXByRmcxdGVqNVhySXRNZVo3TkM5S2NZQT0'
 
 const ACCOUNTS = [
   { email: 'funn1que.zxc@gmail.com', password: '014785920Zxc' },
