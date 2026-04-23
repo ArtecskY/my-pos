@@ -384,6 +384,8 @@ async function loginRazerId(page, account) {
 
 // ── Regen Backup Codes ────────────────────────────────────────
 async function regenerateBackupCodes(browser, account, loadRazerAccounts, saveRazerAccounts) {
+  const regenStart = Date.now()
+  console.log(`[regen] เริ่ม email#${account.id} (${account.email}) — ${new Date().toISOString()}`)
   const page = await browser.newPage()
   try {
     await page.goto('https://razerid.razer.com/account/security/codes',
@@ -547,6 +549,8 @@ async function regenerateBackupCodes(browser, account, loadRazerAccounts, saveRa
       saveRazerAccounts(finalAccs)
     }
 
+    const elapsed = ((Date.now() - regenStart) / 1000).toFixed(1)
+    console.log(`[regen] สำเร็จ email#${account.id} — ${codesToSave.length} codes ใหม่ — ใช้เวลา ${elapsed}s`)
     return codesToSave.length
 
   } finally {
@@ -590,7 +594,8 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
       !a.broken &&
       a.backup_codes.length > 0 &&
       (!reqAccountType || a.razer_account_type === reqAccountType) &&
-      (hasMax ? a.credits >= pkg.credits_max : a.credits > 0)
+      (hasMax ? a.credits >= pkg.credits_max : a.credits > 0) &&
+      a.backup_codes.length >= 2   // ต้องมี >= 2 codes: 1 สำหรับ checkout + 1 สำหรับ regen 2FA
     )
     .sort((a, b) =>
       hasMax

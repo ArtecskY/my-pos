@@ -286,8 +286,16 @@ export default function RazerPage() {
                           <button onClick={() => openEdit(email)}
                             className="px-2.5 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs cursor-pointer">แก้ไข</button>
                           <button onClick={() => triggerRegen(email.id)} disabled={regenning[email.id]}
-                            className="px-2.5 py-1 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white rounded-lg text-xs cursor-pointer">
-                            {regenning[email.id] ? '...' : 'Regen'}
+                            className="px-2.5 py-1 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white rounded-lg text-xs cursor-pointer flex items-center gap-1">
+                            {regenning[email.id] ? (
+                              <>
+                                <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                                </svg>
+                                Regen...
+                              </>
+                            ) : 'Regen'}
                           </button>
                         </div>
                       </td>
