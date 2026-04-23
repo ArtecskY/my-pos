@@ -77,9 +77,10 @@ export default function RazerPage() {
       const res = await fetch(`/razer-accounts/${id}/regen`, { method: 'POST' })
       const d = await res.json()
       if (!res.ok) setMsg(d.error || 'เกิดข้อผิดพลาด')
-      // spinner ยังค้างอยู่ — จะหายเมื่อ serverRegenning ไม่มี id นี้แล้ว
     } catch {
       setMsg('ไม่สามารถเชื่อมต่อได้')
+    } finally {
+      // local state หาย แต่ serverRegenning จะค้าง spinner ต่อจนกว่า regen จะเสร็จจริง
       setRegenning(prev => ({ ...prev, [id]: false }))
     }
   }
