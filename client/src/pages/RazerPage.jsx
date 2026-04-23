@@ -14,6 +14,7 @@ export default function RazerPage() {
   const [ordersCollapsed, setOrdersCollapsed] = useState(false)
   const [newTypeName, setNewTypeName] = useState('')
   const [typeError, setTypeError] = useState('')
+  const [serverRegenning, setServerRegenning] = useState(new Set())
 
   function loadEmails() {
     fetch('/emails').then(r => r.json())
@@ -25,10 +26,13 @@ export default function RazerPage() {
   function loadRazerOrders() {
     fetch('/razer-orders').then(r => r.json()).then(setRazerOrders).catch(() => {})
   }
+  function loadRegenStatus() {
+    fetch('/razer-regen-status').then(r => r.json()).then(ids => setServerRegenning(new Set(ids))).catch(() => {})
+  }
 
   useEffect(() => {
-    loadEmails(); loadAccountTypes(); loadRazerOrders()
-    const t = setInterval(() => { loadEmails(); loadAccountTypes(); loadRazerOrders() }, 5000)
+    loadEmails(); loadAccountTypes(); loadRazerOrders(); loadRegenStatus()
+    const t = setInterval(() => { loadEmails(); loadAccountTypes(); loadRazerOrders(); loadRegenStatus() }, 3000)
     return () => clearInterval(t)
   }, [])
 
@@ -72,9 +76,12 @@ export default function RazerPage() {
     try {
       const res = await fetch(`/razer-accounts/${id}/regen`, { method: 'POST' })
       const d = await res.json()
-      setMsg(res.ok ? `Regen เริ่มแล้วสำหรับ account #${id}` : (d.error || 'เกิดข้อผิดพลาด'))
-    } catch { setMsg('ไม่สามารถเชื่อมต่อได้') }
-    setRegenning(prev => ({ ...prev, [id]: false }))
+      if (!res.ok) setMsg(d.error || 'เกิดข้อผิดพลาด')
+      // spinner ยังค้างอยู่ — จะหายเมื่อ serverRegenning ไม่มี id นี้แล้ว
+    } catch {
+      setMsg('ไม่สามารถเชื่อมต่อได้')
+      setRegenning(prev => ({ ...prev, [id]: false }))
+    }
   }
 
   const botReadyCount = emails.filter(e => e.razer_account_type && (e.backup_codes || []).length > 0 && !e.broken).length
@@ -285,18 +292,23 @@ export default function RazerPage() {
                         <div className="flex items-center justify-center gap-1.5">
                           <button onClick={() => openEdit(email)}
                             className="px-2.5 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs cursor-pointer">แก้ไข</button>
-                          <button onClick={() => triggerRegen(email.id)} disabled={regenning[email.id]}
-                            className="px-2.5 py-1 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white rounded-lg text-xs cursor-pointer flex items-center gap-1">
-                            {regenning[email.id] ? (
-                              <>
-                                <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                                </svg>
-                                Regen...
-                              </>
-                            ) : 'Regen'}
-                          </button>
+                          {(() => {
+                            const isRegenning = regenning[email.id] || serverRegenning.has(email.id)
+                            return (
+                              <button onClick={() => triggerRegen(email.id)} disabled={isRegenning}
+                                className="px-2.5 py-1 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white rounded-lg text-xs cursor-pointer flex items-center gap-1">
+                                {isRegenning ? (
+                                  <>
+                                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                                    </svg>
+                                    Regen...
+                                  </>
+                                ) : 'Regen'}
+                              </button>
+                            )
+                          })()}
                         </div>
                       </td>
                     </tr>

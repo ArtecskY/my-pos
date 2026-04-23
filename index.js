@@ -1171,19 +1171,29 @@ initDB().then(() => {
   })
 
   // ── Razer Bot routes ─────────────────────────────────────────
+  const regenningSet = new Set()  // email IDs ที่กำลัง regen อยู่
+
+  app.get('/razer-regen-status', requireLogin, (req, res) => {
+    res.json([...regenningSet])
+  })
+
   app.post('/razer-accounts/:id/regen', requireLogin, (req, res) => {
     if (!razerBot) return res.status(503).json({ error: 'Razer bot ไม่พร้อม (puppeteer ไม่ติดตั้ง)' })
-    const emailRes = db.exec('SELECT id, email, password, backup_codes FROM emails WHERE id=? AND fill_type=\'RAZER\'', [req.params.id])
+    const emailId = Number(req.params.id)
+    if (regenningSet.has(emailId)) return res.json({ message: 'กำลัง regen อยู่แล้ว' })
+    const emailRes = db.exec('SELECT id, email, password, backup_codes FROM emails WHERE id=? AND fill_type=\'RAZER\'', [emailId])
     if (!emailRes[0]) return res.status(404).json({ error: 'ไม่พบ Razer account' })
     const row = emailRes[0].values[0]
     const account = {
       id: row[0], email: row[1], password: row[2],
       backup_codes: (() => { try { return JSON.parse(row[3] || '[]') } catch { return [] } })(),
     }
+    regenningSet.add(emailId)
     res.json({ message: 'เริ่ม regen backup codes แล้ว' })
     razerBot.regenAccountBackupCodes(account, loadRazerAccounts, saveRazerAccounts)
       .then(count => console.log(`[razer-bot] regen สำเร็จ: ${count} codes สำหรับ email ${account.id}`))
       .catch(e => console.error(`[razer-bot] regen failed email ${account.id}:`, e.message))
+      .finally(() => regenningSet.delete(emailId))
   })
 
   app.get('/razer-status/:orderId', requireLogin, (req, res) => {
