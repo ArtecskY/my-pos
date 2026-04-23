@@ -687,11 +687,11 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
         db.run('UPDATE orders SET razer_status=?, razer_finished_at=? WHERE id=?', ['success', new Date().toISOString(), orderId])
         save()
 
-        // auto-regen ถ้า codes เหลือน้อยกว่า 3
+        // auto-regen ถ้า codes เหลือน้อยกว่า 5
         // ใช้ regenAccountBackupCodes (สร้าง browser ใหม่ของตัวเอง) แทน regenerateBackupCodes(browser,...)
         // เพราะ browser หลักจะถูกปิดใน finally ทันทีหลัง return
         const remainingCodes = acc.backup_codes.slice(1)
-        if (remainingCodes.length < 3) {
+        if (remainingCodes.length < 5) {
           const updAcc = loadRazerAccounts().find(a => a.id === acc.id)
           if (updAcc) {
             console.log(`[razer-bot] auto-regen triggered for email#${acc.id} (codes เหลือ ${remainingCodes.length})`)
