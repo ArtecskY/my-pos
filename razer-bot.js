@@ -579,16 +579,29 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
   const pkg = pkgRow ? { credits_min: pkgRow[0], credits_max: pkgRow[1] } : {}
   const reqAccountType = pkgRow?.[2] || null
 
-  // โหลด candidates: fill_type=RAZER, ไม่ locked, ไม่ broken, razer_account_type ตรง, มี backup_codes, credits > 0
+  // โหลด candidates: fill_type=RAZER, ไม่ locked, ไม่ broken, razer_account_type ตรง, มี backup_codes
+  // ถ้า credits_max ตั้งไว้ → เลือกเฉพาะ account ที่ credits >= credits_max
+  //   แล้ว sort จาก surplus (credits - max) น้อยสุดก่อน (ใช้คนที่พอดีก่อน)
+  // ถ้าไม่มี credits_max → filter credits > 0 แล้ว sort มากสุดก่อน (พฤติกรรมเดิม)
+  const hasMax = pkg.credits_max != null
   const allAccounts = loadRazerAccounts()
     .filter(a =>
       !a.is_locked &&
       !a.broken &&
       a.backup_codes.length > 0 &&
-      a.credits > 0 &&
-      (!reqAccountType || a.razer_account_type === reqAccountType)
+      (!reqAccountType || a.razer_account_type === reqAccountType) &&
+      (hasMax ? a.credits >= pkg.credits_max : a.credits > 0)
     )
-    .sort((a, b) => b.credits - a.credits)  // เรียงจาก credits มากสุดก่อน
+    .sort((a, b) =>
+      hasMax
+        ? (a.credits - pkg.credits_max) - (b.credits - pkg.credits_max)  // surplus น้อยสุดก่อน
+        : b.credits - a.credits                                            // credits มากสุดก่อน
+    )
+
+  console.log(`[razer-bot] credits_max=${pkg.credits_max ?? 'ไม่ได้ตั้ง'} → candidates ${allAccounts.length} accounts`)
+  allAccounts.forEach((a, i) =>
+    console.log(`[razer-bot]   [${i+1}] email#${a.id} credits=${a.credits}${hasMax ? ` surplus=${(a.credits - pkg.credits_max).toFixed(2)}` : ''}`)
+  )
 
   if (!allAccounts.length)
     throw new Error('ไม่มี Razer account ที่พร้อมใช้งาน')
