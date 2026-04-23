@@ -1115,11 +1115,19 @@ initDB().then(() => {
 
   app.put('/emails/:id', requireLogin, (req, res) => {
     const { email, password, link_sms, credits, note, cost, fill_type, broken, created_date, backup_codes, razer_account_type } = req.body
-    const backupCodesStr = Array.isArray(backup_codes) ? JSON.stringify(backup_codes) : (backup_codes || '[]')
-    db.run(
-      'UPDATE emails SET email=?, password=?, link_sms=?, credits=?, note=?, cost=?, fill_type=?, broken=?, created_date=?, backup_codes=?, razer_account_type=? WHERE id=?',
-      [email, password || '', link_sms || null, credits || 0, note || null, cost || 0, fill_type || null, broken ? 1 : 0, created_date || null, backupCodesStr, razer_account_type || null, req.params.id]
-    )
+    // backup_codes ไม่ถูกส่งมา → คง value เดิมใน DB ไว้ ป้องกันการลบโดยไม่ตั้งใจ
+    if (backup_codes === undefined) {
+      db.run(
+        'UPDATE emails SET email=?, password=?, link_sms=?, credits=?, note=?, cost=?, fill_type=?, broken=?, created_date=?, razer_account_type=? WHERE id=?',
+        [email, password || '', link_sms || null, credits || 0, note || null, cost || 0, fill_type || null, broken ? 1 : 0, created_date || null, razer_account_type || null, req.params.id]
+      )
+    } else {
+      const backupCodesStr = Array.isArray(backup_codes) ? JSON.stringify(backup_codes) : backup_codes
+      db.run(
+        'UPDATE emails SET email=?, password=?, link_sms=?, credits=?, note=?, cost=?, fill_type=?, broken=?, created_date=?, backup_codes=?, razer_account_type=? WHERE id=?',
+        [email, password || '', link_sms || null, credits || 0, note || null, cost || 0, fill_type || null, broken ? 1 : 0, created_date || null, backupCodesStr, razer_account_type || null, req.params.id]
+      )
+    }
     save()
     res.json({ message: 'แก้ไข Email สำเร็จ' })
   })
