@@ -142,7 +142,7 @@ export default function RazerPage() {
           </button>
 
           {!ordersCollapsed && (
-            <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto">
+            <div className="divide-y divide-slate-100 max-h-[32rem] overflow-y-auto">
               {razerOrders.map(o => {
                 const status = o.razer_status
                 const badge =
@@ -163,17 +163,30 @@ export default function RazerPage() {
                   durSec = Math.round((new Date(o.razer_finished_at) - new Date(o.razer_started_at)) / 1000)
                 }
 
+                const noteLines = o.razer_note ? o.razer_note.split(' | ').filter(Boolean) : []
+
                 return (
-                  <div key={o.id} className="px-5 py-2.5 flex items-center gap-3 text-sm">
+                  <div key={o.id} className={`px-5 py-3 flex items-start gap-3 text-sm ${noteLines.length ? 'bg-red-50/40' : ''}`}>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-slate-700 truncate">{o.product_name || `Order #${o.id}`}</p>
-                      <p className="text-xs text-slate-400">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium text-slate-700">{o.product_name || `Order #${o.id}`}</p>
+                        {badge}
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5">
                         {toThai(o.created_at)} · ฿{Number(o.total).toFixed(2)}
                         {durSec !== null && <span className="ml-2 text-slate-300">⏱ {durSec}s</span>}
                       </p>
-                      {o.razer_note && <p className="text-xs text-red-500 truncate max-w-sm">{o.razer_note}</p>}
+                      {noteLines.length > 0 && (
+                        <div className="mt-1.5 rounded-lg bg-red-50 border border-red-100 px-3 py-2 space-y-1">
+                          {noteLines.map((line, i) => (
+                            <p key={i} className="text-xs text-red-600 break-all leading-relaxed">
+                              {noteLines.length > 1 && <span className="font-semibold mr-1">#{i + 1}</span>}
+                              {line.trim()}
+                            </p>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex-shrink-0">{badge}</div>
                   </div>
                 )
               })}
