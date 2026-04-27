@@ -70,8 +70,8 @@ export default function POSPage({ onNavigate }) {
   const [emailTypes, setEmailTypes] = useState([])
   const [selectedFillType, setSelectedFillType] = useState('')
 
-  // RAZER_AUTO
-  const [razerUrls, setRazerUrls] = useState({}) // { [itemId]: url }
+  // RAZER_AUTO: { [itemId]: string[] } — index ตรงกับ unit ที่ 1..N
+  const [razerUrls, setRazerUrls] = useState({})
 
   // Manual order
   const [showManualOrder, setShowManualOrder] = useState(false)
@@ -349,9 +349,12 @@ export default function POSPage({ onNavigate }) {
       }
 
       if (isRazerAuto(item.fill_type)) {
-        const url = razerUrls[item.id] || ''
-        if (!url.startsWith('https://pay.gold.razer.com')) {
-          alert(`กรุณากรอก Link pay.gold.razer.com สำหรับ "${item.name}"`); return
+        const urls = razerUrls[item.id] || []
+        for (let qi = 0; qi < item.quantity; qi++) {
+          const url = urls[qi] || ''
+          if (!url.startsWith('https://pay.gold.razer.com')) {
+            alert(`กรุณากรอก Link${item.quantity > 1 ? ` ชิ้นที่ ${qi + 1}` : ''} สำหรับ "${item.name}"`); return
+          }
         }
         orderItems.push({ product_id: item.id, quantity: item.quantity })
       } else if (usesEmailCredits(item.fill_type, emailTypes)) {
@@ -392,9 +395,13 @@ export default function POSPage({ onNavigate }) {
       }
     }
 
-    // หา razer_url สำหรับ RAZER_AUTO item
-    const razerAutoItem = cart.find(i => isRazerAuto(i.fill_type))
-    const razerUrl = razerAutoItem ? (razerUrls[razerAutoItem.id] || null) : null
+    // สร้าง razer_urls array: 1 URL ต่อ 1 หน่วย ของแต่ละ RAZER_AUTO item
+    const razerUrlsList = []
+    for (const item of cart.filter(i => isRazerAuto(i.fill_type))) {
+      const urls = razerUrls[item.id] || []
+      for (let qi = 0; qi < item.quantity; qi++) razerUrlsList.push(urls[qi] || '')
+    }
+    const razerUrlsPayload = razerUrlsList.length > 0 ? razerUrlsList : null
 
     const res = await fetch('/orders', {
       method: 'POST',
@@ -408,7 +415,7 @@ export default function POSPage({ onNavigate }) {
         channel: channel || null,
         tw: tw ? 1 : 0,
         reservation_id: activeReservationId || null,
-        razer_url: razerUrl,
+        razer_urls: razerUrlsPayload,
       }),
     })
     const order = await res.json()
@@ -427,7 +434,7 @@ export default function POSPage({ onNavigate }) {
     fetch('/products').then(r => r.json()).then(setProducts)
 
     // ถ้ามี RAZER_AUTO ไปดูสถานะที่หน้า Razer Bot
-    if (razerUrl && onNavigate) {
+    if (razerUrlsPayload?.length > 0 && onNavigate) {
       onNavigate('razer')
     }
   }
@@ -1022,23 +1029,36 @@ export default function POSPage({ onNavigate }) {
               )}
             </div>
 
-            {/* RAZER_AUTO URL input */}
+            {/* RAZER_AUTO URL input — 1 ช่องต่อ 1 หน่วย */}
             {cart.some(i => isRazerAuto(i.fill_type)) && (
               <div className="mb-6 space-y-3">
                 {cart.filter(i => isRazerAuto(i.fill_type)).map(item => (
-                  <div key={item.id} className="border border-yellow-300 rounded-xl p-4 bg-yellow-50 space-y-2">
+                  <div key={item.id} className="border border-yellow-300 rounded-xl p-4 bg-yellow-50 space-y-3">
                     <p className="text-sm font-semibold text-yellow-800">{item.name} × {item.quantity}</p>
-                    <label className="block text-xs text-slate-500">Link สำหรับเติม (pay.gold.razer.com)</label>
-                    <input
-                      type="url"
-                      value={razerUrls[item.id] || ''}
-                      onChange={e => setRazerUrls(prev => ({ ...prev, [item.id]: e.target.value }))}
-                      placeholder="https://pay.gold.razer.com/..."
-                      className="w-full border border-yellow-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 bg-white"
-                    />
-                    {razerUrls[item.id] && !razerUrls[item.id].startsWith('https://pay.gold.razer.com') && (
-                      <p className="text-xs text-red-500">Link ต้องขึ้นต้นด้วย https://pay.gold.razer.com</p>
-                    )}
+                    {Array.from({ length: item.quantity }, (_, qi) => {
+                      const url = (razerUrls[item.id] || [])[qi] || ''
+                      return (
+                        <div key={qi} className="space-y-1">
+                          <label className="block text-xs text-slate-500">
+                            {item.quantity > 1 ? `Link ชิ้นที่ ${qi + 1}` : 'Link'} (pay.gold.razer.com)
+                          </label>
+                          <input
+                            type="url"
+                            value={url}
+                            onChange={e => {
+                              const arr = [...(razerUrls[item.id] || Array(item.quantity).fill(''))]
+                              arr[qi] = e.target.value
+                              setRazerUrls(prev => ({ ...prev, [item.id]: arr }))
+                            }}
+                            placeholder="https://pay.gold.razer.com/..."
+                            className="w-full border border-yellow-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 bg-white"
+                          />
+                          {url && !url.startsWith('https://pay.gold.razer.com') && (
+                            <p className="text-xs text-red-500">Link ต้องขึ้นต้นด้วย https://pay.gold.razer.com</p>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 ))}
               </div>

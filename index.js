@@ -382,27 +382,28 @@ initDB().then(() => {
   const razerQueue = []
   let razerQueueRunning = false
 
-  function enqueueRazerOrder(orderId, order) {
-    razerQueue.push({ orderId, order })
-    console.log(`[razer-queue] เพิ่ม order#${orderId} เข้าคิว (คิวรวม: ${razerQueue.length})`)
+  function enqueueRazerOrder(orderId, order, jobIndex = 1, totalJobs = 1) {
+    razerQueue.push({ orderId, order, jobIndex, totalJobs })
+    console.log(`[razer-queue] เพิ่ม order#${orderId} job${jobIndex}/${totalJobs} เข้าคิว (คิวรวม: ${razerQueue.length})`)
     processRazerQueue()
   }
 
   function processRazerQueue() {
     if (razerQueueRunning || razerQueue.length === 0) return
-    const { orderId, order } = razerQueue.shift()
+    const { orderId, order, jobIndex, totalJobs } = razerQueue.shift()
     razerQueueRunning = true
-    console.log(`[razer-queue] เริ่ม order#${orderId} (คิวรอ: ${razerQueue.length})`)
-    razerBot.runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccounts, db, save })
+    console.log(`[razer-queue] เริ่ม order#${orderId} job${jobIndex}/${totalJobs} (คิวรอ: ${razerQueue.length})`)
+    razerBot.runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccounts, db, save }, jobIndex, totalJobs)
       .catch(e => {
-        console.error(`[razer-queue] order#${orderId} failed:`, e.message)
-        db.run('UPDATE orders SET razer_status=?, razer_note=?, razer_finished_at=? WHERE id=?', ['failed', e.message, new Date().toISOString(), orderId])
+        console.error(`[razer-queue] order#${orderId} job${jobIndex}/${totalJobs} failed:`, e.message)
+        db.run('UPDATE orders SET razer_status=?, razer_note=?, razer_finished_at=? WHERE id=?',
+          ['failed', `ชิ้นที่ ${jobIndex}/${totalJobs} ล้มเหลว: ${e.message}`, new Date().toISOString(), orderId])
         save()
       })
       .finally(() => {
         razerQueueRunning = false
-        console.log(`[razer-queue] order#${orderId} เสร็จ — คิวรอ: ${razerQueue.length}`)
-        processRazerQueue()  // ดึงรายการถัดไป
+        console.log(`[razer-queue] order#${orderId} job${jobIndex}/${totalJobs} เสร็จ — คิวรอ: ${razerQueue.length}`)
+        processRazerQueue()
       })
   }
   // ────────────────────────────────────────────────────────────
@@ -532,7 +533,7 @@ initDB().then(() => {
   }
 
   app.post('/orders', requireLogin, (req, res) => {
-    const { items, manualItems = [], transfer_amount, transfer_time, transfer_time2, channel, tw, reservation_id, razer_url } = req.body
+    const { items, manualItems = [], transfer_amount, transfer_time, transfer_time2, channel, tw, reservation_id, razer_urls } = req.body
     // Validate stock before proceeding
     const emailPendingDeductions = {} // track total deductions per email_id in this order
     for (const item of items) {
@@ -786,8 +787,8 @@ initDB().then(() => {
       db.run('DELETE FROM reservations WHERE id=?', [reservation_id])
     }
 
-    // ตรวจว่ามี RAZER_AUTO item ไหม
-    const hasRazerAuto = items.some(item => {
+    // รวบ RAZER_AUTO items ตามลำดับ
+    const razerAutoItems = items.filter(item => {
       const p = db.exec('SELECT category_id FROM products WHERE id=?', [item.product_id])
       const catId = p[0]?.values[0][0]
       if (!catId) return false
@@ -795,31 +796,35 @@ initDB().then(() => {
       return c[0]?.values[0][0] === 'RAZER_AUTO'
     })
 
-    if (hasRazerAuto && razer_url) {
-      db.run('UPDATE orders SET razer_url=?, razer_status=? WHERE id=?', [razer_url, 'pending', orderId])
+    const urlList = Array.isArray(razer_urls) ? razer_urls.filter(Boolean) : []
+    if (razerAutoItems.length > 0 && urlList.length > 0) {
+      db.run('UPDATE orders SET razer_url=?, razer_status=? WHERE id=?', [urlList[0], 'pending', orderId])
     }
 
     save()
     broadcastReservations()
     res.json({ order_id: orderId, total })
 
-    // ยิง Razer bot async หลัง response
-    if (hasRazerAuto && razer_url && razerBot) {
-      const razerItem = items.find(item => {
-        const p = db.exec('SELECT category_id FROM products WHERE id=?', [item.product_id])
-        const catId = p[0]?.values[0][0]
-        if (!catId) return false
-        const c = db.exec('SELECT fill_type FROM categories WHERE id=?', [catId])
-        return c[0]?.values[0][0] === 'RAZER_AUTO'
-      })
-      if (razerItem) {
+    // ยิง Razer bot async หลัง response — 1 job ต่อ 1 URL ตามคิว
+    if (razerAutoItems.length > 0 && urlList.length > 0 && razerBot) {
+      const jobs = []
+      let urlIdx = 0
+      for (const razerItem of razerAutoItems) {
         const p = db.exec('SELECT category_id FROM products WHERE id=?', [razerItem.product_id])
         const gameId = p[0]?.values[0][0]
+        for (let q = 0; q < razerItem.quantity && urlIdx < urlList.length; q++, urlIdx++) {
+          jobs.push({ gameId, packageId: razerItem.product_id, url: urlList[urlIdx] })
+        }
+      }
+      const totalJobs = jobs.length
+      jobs.forEach((job, i) => {
         enqueueRazerOrder(
           orderId,
-          { gameId, packageId: razerItem.product_id, userFields: { urlLink: razer_url } }
+          { gameId: job.gameId, packageId: job.packageId, userFields: { urlLink: job.url } },
+          i + 1,
+          totalJobs
         )
-      }
+      })
     }
   })
 

@@ -569,7 +569,7 @@ async function regenAccountBackupCodes(account, loadRazerAccounts, saveRazerAcco
 }
 
 // ── Main Topup Entry Point ────────────────────────────────────
-async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccounts, db, save }) {
+async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccounts, db, save }, jobIndex = 1, totalJobs = 1) {
   const payUrl = order.userFields?.urlLink
   if (!payUrl || !payUrl.startsWith(VALID_PAY_ORIGIN))
     throw new Error('URL ไม่ถูกต้อง ต้องขึ้นต้นด้วย ' + VALID_PAY_ORIGIN)
@@ -611,7 +611,11 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
   if (!allAccounts.length)
     throw new Error('ไม่มี Razer account ที่พร้อมใช้งาน')
 
-  db.run('UPDATE orders SET razer_status=?, razer_started_at=? WHERE id=?', ['processing', new Date().toISOString(), orderId])
+  if (jobIndex === 1) {
+    db.run('UPDATE orders SET razer_status=?, razer_started_at=? WHERE id=?', ['processing', new Date().toISOString(), orderId])
+  } else {
+    db.run('UPDATE orders SET razer_note=? WHERE id=?', [`กำลังดำเนินการชิ้นที่ ${jobIndex}/${totalJobs}...`, orderId])
+  }
   save()
 
   const browser = await launchBrowser()
@@ -689,7 +693,12 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
           'UPDATE order_items SET email_id_used=?, credit_deducted=? WHERE order_id=?',
           [acc.id, goldToDeduct, orderId]
         )
-        db.run('UPDATE orders SET razer_status=?, razer_finished_at=? WHERE id=?', ['success', new Date().toISOString(), orderId])
+        if (jobIndex === totalJobs) {
+          db.run('UPDATE orders SET razer_status=?, razer_note=?, razer_finished_at=? WHERE id=?',
+            ['success', totalJobs > 1 ? `เสร็จสิ้น ${totalJobs}/${totalJobs} ชิ้น` : null, new Date().toISOString(), orderId])
+        } else {
+          db.run('UPDATE orders SET razer_note=? WHERE id=?', [`${jobIndex}/${totalJobs} เสร็จแล้ว — รอชิ้นถัดไป...`, orderId])
+        }
         save()
 
         // auto-regen ถ้า codes เหลือน้อยกว่า 5
