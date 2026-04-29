@@ -1274,8 +1274,8 @@ initDB().then(() => {
 
     const { dateFrom, dateTo } = req.body || {}
     const dateFilter = (dateFrom && dateTo)
-      ? `WHERE DATE(COALESCE(o.transfer_time, o.created_at)) BETWEEN '${dateFrom}' AND '${dateTo}'`
-      : (dateFrom ? `WHERE DATE(COALESCE(o.transfer_time, o.created_at)) >= '${dateFrom}'` : '')
+      ? `AND DATE(COALESCE(o.transfer_time, o.created_at)) BETWEEN '${dateFrom}' AND '${dateTo}'`
+      : (dateFrom ? `AND DATE(COALESCE(o.transfer_time, o.created_at)) >= '${dateFrom}'` : '')
 
     const itemsRes = db.exec(`
       SELECT o.id, o.transfer_amount, COALESCE(o.transfer_time, o.created_at) AS ts,
@@ -1290,6 +1290,7 @@ initDB().then(() => {
       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
       LEFT JOIN categories c ON c.id = p.category_id
       LEFT JOIN emails e ON e.id = oi.email_id_used
+      WHERE (o.razer_status IS NULL OR o.razer_status != 'failed')
       ${dateFilter}
       ORDER BY ts, o.id, oi.id
     `)
@@ -1578,8 +1579,8 @@ initDB().then(() => {
     if (!sheetId) throw new Error('ยังไม่ได้ตั้งค่า Sheet ID')
 
     const dateFilter = (dateFrom && dateTo)
-      ? `WHERE DATE(COALESCE(o.transfer_time, o.created_at)) BETWEEN '${dateFrom}' AND '${dateTo}'`
-      : (dateFrom ? `WHERE DATE(COALESCE(o.transfer_time, o.created_at)) >= '${dateFrom}'` : '')
+      ? `AND DATE(COALESCE(o.transfer_time, o.created_at)) BETWEEN '${dateFrom}' AND '${dateTo}'`
+      : (dateFrom ? `AND DATE(COALESCE(o.transfer_time, o.created_at)) >= '${dateFrom}'` : '')
 
     const itemsRes = db.exec(`
       SELECT o.id, o.transfer_amount, COALESCE(o.transfer_time, o.created_at) AS ts,
@@ -1594,6 +1595,7 @@ initDB().then(() => {
       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
       LEFT JOIN categories c ON c.id = p.category_id
       LEFT JOIN emails e ON e.id = oi.email_id_used
+      WHERE (o.razer_status IS NULL OR o.razer_status != 'failed')
       ${dateFilter}
       ORDER BY ts, o.id, oi.id
     `)
