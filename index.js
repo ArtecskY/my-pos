@@ -69,12 +69,6 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }))
 initDB().then(() => {
   const db = getDB()
 
-  // TEMP: download pos.db — ลบหลังใช้
-  app.get('/download-db', (req, res) => {
-    const dbPath = require('path').join(process.env.DATA_DIR || __dirname, 'pos.db')
-    res.download(dbPath, 'pos.db')
-  })
-
   app.get('/categories', (req, res) => {
     const result = db.exec('SELECT id, name, fill_type, shop_name, razer_account_type FROM categories ORDER BY name')
     const categories = result[0] ? result[0].values.map(row => ({
