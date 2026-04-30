@@ -69,6 +69,12 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }))
 initDB().then(() => {
   const db = getDB()
 
+  // TEMP: download pos.db — ลบหลังใช้
+  app.get('/download-db', (req, res) => {
+    const dbPath = require('path').join(process.env.DATA_DIR || __dirname, 'pos.db')
+    res.download(dbPath, 'pos.db')
+  })
+
   app.get('/categories', (req, res) => {
     const result = db.exec('SELECT id, name, fill_type, shop_name, razer_account_type FROM categories ORDER BY name')
     const categories = result[0] ? result[0].values.map(row => ({
@@ -382,18 +388,21 @@ initDB().then(() => {
   const razerQueue = []
   let razerQueueRunning = false
 
-  function enqueueRazerOrder(orderId, order, jobIndex = 1, totalJobs = 1) {
-    razerQueue.push({ orderId, order, jobIndex, totalJobs })
-    console.log(`[razer-queue] เพิ่ม order#${orderId} job${jobIndex}/${totalJobs} เข้าคิว (คิวรวม: ${razerQueue.length})`)
+  function enqueueRazerOrder(orderId, order, jobIndex = 1, totalJobs = 1, botType = 'RAZER_AUTO') {
+    razerQueue.push({ orderId, order, jobIndex, totalJobs, botType })
+    console.log(`[razer-queue] เพิ่ม order#${orderId} job${jobIndex}/${totalJobs} [${botType}] เข้าคิว (คิวรวม: ${razerQueue.length})`)
     processRazerQueue()
   }
 
   function processRazerQueue() {
     if (razerQueueRunning || razerQueue.length === 0) return
-    const { orderId, order, jobIndex, totalJobs } = razerQueue.shift()
+    const { orderId, order, jobIndex, totalJobs, botType } = razerQueue.shift()
     razerQueueRunning = true
-    console.log(`[razer-queue] เริ่ม order#${orderId} job${jobIndex}/${totalJobs} (คิวรอ: ${razerQueue.length})`)
-    razerBot.runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccounts, db, save }, jobIndex, totalJobs)
+    console.log(`[razer-queue] เริ่ม order#${orderId} job${jobIndex}/${totalJobs} [${botType}] (คิวรอ: ${razerQueue.length})`)
+    const botFn = (botType === 'RAZER_KUROKO_UID' && razerBot?.runKurokoOrder)
+      ? razerBot.runKurokoOrder
+      : razerBot.runRazerOrder
+    botFn(orderId, order, { loadRazerAccounts, saveRazerAccounts, db, save }, jobIndex, totalJobs)
       .catch(e => {
         console.error(`[razer-queue] order#${orderId} job${jobIndex}/${totalJobs} failed:`, e.message)
         db.run('UPDATE orders SET razer_status=?, razer_note=?, razer_finished_at=? WHERE id=?',
@@ -407,6 +416,38 @@ initDB().then(() => {
       })
   }
   // ────────────────────────────────────────────────────────────
+
+  // Re-queue pending Razer orders on startup
+  setTimeout(() => {
+    try {
+      const pending = db.exec(
+        `SELECT o.id, oi.uid, oi.quantity, c.fill_type, p.id AS product_id, p.category_id
+         FROM orders o
+         JOIN order_items oi ON oi.order_id = o.id
+         JOIN products p ON p.id = oi.product_id
+         JOIN categories c ON c.id = p.category_id
+         WHERE o.razer_status = 'pending'
+           AND c.fill_type IN ('RAZER_AUTO','RAZER_KUROKO_UID')`
+      )
+      if (!pending[0]) return
+      // group by orderId to calculate totalJobs
+      const byOrder = {}
+      for (const [orderId, uid, qty, fillType, productId, categoryId] of pending[0].values) {
+        if (!byOrder[orderId]) byOrder[orderId] = []
+        for (let q = 0; q < (qty || 1); q++) byOrder[orderId].push({ uid, fillType, productId, categoryId })
+      }
+      for (const [orderId, jobs] of Object.entries(byOrder)) {
+        jobs.forEach((job, i) => {
+          const botType = job.fillType === 'RAZER_KUROKO_UID' ? 'RAZER_KUROKO_UID' : 'RAZER_AUTO'
+          const order = { gameId: job.categoryId, packageId: job.productId, userFields: { uid: job.uid || '' } }
+          console.log(`[startup] re-queue pending order#${orderId} job${i+1}/${jobs.length} [${botType}]`)
+          enqueueRazerOrder(Number(orderId), order, i + 1, jobs.length, botType)
+        })
+      }
+    } catch (e) {
+      console.error('[startup] re-queue error:', e.message)
+    }
+  }, 2000)
 
   function loadRazerAccounts() {
     const r = db.exec(
@@ -541,10 +582,11 @@ initDB().then(() => {
       if (!pRes[0]) return res.status(400).json({ error: 'ไม่พบสินค้า' })
       const [stock, name, category_id, price, is_bundle, price_usd_val] = pRes[0].values[0]
 
-      // RAZER_AUTO: ข้าม validation email/credit (บอทจัดการเอง)
+      // RAZER_AUTO / RAZER_KUROKO_UID: ข้าม validation (บอทจัดการเอง)
       if (!is_bundle) {
         const catCheck = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
-        if (catCheck[0]?.values[0][0] === 'RAZER_AUTO') continue
+        const autoType = catCheck[0]?.values[0][0]
+        if (autoType === 'RAZER_AUTO' || autoType === 'RAZER_KUROKO_UID') continue
       }
 
       if (is_bundle) {
@@ -646,8 +688,8 @@ initDB().then(() => {
       const pRes = db.exec('SELECT price, category_id, is_bundle, price_usd, name FROM products WHERE id=?', [item.product_id])
       const [price, category_id, is_bundle, price_usd, productName] = pRes[0].values[0]
 
-      db.run('INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)',
-        [orderId, item.product_id, item.quantity, price])
+      db.run('INSERT INTO order_items (order_id, product_id, quantity, price, uid) VALUES (?,?,?,?,?)',
+        [orderId, item.product_id, item.quantity, price, item.uid || null])
       const orderItemId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
 
       let creditDeducted = null, emailIdUsed = null, lotIdUsed = null, priceUsdUsed = null
@@ -731,7 +773,7 @@ initDB().then(() => {
         const catRes = db.exec('SELECT fill_type, shop_name FROM categories WHERE id=?', [category_id])
         const fill_type = catRes[0]?.values[0][0] || 'UID'
         shopNameToStore = catRes[0]?.values[0][1] || null
-        if (fill_type === 'RAZER_AUTO') {
+        if (fill_type === 'RAZER_AUTO' || fill_type === 'RAZER_KUROKO_UID') {
           // บอทจะจัดการ deduct credits + บันทึก email_id_used หลัง checkout สำเร็จ
         } else if (fill_type === 'ID_PASS') {
           priceUsdUsed = price_usd
@@ -796,16 +838,26 @@ initDB().then(() => {
       return c[0]?.values[0][0] === 'RAZER_AUTO'
     })
 
+    // รวบ RAZER_KUROKO_UID items
+    const kurokoItems = items.filter(item => {
+      const p = db.exec('SELECT category_id FROM products WHERE id=?', [item.product_id])
+      const catId = p[0]?.values[0][0]
+      if (!catId) return false
+      const c = db.exec('SELECT fill_type FROM categories WHERE id=?', [catId])
+      return c[0]?.values[0][0] === 'RAZER_KUROKO_UID'
+    })
+
     const urlList = Array.isArray(razer_urls) ? razer_urls.filter(Boolean) : []
-    if (razerAutoItems.length > 0 && urlList.length > 0) {
-      db.run('UPDATE orders SET razer_url=?, razer_status=? WHERE id=?', [urlList[0], 'pending', orderId])
+    if ((razerAutoItems.length > 0 && urlList.length > 0) || kurokoItems.length > 0) {
+      db.run('UPDATE orders SET razer_url=?, razer_status=? WHERE id=?',
+        [urlList[0] || null, 'pending', orderId])
     }
 
     save()
     broadcastReservations()
     res.json({ order_id: orderId, total })
 
-    // ยิง Razer bot async หลัง response — 1 job ต่อ 1 URL ตามคิว
+    // ยิง Razer Auto bot
     if (razerAutoItems.length > 0 && urlList.length > 0 && razerBot) {
       const jobs = []
       let urlIdx = 0
@@ -825,6 +877,25 @@ initDB().then(() => {
           totalJobs
         )
       })
+    }
+
+    // ยิง Kuroko bot — uid มาจาก item.uid
+    if (kurokoItems.length > 0 && razerBot?.runKurokoOrder) {
+      const totalKurokoJobs = kurokoItems.reduce((s, ki) => s + (ki.quantity || 1), 0)
+      let jobIdx = 0
+      for (const ki of kurokoItems) {
+        const p = db.exec('SELECT category_id FROM products WHERE id=?', [ki.product_id])
+        const gameId = p[0]?.values[0][0]
+        for (let q = 0; q < (ki.quantity || 1); q++, jobIdx++) {
+          enqueueRazerOrder(
+            orderId,
+            { gameId, packageId: ki.product_id, userFields: { uid: ki.uid || '' } },
+            jobIdx + 1,
+            totalKurokoJobs,
+            'RAZER_KUROKO_UID'
+          )
+        }
+      }
     }
   })
 
@@ -1215,7 +1286,7 @@ initDB().then(() => {
       FROM orders o
       LEFT JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN products p ON p.id = oi.product_id
-      WHERE o.razer_url IS NOT NULL
+      WHERE o.razer_url IS NOT NULL OR o.razer_status IS NOT NULL
       ORDER BY o.id DESC
       LIMIT 30
     `)
