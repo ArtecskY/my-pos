@@ -1,20 +1,21 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 
 const TYPE_CONFIG = {
-  'UID':         { label: 'UID',           cls: 'bg-slate-200 text-slate-600' },
-  'EMAIL':       { label: 'Apple ID',        cls: 'bg-blue-100 text-blue-700' },
-  'RAZER':       { label: 'Razer',          cls: 'bg-green-100 text-green-700' },
-  'OTHER_UID':   { label: 'อื่นๆ · UID',   cls: 'bg-orange-100 text-orange-700' },
-  'OTHER_EMAIL': { label: 'อื่นๆ · Email', cls: 'bg-purple-100 text-purple-700' },
-  'ID_PASS':     { label: 'ID-PASS',        cls: 'bg-yellow-100 text-yellow-700' },
+  'UID':              { label: 'UID',           cls: 'bg-slate-200 text-slate-600' },
+  'EMAIL':            { label: 'Apple ID',        cls: 'bg-blue-100 text-blue-700' },
+  'RAZER':            { label: 'Razer',          cls: 'bg-green-100 text-green-700' },
+  'OTHER_UID':        { label: 'อื่นๆ · UID',   cls: 'bg-orange-100 text-orange-700' },
+  'OTHER_EMAIL':      { label: 'อื่นๆ · Email', cls: 'bg-purple-100 text-purple-700' },
+  'ID_PASS':          { label: 'ID-PASS',        cls: 'bg-yellow-100 text-yellow-700' },
+  'RAZER_AUTO':       { label: 'Razer Auto',     cls: 'bg-orange-100 text-orange-700' },
 }
 
 const TYPE_BUTTONS = [
-  { key: 'UID',        label: 'เติมผ่าน UID',         activeCls: 'bg-slate-600 text-white border-transparent' },
-  { key: 'EMAIL',      label: 'เติมผ่าน Apple ID',    activeCls: 'bg-blue-500 text-white border-transparent' },
-  { key: 'RAZER',      label: 'เติมผ่าน Razer',       activeCls: 'bg-green-500 text-white border-transparent' },
-  { key: 'RAZER_AUTO', label: 'Razer Auto (Bot)',     activeCls: 'bg-orange-500 text-white border-transparent' },
-  { key: 'ID_PASS',    label: 'ID-PASS (Stock 77)',   activeCls: 'bg-yellow-500 text-white border-transparent' },
+  { key: 'UID',              label: 'เติมผ่าน UID',         activeCls: 'bg-slate-600 text-white border-transparent' },
+  { key: 'EMAIL',            label: 'เติมผ่าน Apple ID',    activeCls: 'bg-blue-500 text-white border-transparent' },
+  { key: 'RAZER',            label: 'เติมผ่าน Razer',       activeCls: 'bg-green-500 text-white border-transparent' },
+  { key: 'RAZER_AUTO',       label: 'Razer Auto (Bot)',     activeCls: 'bg-orange-500 text-white border-transparent' },
+  { key: 'ID_PASS',          label: 'ID-PASS (Stock 77)',   activeCls: 'bg-yellow-500 text-white border-transparent' },
 ]
 
 function usesEmailCredits(fill_type, customTypes = []) {
@@ -214,7 +215,7 @@ export default function ManagePage() {
     if (!newGameName.trim()) { setAddGameError('กรุณากรอกชื่อเกม'); return }
     const fill_type = computedFillType(newGameTypeKey, newGameOtherStock)
     if (fill_type === 'RAZER_AUTO' && !newGameRazerAccountType.trim()) {
-      setAddGameError('กรุณาระบุ Razer Account Type สำหรับ RAZER_AUTO'); return
+      setAddGameError('กรุณาระบุ Razer Account Type'); return
     }
     const res = await fetch('/categories', {
       method: 'POST',
@@ -309,12 +310,12 @@ export default function ManagePage() {
       body: JSON.stringify({
         name: form.name.trim(),
         price: Number(form.price),
-        stock: needsStock ? (form.unlimitedStock ? -1 : Number(form.stock)) : 0,
+        stock: needsStock ? (form.unlimitedStock ? -1 : Number(form.stock)) : (isRazerAutoCat ? -1 : 0),
         category_id: cat.id,
         price_usd: form.price_usd !== '' ? Number(form.price_usd) : null,
         cost: form.cost !== '' ? Number(form.cost) : 0,
-        ...(isRazerAutoCat && form.credits_min !== '' && form.credits_min != null ? { credits_min: Number(form.credits_min) } : {}),
-        ...(isRazerAutoCat && form.credits_max !== '' && form.credits_max != null ? { credits_max: Number(form.credits_max) } : {}),
+        ...(isRazerAutoCat && form.credits_min !== '' && form.credits_min != null ? { credits_min: Number(form.credits_min) } : { credits_min: null }),
+        ...(isRazerAutoCat && form.credits_max !== '' && form.credits_max != null ? { credits_max: Number(form.credits_max) } : { credits_max: null }),
       }),
     })
     const data = await res.json()
@@ -358,19 +359,20 @@ export default function ManagePage() {
       if (sum > 0) finalPriceUsd = sum
     }
 
-    const needsStock = !usesEmailCredits(fill_type, customEmailTypes) && !isIDPass(fill_type)
+    const isRazerBotCat = fill_type === 'RAZER_AUTO'
+    const needsStock = !usesEmailCredits(fill_type, customEmailTypes) && !isIDPass(fill_type) && !isRazerBotCat
     await fetch(`/products/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name,
         price: Number(price),
-        stock: needsStock ? Number(stock) : 0,
+        stock: needsStock ? Number(stock) : (isRazerBotCat ? -1 : 0),
         category_id: category_id || null,
         price_usd: finalPriceUsd,
         cost: cost !== '' && cost != null ? Number(cost) : 0,
-        credits_min: fill_type === 'RAZER_AUTO' && credits_min !== '' && credits_min != null ? Number(credits_min) : null,
-        credits_max: fill_type === 'RAZER_AUTO' && credits_max !== '' && credits_max != null ? Number(credits_max) : null,
+        credits_min: isRazerBotCat && credits_min !== '' && credits_min != null ? Number(credits_min) : null,
+        credits_max: isRazerBotCat && credits_max !== '' && credits_max != null ? Number(credits_max) : null,
       }),
     })
 
@@ -810,7 +812,7 @@ export default function ManagePage() {
                         onChange={e => setAddForm(cat.id, { price: e.target.value })}
                         className={`w-28 ${inputCls}`}
                       />
-                      {cat.fill_type === 'RAZER_AUTO' ? (
+                      {(cat.fill_type === 'RAZER_AUTO') ? (
                         <>
                           <input
                             type="number" step="0.01" placeholder="Min Credits"
@@ -1541,7 +1543,7 @@ export default function ManagePage() {
                 )}
               </div>
             )}
-            {editModal.fill_type === 'RAZER_AUTO' && (
+            {(editModal.fill_type === 'RAZER_AUTO') && (
               <div className="mb-3.5">
                 <label className="block text-sm text-slate-500 mb-1.5">
                   ช่วงเครดิต Razer Gold <span className="text-slate-400">(Min – Max)</span>

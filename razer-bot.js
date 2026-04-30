@@ -15,6 +15,17 @@ puppeteerExtra.use(StealthPlugin())
 
 const VALID_PAY_ORIGIN = 'https://pay.gold.razer.com'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
+const fs = require('fs')
+const path = require('path')
+const SCREENSHOT_DIR = path.join(__dirname, 'public', 'bot-screenshots')
+if (!fs.existsSync(SCREENSHOT_DIR)) fs.mkdirSync(SCREENSHOT_DIR, { recursive: true })
+
+async function shot(page, label) {
+  try {
+    const file = path.join(SCREENSHOT_DIR, `latest-${label}.png`)
+    await page.screenshot({ path: file, fullPage: false })
+  } catch {}
+}
 
 function validateAmount(goldAmount, pkg) {
   if (pkg.credits_min == null && pkg.credits_max == null) return { valid: true }
@@ -102,16 +113,46 @@ async function getPageOrderAmount(page) {
 }
 
 // ── Browser ───────────────────────────────────────────────────
-async function launchBrowser() {
+let _activeBrowser = null
+let _killRequested = false
+
+function killCurrentBot() {
+  _killRequested = true
+  if (_activeBrowser) {
+    try { _activeBrowser.close() } catch {}
+    _activeBrowser = null
+  }
+  return true
+}
+
+function checkKill() {
+  if (_killRequested) throw new Error('Bot ถูกยกเลิกโดย admin')
+}
+
+async function launchBrowser(headless = process.env.HEADLESS !== 'false') {
+  const isHeadful = !headless
   return puppeteerExtra.launch({
-    headless: true,
+    headless,
+    executablePath: isHeadful
+      ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+      : undefined,
+    userDataDir: isHeadful ? 'D:\\my-pos\\.chrome-profile' : undefined,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
       '--lang=en-US',
       '--accept-lang=en-US,en',
+      '--start-maximized',
+      '--window-size=1280,900',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-popup-blocking',
+      ...(isHeadful
+        ? ['--enable-gpu', '--use-gl=desktop', '--enable-accelerated-2d-canvas']
+        : ['--disable-dev-shm-usage', '--disable-gpu']),
     ],
+    defaultViewport: null,
+    ignoreDefaultArgs: isHeadful ? ['--enable-automation', '--disable-gpu'] : ['--enable-automation'],
   })
 }
 
@@ -568,177 +609,5 @@ async function regenAccountBackupCodes(account, loadRazerAccounts, saveRazerAcco
   }
 }
 
-// ── Main Topup Entry Point ────────────────────────────────────
-async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccounts, db, save }, jobIndex = 1, totalJobs = 1) {
-  const payUrl = order.userFields?.urlLink
-  if (!payUrl || !payUrl.startsWith(VALID_PAY_ORIGIN))
-    throw new Error('URL ไม่ถูกต้อง ต้องขึ้นต้นด้วย ' + VALID_PAY_ORIGIN)
 
-  // ดึง product + category เพื่อหา razer_account_type + credits_min/max
-  const pkgRes = db.exec(
-    'SELECT p.credits_min, p.credits_max, c.razer_account_type FROM products p JOIN categories c ON c.id = p.category_id WHERE p.id=?',
-    [order.packageId]
-  )
-  const pkgRow = pkgRes[0]?.values[0]
-  const pkg = pkgRow ? { credits_min: pkgRow[0], credits_max: pkgRow[1] } : {}
-  const reqAccountType = pkgRow?.[2] || null
-
-  // โหลด candidates: fill_type=RAZER, ไม่ locked, ไม่ broken, razer_account_type ตรง, มี backup_codes
-  // ถ้า credits_max ตั้งไว้ → เลือกเฉพาะ account ที่ credits >= credits_max
-  //   แล้ว sort จาก surplus (credits - max) น้อยสุดก่อน (ใช้คนที่พอดีก่อน)
-  // ถ้าไม่มี credits_max → filter credits > 0 แล้ว sort มากสุดก่อน (พฤติกรรมเดิม)
-  const hasMax = pkg.credits_max != null
-  const allAccounts = loadRazerAccounts()
-    .filter(a =>
-      !a.is_locked &&
-      !a.broken &&
-      a.backup_codes.length > 0 &&
-      (!reqAccountType || a.razer_account_type === reqAccountType) &&
-      (hasMax ? a.credits >= pkg.credits_max : a.credits > 0) &&
-      a.backup_codes.length >= 2   // ต้องมี >= 2 codes: 1 สำหรับ checkout + 1 สำหรับ regen 2FA
-    )
-    .sort((a, b) =>
-      hasMax
-        ? (a.credits - pkg.credits_max) - (b.credits - pkg.credits_max)  // surplus น้อยสุดก่อน
-        : b.credits - a.credits                                            // credits มากสุดก่อน
-    )
-
-  console.log(`[razer-bot] credits_max=${pkg.credits_max ?? 'ไม่ได้ตั้ง'} → candidates ${allAccounts.length} accounts`)
-  allAccounts.forEach((a, i) =>
-    console.log(`[razer-bot]   [${i+1}] email#${a.id} credits=${a.credits}${hasMax ? ` surplus=${(a.credits - pkg.credits_max).toFixed(2)}` : ''}`)
-  )
-
-  if (!allAccounts.length)
-    throw new Error('ไม่มี Razer account ที่พร้อมใช้งาน')
-
-  if (jobIndex === 1) {
-    db.run('UPDATE orders SET razer_status=?, razer_started_at=? WHERE id=?', ['processing', new Date().toISOString(), orderId])
-  } else {
-    db.run('UPDATE orders SET razer_note=? WHERE id=?', [`กำลังดำเนินการชิ้นที่ ${jobIndex}/${totalJobs}...`, orderId])
-  }
-  save()
-
-  const browser = await launchBrowser()
-  let selectedAccount = null
-  const accountErrors = []
-
-  try {
-    let razerGoldAmount = null  // อ่านหลัง login ครั้งแรก
-
-    const client = await browser.target().createCDPSession()
-
-    for (const acc of allAccounts) {
-      // clear cookies
-      try { await client.send('Network.clearBrowserCookies') } catch {}
-
-      const page = await browser.newPage()
-      try {
-        await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' })
-        await page.goto(payUrl, { waitUntil: 'networkidle2' })
-        await loginOnPaymentPage(page, acc)
-
-        // ตรวจ login สำเร็จ
-        try {
-          await page.waitForSelector('#userTotalGold', { timeout: 10000 })
-        } catch {
-          await page.close()
-          continue
-        }
-
-        // อ่านยอด Gold จาก #orderSummaryOrderTotal หลัง login (ครั้งแรกเท่านั้น)
-        if (razerGoldAmount === null) {
-          razerGoldAmount = await getPageOrderAmount(page)
-          console.log(`[razer-bot] Gold amount from page: ${razerGoldAmount}`)
-
-          if (razerGoldAmount != null) {
-            const amountCheck = validateAmount(razerGoldAmount, pkg)
-            if (!amountCheck.valid) throw new Error(amountCheck.reason)
-          }
-        }
-
-        const goldToDeduct = razerGoldAmount ?? 0
-
-        // poll รอ #userTotalGold มีค่า (สูงสุด 10s)
-        let liveRaw = ''
-        for (let i = 0; i < 20; i++) {
-          liveRaw = await page.evaluate(() =>
-            document.getElementById('userTotalGold')?.textContent?.trim() ?? ''
-          )
-          if (liveRaw && parseLocaleNumber(liveRaw) != null) break
-          await sleep(500)
-        }
-        const liveCredit = parseLocaleNumber(liveRaw) ?? 0
-        console.log(`[razer-bot] account#${acc.id} liveCredit raw="${liveRaw}" → ${liveCredit}, need=${goldToDeduct}`)
-
-        if (goldToDeduct > 0 && liveCredit < goldToDeduct) {
-          console.log(`[razer-bot] account#${acc.id} credit ไม่พอ (${liveCredit} < ${goldToDeduct}) → ข้าม`)
-          await page.close()
-          continue
-        }
-
-        // Lock account
-        db.run('UPDATE emails SET is_locked=1 WHERE id=?', [acc.id])
-        save()
-        selectedAccount = acc
-
-        const codeToUse = acc.backup_codes[0]
-        await processCheckout(page, codeToUse)
-
-        // Success: ตัด credit, ตัด backup code, unlock
-        db.run(
-          'UPDATE emails SET credits=credits-?, is_locked=0, backup_codes=? WHERE id=?',
-          [goldToDeduct, JSON.stringify(acc.backup_codes.slice(1)), acc.id]
-        )
-        db.run(
-          'UPDATE order_items SET email_id_used=?, credit_deducted=? WHERE order_id=?',
-          [acc.id, goldToDeduct, orderId]
-        )
-        if (jobIndex === totalJobs) {
-          db.run('UPDATE orders SET razer_status=?, razer_note=?, razer_finished_at=? WHERE id=?',
-            ['success', totalJobs > 1 ? `เสร็จสิ้น ${totalJobs}/${totalJobs} ชิ้น` : null, new Date().toISOString(), orderId])
-        } else {
-          db.run('UPDATE orders SET razer_note=? WHERE id=?', [`${jobIndex}/${totalJobs} เสร็จแล้ว — รอชิ้นถัดไป...`, orderId])
-        }
-        save()
-
-        // auto-regen ถ้า codes เหลือน้อยกว่า 5
-        // ใช้ regenAccountBackupCodes (สร้าง browser ใหม่ของตัวเอง) แทน regenerateBackupCodes(browser,...)
-        // เพราะ browser หลักจะถูกปิดใน finally ทันทีหลัง return
-        const remainingCodes = acc.backup_codes.slice(1)
-        if (remainingCodes.length < 5) {
-          const updAcc = loadRazerAccounts().find(a => a.id === acc.id)
-          if (updAcc) {
-            console.log(`[razer-bot] auto-regen triggered for email#${acc.id} (codes เหลือ ${remainingCodes.length})`)
-            regenAccountBackupCodes(updAcc, loadRazerAccounts, saveRazerAccounts)
-              .then(n => console.log(`[razer-bot] auto-regen สำเร็จ email#${acc.id}: ${n} codes ใหม่`))
-              .catch(e => console.error(`[razer-bot] auto-regen failed for email#${acc.id}:`, e.message))
-          }
-        }
-
-        await page.close()
-        return
-      } catch (err) {
-        const msg = `account#${acc.id}(${acc.email}): ${err.message}`
-        console.error(`[razer-bot] ${msg}`)
-        accountErrors.push(msg)
-        // update note ทันทีแต่ละรอบ เพื่อเห็น progress แม้ crash กลางทาง
-        db.run('UPDATE orders SET razer_note=? WHERE id=?', [accountErrors.join(' | '), orderId])
-        save()
-        // unlock ถ้า lock ไปแล้ว
-        if (selectedAccount?.id === acc.id) {
-          db.run('UPDATE emails SET is_locked=0 WHERE id=?', [acc.id])
-          save()
-        }
-        try { await page.close() } catch {}
-        selectedAccount = null
-      }
-    }
-
-    throw new Error('ไม่สามารถ checkout ได้กับทุก account ที่ลอง: ' + accountErrors.join(' | '))
-
-  } finally {
-    try { await browser.close() } catch {}
-  }
-}
-
-module.exports = { runRazerOrder, regenAccountBackupCodes }
+module.exports = { runRazerOrder, regenAccountBackupCodes, killCurrentBot }

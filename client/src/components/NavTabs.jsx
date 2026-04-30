@@ -3,6 +3,7 @@ export default function NavTabs({ page, onChangePage, user }) {
     ['pos', 'หน้าขาย'],
     ['manage', 'จัดการสินค้า'],
     ['emails', 'จัดการ Email'],
+    ['email-summary', 'สรุป Email'],
     ['orders', 'ประวัติรายการ'],
     ['dashboard', 'Dashboard'],
     // ['bank', 'เช็คเงินเข้า'], // TODO: เปิดเมื่อระบบพร้อม

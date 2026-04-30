@@ -9,6 +9,7 @@ import UsersPage from './pages/UsersPage'
 import DashboardPage from './pages/DashboardPage'
 import BankPage from './pages/BankPage'
 import RazerPage from './pages/RazerPage'
+import EmailSummaryPage from './pages/EmailSummaryPage'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -64,6 +65,7 @@ export default function App() {
         {page === 'orders' && <OrdersPage />}
         {page === 'dashboard' && <DashboardPage />}
         {page === 'bank' && <BankPage />}
+        {page === 'email-summary' && <EmailSummaryPage />}
         {page === 'razer' && user?.is_admin && <RazerPage />}
         {page === 'users' && user?.is_admin && <UsersPage currentUser={user} />}
       </div>

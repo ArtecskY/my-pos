@@ -150,8 +150,10 @@ async function initDB() {
     transfer_amount REAL,
     reserve_time TEXT,
     channel TEXT,
+    note TEXT,
     created_at TEXT DEFAULT (datetime('now','localtime'))
   )`)
+  try { db.run('ALTER TABLE reservations ADD COLUMN note TEXT') } catch (e) { /* column exists */ }
 
   db.run(`CREATE TABLE IF NOT EXISTS reservation_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

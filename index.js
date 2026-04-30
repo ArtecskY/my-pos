@@ -471,6 +471,50 @@ initDB().then(() => {
   }
 
   // --- Email Types (custom) ---
+  app.get('/email-summary', requireLogin, (req, res) => {
+    try {
+      const { email_id, from, to } = req.query
+      if (!email_id) return res.status(400).json({ error: 'email_id required' })
+      const emailRes = db.exec('SELECT id, email, fill_type, credits, initial_credits, note FROM emails WHERE id=?', [email_id])
+      if (!emailRes[0]) return res.status(404).json({ error: 'ไม่พบ email' })
+      const [eid, emailAddr, fillType, credits, initialCredits, emailNote] = emailRes[0].values[0]
+
+      let dateFilter = ''
+      const params = [email_id]
+      if (from) { dateFilter += ' AND COALESCE(o.transfer_time, o.created_at) >= ?'; params.push(from) }
+      if (to)   { dateFilter += ' AND COALESCE(o.transfer_time, o.created_at) <= ?'; params.push(to + 'T23:59:59') }
+
+      const rows = db.exec(`
+        SELECT oi.id, o.id AS order_id, COALESCE(o.transfer_time, o.created_at) AS order_date,
+               p.name AS product_name, c.name AS category_name,
+               oi.credit_deducted, oi.price, oi.quantity
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        LEFT JOIN products p ON p.id = oi.product_id
+        LEFT JOIN categories c ON c.id = p.category_id
+        WHERE oi.email_id_used = ?${dateFilter}
+        ORDER BY o.id DESC
+      `, params)
+
+      const items = rows[0] ? rows[0].values.map(r => ({
+        item_id: r[0], order_id: r[1],
+        created_at: r[2],
+        product_name: r[3] || '-', category_name: r[4] || '-',
+        credit_deducted: r[5], price: r[6], quantity: r[7],
+      })) : []
+
+      const totalUsed = items.reduce((s, i) => s + (i.credit_deducted || 0), 0)
+      res.json({
+        email: { id: eid, email: emailAddr, fill_type: fillType, credits, initial_credits: initialCredits, note: emailNote || '' },
+        items,
+        summary: { initial_credits: initialCredits || 0, total_used: totalUsed, remaining: credits || 0 },
+      })
+    } catch (e) {
+      console.error('email-summary error:', e)
+      res.status(500).json({ error: e.message })
+    }
+  })
+
   app.get('/email-types', requireLogin, (req, res) => {
     const result = db.exec('SELECT id, key, label, color, behavior FROM email_types ORDER BY id ASC')
     const types = result[0] ? result[0].values.map(row => ({
@@ -978,10 +1022,10 @@ initDB().then(() => {
 
   // --- Reservations ---
   function getReservationsData() {
-    const result = db.exec('SELECT id, customer_name, transfer_amount, reserve_time, channel, created_at FROM reservations ORDER BY id DESC')
+    const result = db.exec('SELECT id, customer_name, transfer_amount, reserve_time, channel, created_at, note FROM reservations ORDER BY id ASC')
     const reservations = result[0] ? result[0].values.map(row => ({
       id: row[0], customer_name: row[1], transfer_amount: row[2],
-      reserve_time: row[3], channel: row[4], created_at: row[5],
+      reserve_time: row[3], channel: row[4], created_at: row[5], note: row[6],
     })) : []
     for (const r of reservations) {
       const items = db.exec(`
@@ -1020,9 +1064,9 @@ initDB().then(() => {
   })
 
   app.post('/reservations', requireLogin, (req, res) => {
-    const { customer_name, transfer_amount, reserve_time, channel, items = [] } = req.body
-    db.run('INSERT INTO reservations (customer_name, transfer_amount, reserve_time, channel) VALUES (?,?,?,?)',
-      [customer_name || null, transfer_amount || null, reserve_time || null, channel || null])
+    const { customer_name, transfer_amount, reserve_time, channel, note, items = [] } = req.body
+    db.run('INSERT INTO reservations (customer_name, transfer_amount, reserve_time, channel, note) VALUES (?,?,?,?,?)',
+      [customer_name || null, transfer_amount || null, reserve_time || null, channel || null, note || null])
     const r = db.exec('SELECT last_insert_rowid()')
     const reservationId = r[0].values[0][0]
     for (const item of items) {
@@ -1032,6 +1076,27 @@ initDB().then(() => {
     save()
     broadcastReservations()
     res.json({ id: reservationId, message: 'บันทึกการจองสำเร็จ' })
+  })
+
+  app.put('/reservations/:id', requireLogin, (req, res) => {
+    try {
+      const { customer_name, note, transfer_amount, channel, items } = req.body
+      db.run('UPDATE reservations SET customer_name=?, note=?, transfer_amount=?, channel=? WHERE id=?',
+        [customer_name ?? null, note ?? null, transfer_amount ?? null, channel ?? null, req.params.id])
+      if (Array.isArray(items)) {
+        db.run('DELETE FROM reservation_items WHERE reservation_id=?', [req.params.id])
+        for (const item of items) {
+          db.run('INSERT INTO reservation_items (reservation_id, product_id, quantity) VALUES (?,?,?)',
+            [req.params.id, item.product_id, item.quantity])
+        }
+      }
+      save()
+      broadcastReservations()
+      res.json({ message: 'อัปเดตการจองสำเร็จ' })
+    } catch (e) {
+      console.error('PUT /reservations error:', e.message)
+      res.status(500).json({ error: e.message })
+    }
   })
 
   app.delete('/reservations/:id', requireLogin, (req, res) => {
@@ -1241,6 +1306,29 @@ initDB().then(() => {
   })
 
   // ── Razer Bot routes ─────────────────────────────────────────
+  app.get('/razer-bot/screenshots', requireLogin, (req, res) => {
+    const dir = require('path').join(__dirname, 'public', 'bot-screenshots')
+    const files = require('fs').existsSync(dir)
+      ? require('fs').readdirSync(dir).filter(f => f.endsWith('.png')).sort()
+      : []
+    res.json(files.map(f => `/bot-screenshots/${f}`))
+  })
+
+  app.post('/razer-bot/kill', requireLogin, (req, res) => {
+    const { orderId } = req.body
+    const killed = razerBot?.killCurrentBot?.() ?? false
+    if (killed && orderId) {
+      db.run(
+        "UPDATE orders SET razer_status='failed', razer_note='ยกเลิกโดย admin', razer_finished_at=? WHERE id=?",
+        [new Date().toISOString(), orderId]
+      )
+      // unlock accounts ที่อาจค้าง
+      db.run("UPDATE emails SET is_locked=0 WHERE fill_type='RAZER' AND is_locked=1")
+      save()
+    }
+    res.json({ killed })
+  })
+
   const regenningSet = new Set()  // email IDs ที่กำลัง regen อยู่
 
   app.get('/razer-regen-status', requireLogin, (req, res) => {

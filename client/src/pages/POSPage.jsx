@@ -84,8 +84,13 @@ export default function POSPage({ onNavigate }) {
   const [reserveAmount, setReserveAmount] = useState('')
   const [reserveTime, setReserveTime] = useState('')
   const [reserveChannel, setReserveChannel] = useState(null)
+  const [reserveNote, setReserveNote] = useState('')
   const [reservations, setReservations] = useState([])
   const [activeReservationId, setActiveReservationId] = useState(null)
+  const [editingResName, setEditingResName] = useState(null) // id ที่กำลัง inline-edit ชื่อ
+  const [editingResNameVal, setEditingResNameVal] = useState('')
+  const [editingResNote, setEditingResNote] = useState(null) // id ที่กำลัง inline-edit note
+  const [editingResNoteVal, setEditingResNoteVal] = useState('')
 
   function loadReservations() {
     fetch('/reservations').then(r => r.json()).then(setReservations)
@@ -114,7 +119,7 @@ export default function POSPage({ onNavigate }) {
     return emailTypes.find(t => t.key === ft)?.label || ft
   }
 
-  // fill types ที่มีสินค้า (stock > 0 หรือ -1 หรือ RAZER_AUTO) อยู่จริง
+  // fill types ที่มีสินค้า (stock > 0 หรือ -1 หรือ Bot type) อยู่จริง
   const activeFillTypes = [...new Set(
     categories
       .filter(cat => products.some(p =>
@@ -441,26 +446,51 @@ export default function POSPage({ onNavigate }) {
 
   // ---- Reservation actions ----
   async function saveReservation() {
-    const res = await fetch('/reservations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        customer_name: reserveName || null,
-        transfer_amount: reserveAmount ? Number(reserveAmount) : null,
-        reserve_time: reserveTime || null,
-        channel: reserveChannel || null,
-        items: cart.filter(i => !i.isManual).map(i => ({ product_id: i.id, quantity: i.quantity })),
-      }),
-    })
-    const data = await res.json()
-    if (!res.ok) { alert(data.error); return }
-    setCart([])
-    setReserveName('')
-    setReserveAmount('')
-    setReserveTime('')
-    setReserveChannel(null)
-    setCartMode('buy')
-    loadReservations()
+    try {
+      const itemsPayload = cart.filter(i => !i.isManual).map(i => ({ product_id: i.id, quantity: i.quantity }))
+      let res
+      if (activeReservationId && cartMode === 'reserve') {
+        res = await fetch(`/reservations/${activeReservationId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer_name: reserveName || null,
+            note: reserveNote || null,
+            transfer_amount: reserveAmount ? Number(reserveAmount) : null,
+            channel: reserveChannel || null,
+            items: itemsPayload,
+          }),
+        })
+      } else {
+        res = await fetch('/reservations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer_name: reserveName || null,
+            transfer_amount: reserveAmount ? Number(reserveAmount) : null,
+            reserve_time: reserveTime || null,
+            channel: reserveChannel || null,
+            note: reserveNote || null,
+            items: itemsPayload,
+          }),
+        })
+      }
+      const text = await res.text()
+      let data
+      try { data = JSON.parse(text) } catch { alert('Server error: ' + text.slice(0, 200)); return }
+      if (!res.ok) { alert(data.error || 'เกิดข้อผิดพลาด'); return }
+      setCart([])
+      setReserveName('')
+      setReserveAmount('')
+      setReserveTime('')
+      setReserveChannel(null)
+      setReserveNote('')
+      setActiveReservationId(null)
+      setCartMode('buy')
+      loadReservations()
+    } catch (e) {
+      alert('เกิดข้อผิดพลาด: ' + e.message)
+    }
   }
 
   function loadReservation(r) {
@@ -472,7 +502,24 @@ export default function POSPage({ onNavigate }) {
     if (cartItems.length === 0) { alert('ไม่พบสินค้าในรายการจอง (สินค้าอาจถูกลบออกจากระบบแล้ว)'); return }
     setCart(cartItems)
     setActiveReservationId(r.id)
-    setCartMode('buy')
+    setReserveName(r.customer_name || '')
+    setReserveNote(r.note || '')
+    setReserveAmount(r.transfer_amount != null ? String(r.transfer_amount) : '')
+    setReserveChannel(r.channel || null)
+    setCartMode('reserve')
+  }
+
+  async function saveResField(id, field, val) {
+    const r = reservations.find(rv => rv.id === id)
+    if (!r) return
+    try {
+      const res = await fetch(`/reservations/${id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_name: field === 'name' ? val : r.customer_name, note: field === 'note' ? val : r.note }),
+      })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'บันทึกไม่สำเร็จ') }
+    } catch (e) { alert('เกิดข้อผิดพลาด: ' + e.message) }
+    loadReservations()
   }
 
   async function deleteReservation(id) {
@@ -658,7 +705,7 @@ export default function POSPage({ onNavigate }) {
             <div className="flex items-center gap-2">
             <div className="flex rounded-lg border border-slate-200 text-xs overflow-hidden">
               <button
-                onClick={() => setCartMode('buy')}
+                onClick={() => { setCartMode('buy'); setActiveReservationId(null); setReserveName(''); setReserveNote('') }}
                 className={`px-3 py-1.5 cursor-pointer transition-colors ${
                   cartMode === 'buy' ? 'bg-blue-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
                 }`}
@@ -827,47 +874,72 @@ export default function POSPage({ onNavigate }) {
           {/* Reserve mode: reservation form + save button */}
           {cartMode === 'reserve' && (
             <>
-              {true && (
-                <div className="mt-3 space-y-2.5">
-                  <p className="text-xs font-semibold text-orange-600">ข้อมูลการจอง</p>
-                  <input
-                    type="text" value={reserveName}
-                    onChange={e => setReserveName(e.target.value)}
-                    placeholder="ชื่อผู้จอง"
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
-                  />
-                  <input
-                    type="number" value={reserveAmount}
-                    onChange={e => setReserveAmount(e.target.value)}
-                    placeholder="ยอดโอน (฿)"
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
-                  />
+              <div className="mt-3 space-y-2.5">
+                <p className="text-xs font-semibold text-orange-600">
+                  {activeReservationId ? `✏️ แก้ไขการจอง #${activeReservationId}` : 'ข้อมูลการจอง'}
+                </p>
+                <input
+                  type="text" value={reserveName}
+                  onChange={e => setReserveName(e.target.value)}
+                  placeholder="ชื่อผู้จอง"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                />
+                <input
+                  type="number" value={reserveAmount}
+                  onChange={e => setReserveAmount(e.target.value)}
+                  placeholder="ยอดโอน (฿)"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                />
+                {!activeReservationId && (
                   <input
                     type="datetime-local" value={reserveTime}
                     onChange={e => setReserveTime(e.target.value)}
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
                   />
-                  <div className="flex gap-2">
-                    {['Facebook', 'Line'].map(ch => (
-                      <button
-                        key={ch}
-                        onClick={() => setReserveChannel(prev => prev === ch ? null : ch)}
-                        className={`flex-1 py-2 rounded-lg text-sm font-medium cursor-pointer border transition-colors ${
-                          reserveChannel === ch
-                            ? ch === 'Facebook' ? 'bg-blue-600 text-white border-blue-600' : 'bg-green-500 text-white border-green-500'
-                            : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                        }`}
-                      >{ch}</button>
-                    ))}
-                  </div>
+                )}
+                <div className="flex gap-2">
+                  {[
+                    { name: 'Facebook', active: 'bg-blue-600 text-white border-blue-600' },
+                    { name: 'Line', active: 'bg-green-500 text-white border-green-500' },
+                    { name: 'หลังบ้าน', active: 'bg-purple-500 text-white border-purple-500' },
+                  ].map(({ name, active }) => (
+                    <button key={name} onClick={() => setReserveChannel(prev => prev === name ? null : name)}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium cursor-pointer border transition-colors ${
+                        reserveChannel === name ? active : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                      }`}>{name}</button>
+                  ))}
                 </div>
-              )}
-              <button
-                onClick={saveReservation}
-                className="w-full mt-3 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg cursor-pointer font-medium"
-              >
-                บันทึกการจอง
-              </button>
+                <textarea
+                  value={reserveNote} onChange={e => setReserveNote(e.target.value)}
+                  placeholder="หมายเหตุ (ไม่บังคับ)"
+                  rows={2}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400 resize-none"
+                />
+              </div>
+              <div className="flex gap-2 mt-3">
+                {activeReservationId && (
+                  <button
+                    onClick={() => {
+                      setCart([])
+                      setActiveReservationId(null)
+                      setReserveName('')
+                      setReserveNote('')
+                      setReserveAmount('')
+                      setReserveChannel(null)
+                      setCartMode('buy')
+                    }}
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-3 rounded-lg cursor-pointer font-medium text-sm"
+                  >
+                    ย้อนกลับ
+                  </button>
+                )}
+                <button
+                  onClick={saveReservation}
+                  className={`${activeReservationId ? 'flex-1' : 'w-full'} bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg cursor-pointer font-medium`}
+                >
+                  {activeReservationId ? 'บันทึกทับ (คิวเดิม)' : 'บันทึกการจอง'}
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -880,10 +952,10 @@ export default function POSPage({ onNavigate }) {
               <span className="ml-2 px-2 py-0.5 bg-orange-100 text-orange-600 rounded-full text-xs font-medium">{reservations.length}</span>
             </p>
             <div className="space-y-2">
-              {reservations.map(r => (
+              {reservations.map((r, idx) => (
                 <div
                   key={r.id}
-                  onClick={() => loadReservation(r)}
+                  onClick={() => { if (editingResName === r.id || editingResNote === r.id) return; loadReservation(r) }}
                   className={`rounded-xl p-3 cursor-pointer transition-all border ${
                     activeReservationId === r.id
                       ? 'bg-orange-100 border-orange-400 shadow-sm'
@@ -893,10 +965,29 @@ export default function POSPage({ onNavigate }) {
                   <div className="flex justify-between items-start">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-sm font-semibold text-orange-800">{r.customer_name || 'ไม่ระบุชื่อ'}</span>
+                        <span className="text-xs font-bold text-orange-400">#{idx + 1}</span>
+                        {/* Inline edit: ชื่อ */}
+                        {editingResName === r.id ? (
+                          <input
+                            autoFocus
+                            className="text-sm font-semibold text-orange-800 border-b border-orange-400 bg-transparent outline-none w-28"
+                            value={editingResNameVal}
+                            onChange={e => setEditingResNameVal(e.target.value)}
+                            onClick={e => e.stopPropagation()}
+                            onBlur={() => { saveResField(r.id, 'name', editingResNameVal); setEditingResName(null) }}
+                            onKeyDown={e => { if (e.key === 'Enter') { saveResField(r.id, 'name', editingResNameVal); setEditingResName(null) } if (e.key === 'Escape') setEditingResName(null) }}
+                          />
+                        ) : (
+                          <span
+                            className="text-sm font-semibold text-orange-800 hover:underline decoration-dotted cursor-text"
+                            onClick={e => { e.stopPropagation(); setEditingResName(r.id); setEditingResNameVal(r.customer_name || '') }}
+                          >{r.customer_name || 'ไม่ระบุชื่อ'}</span>
+                        )}
                         {r.channel && (
                           <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                            r.channel === 'Facebook' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                            r.channel === 'Facebook' ? 'bg-blue-100 text-blue-700'
+                            : r.channel === 'หลังบ้าน' ? 'bg-purple-100 text-purple-700'
+                            : 'bg-green-100 text-green-700'
                           }`}>{r.channel}</span>
                         )}
                       </div>
@@ -909,6 +1000,23 @@ export default function POSPage({ onNavigate }) {
                       <p className="text-xs text-slate-500 mt-1 truncate">
                         {[...new Set(r.items.map(item => item.category_name || item.name))].join(' · ')}
                       </p>
+                      {/* Inline edit: note */}
+                      {editingResNote === r.id ? (
+                        <textarea
+                          autoFocus rows={2}
+                          className="mt-1 w-full text-xs text-slate-600 border border-orange-300 rounded px-2 py-1 bg-white outline-none resize-none"
+                          value={editingResNoteVal}
+                          onChange={e => setEditingResNoteVal(e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          onBlur={() => { saveResField(r.id, 'note', editingResNoteVal); setEditingResNote(null) }}
+                          onKeyDown={e => { if (e.key === 'Escape') setEditingResNote(null) }}
+                        />
+                      ) : (
+                        <p
+                          className="text-xs text-slate-400 mt-0.5 italic cursor-text hover:text-slate-600 truncate"
+                          onClick={e => { e.stopPropagation(); setEditingResNote(r.id); setEditingResNoteVal(r.note || '') }}
+                        >{r.note || <span className="text-slate-300">+ หมายเหตุ</span>}</p>
+                      )}
                     </div>
                     <button
                       onClick={e => { e.stopPropagation(); deleteReservation(r.id) }}

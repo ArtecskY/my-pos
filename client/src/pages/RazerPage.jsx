@@ -15,6 +15,8 @@ export default function RazerPage() {
   const [newTypeName, setNewTypeName] = useState('')
   const [typeError, setTypeError] = useState('')
   const [serverRegenning, setServerRegenning] = useState(new Set())
+  const [botScreenshots, setBotScreenshots] = useState([])
+  const [shotTs, setShotTs] = useState(Date.now())
 
   function loadEmails() {
     fetch('/emails').then(r => r.json())
@@ -30,9 +32,19 @@ export default function RazerPage() {
     fetch('/razer-regen-status').then(r => r.json()).then(ids => setServerRegenning(new Set(ids))).catch(() => {})
   }
 
+  function loadScreenshots() {
+    fetch('/razer-bot/screenshots').then(r => r.json()).then(urls => {
+      setBotScreenshots(urls)
+      setShotTs(Date.now())
+    }).catch(() => {})
+  }
+
   useEffect(() => {
-    loadEmails(); loadAccountTypes(); loadRazerOrders(); loadRegenStatus()
-    const t = setInterval(() => { loadEmails(); loadAccountTypes(); loadRazerOrders(); loadRegenStatus() }, 3000)
+    loadEmails(); loadAccountTypes(); loadRazerOrders(); loadRegenStatus(); loadScreenshots()
+    const t = setInterval(() => {
+      loadEmails(); loadAccountTypes(); loadRazerOrders(); loadRegenStatus()
+      loadScreenshots()
+    }, 3000)
     return () => clearInterval(t)
   }, [])
 
@@ -92,6 +104,16 @@ export default function RazerPage() {
 
   const pendingCount = razerOrders.filter(o => o.razer_status === 'pending').length
   const processingCount = razerOrders.filter(o => o.razer_status === 'processing').length
+  const processingOrder = razerOrders.find(o => o.razer_status === 'processing')
+
+  async function killBot() {
+    if (!confirm('ยืนยันยกเลิก Bot ที่กำลังทำงานอยู่?')) return
+    await fetch('/razer-bot/kill', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId: processingOrder?.id }),
+    })
+    loadRazerOrders()
+  }
 
   return (
     <div className="max-w-5xl mx-auto space-y-4">
@@ -105,7 +127,7 @@ export default function RazerPage() {
           </p>
         </div>
         {(pendingCount + processingCount) > 0 && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             {processingCount > 0 && (
               <span className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold px-3 py-1.5 rounded-full">
                 ⚙️ กำลังทำ {processingCount}
@@ -116,12 +138,40 @@ export default function RazerPage() {
                 ⏳ คิวรอ {pendingCount}
               </span>
             )}
+            {processingCount > 0 && (
+              <button
+                onClick={killBot}
+                className="inline-flex items-center gap-1 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
+              >
+                ✕ Kill Bot
+              </button>
+            )}
           </div>
         )}
       </div>
 
       {msg && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700">{msg}</div>
+      )}
+
+      {/* Bot Screenshots */}
+      {botScreenshots.length > 0 && (
+        <div className="bg-slate-900 rounded-xl p-3">
+          <div className="text-xs text-slate-400 font-semibold mb-2">📸 Bot View (อัปเดตทุก 3s)</div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {botScreenshots.map(url => (
+              <div key={url} className="relative">
+                <div className="text-xs text-slate-500 mb-1">{url.split('latest-')[1]?.replace('.png','') ?? url}</div>
+                <img
+                  src={`${url}?t=${shotTs}`}
+                  alt={url}
+                  className="w-full rounded border border-slate-700 cursor-pointer hover:opacity-80"
+                  onClick={() => window.open(`${url}?t=${shotTs}`, '_blank')}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Razer Orders — collapsible */}
