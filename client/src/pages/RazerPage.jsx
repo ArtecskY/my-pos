@@ -1,4 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+
+const RAZER_PINNED_KEY = 'razer-pinned'
+function loadRazerPinned() {
+  try { return new Set(JSON.parse(localStorage.getItem(RAZER_PINNED_KEY) || '[]')) } catch { return new Set() }
+}
 
 export default function RazerPage() {
   const [emails, setEmails] = useState([])
@@ -17,6 +22,16 @@ export default function RazerPage() {
   const [serverRegenning, setServerRegenning] = useState(new Set())
   const [botScreenshots, setBotScreenshots] = useState([])
   const [shotTs, setShotTs] = useState(Date.now())
+  const [pinnedIds, setPinnedIds] = useState(loadRazerPinned)
+
+  function togglePin(id) {
+    setPinnedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      localStorage.setItem(RAZER_PINNED_KEY, JSON.stringify([...next]))
+      return next
+    })
+  }
 
   function loadEmails() {
     fetch('/emails').then(r => r.json())
@@ -98,9 +113,16 @@ export default function RazerPage() {
   }
 
   const botReadyCount = emails.filter(e => e.razer_account_type && (e.backup_codes || []).length > 0 && !e.broken).length
-  const filteredEmails = emails.filter(e =>
-    !searchEmail.trim() || e.email.toLowerCase().includes(searchEmail.toLowerCase())
-  )
+  const filteredEmails = useMemo(() => {
+    const filtered = emails.filter(e =>
+      !searchEmail.trim() || e.email.toLowerCase().includes(searchEmail.toLowerCase())
+    )
+    return filtered.sort((a, b) => {
+      const pa = pinnedIds.has(a.id) ? 0 : 1
+      const pb = pinnedIds.has(b.id) ? 0 : 1
+      return pa - pb
+    })
+  }, [emails, searchEmail, pinnedIds])
 
   const pendingCount = razerOrders.filter(o => o.razer_status === 'pending').length
   const processingCount = razerOrders.filter(o => o.razer_status === 'processing').length
@@ -244,10 +266,10 @@ export default function RazerPage() {
       )}
 
       {/* Account Types + Accounts — side by side on wide screens */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
 
         {/* Account Types */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
           <h3 className="font-semibold text-slate-700 mb-3 text-sm">Account Types</h3>
           <div className="flex gap-2 mb-3">
             <input
@@ -279,7 +301,7 @@ export default function RazerPage() {
         </div>
 
         {/* Accounts Table */}
-        <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           {/* Search bar */}
           <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
             <input
@@ -297,16 +319,24 @@ export default function RazerPage() {
             </span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div>
+            <table className="w-full text-sm table-fixed">
+              <colgroup>
+                <col className="w-[35%]" />
+                <col className="w-[14%]" />
+                <col className="w-[12%]" />
+                <col className="w-[9%]" />
+                <col className="w-[12%]" />
+                <col className="w-[18%]" />
+              </colgroup>
               <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
                 <tr>
-                  <th className="px-4 py-2.5 text-left">Email</th>
-                  <th className="px-4 py-2.5 text-left">Type</th>
-                  <th className="px-4 py-2.5 text-right">Credits</th>
-                  <th className="px-4 py-2.5 text-center">Codes</th>
-                  <th className="px-4 py-2.5 text-center">สถานะ</th>
-                  <th className="px-4 py-2.5 text-center">Actions</th>
+                  <th className="px-3 py-2.5 text-left">Email</th>
+                  <th className="px-3 py-2.5 text-left">Type</th>
+                  <th className="px-3 py-2.5 text-right">Credits</th>
+                  <th className="px-3 py-2.5 text-center">Codes</th>
+                  <th className="px-3 py-2.5 text-center">สถานะ</th>
+                  <th className="px-3 py-2.5 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -326,16 +356,21 @@ export default function RazerPage() {
                       email.is_locked ? 'bg-yellow-50' :
                       creditsNeg ? 'bg-orange-50' : ''
                     }>
-                      <td className="px-4 py-2.5 font-medium text-slate-700 max-w-[180px] truncate">{email.email}</td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-3 py-2.5 font-medium text-slate-700">
+                        <div className="flex items-center gap-1 min-w-0">
+                          {pinnedIds.has(email.id) && <span className="text-amber-400 text-xs flex-shrink-0">📌</span>}
+                          <span className="truncate">{email.email}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5">
                         {hasType
                           ? <span className="bg-orange-100 text-orange-700 rounded-full px-2 py-0.5 text-xs font-semibold">{email.razer_account_type}</span>
                           : <span className="bg-slate-100 text-slate-400 rounded-full px-2 py-0.5 text-xs">—</span>}
                       </td>
-                      <td className={`px-4 py-2.5 text-right font-mono text-xs ${creditsNeg ? 'text-red-500 font-semibold' : 'text-slate-600'}`}>
+                      <td className={`px-3 py-2.5 text-right font-mono text-xs ${creditsNeg ? 'text-red-500 font-semibold' : 'text-slate-600'}`}>
                         {Number(email.credits).toFixed(2)}
                       </td>
-                      <td className="px-4 py-2.5 text-center">
+                      <td className="px-3 py-2.5 text-center">
                         <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                           codes.length >= 3 ? 'bg-green-100 text-green-700' :
                           codes.length > 0  ? 'bg-yellow-100 text-yellow-700' :
@@ -343,15 +378,20 @@ export default function RazerPage() {
                           {codes.length}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-center">
+                      <td className="px-3 py-2.5 text-center whitespace-nowrap">
                         {email.broken   && <span className="bg-red-100 text-red-600 rounded-full px-2 py-0.5 text-xs">Broken</span>}
                         {email.is_locked && <span className="bg-yellow-100 text-yellow-600 rounded-full px-2 py-0.5 text-xs">Locked</span>}
                         {creditsNeg && !email.broken && <span className="bg-orange-100 text-orange-600 rounded-full px-2 py-0.5 text-xs">Credit-</span>}
                         {botReady && !email.is_locked && !creditsNeg && <span className="bg-green-100 text-green-600 rounded-full px-2 py-0.5 text-xs">พร้อม</span>}
                         {!botReady && !email.broken && !email.is_locked && !creditsNeg && <span className="bg-slate-100 text-slate-400 rounded-full px-2 py-0.5 text-xs">ไม่พร้อม</span>}
                       </td>
-                      <td className="px-4 py-2.5 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
+                      <td className="px-3 py-2.5 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button onClick={() => togglePin(email.id)}
+                            title={pinnedIds.has(email.id) ? 'เลิกปักหมุด' : 'ปักหมุด'}
+                            className={`px-1.5 py-1 rounded text-sm cursor-pointer transition-opacity ${
+                              pinnedIds.has(email.id) ? 'opacity-100' : 'opacity-20 hover:opacity-60'
+                            }`}>📌</button>
                           <button onClick={() => openEdit(email)}
                             className="px-2.5 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs cursor-pointer">แก้ไข</button>
                           {(() => {

@@ -32,6 +32,12 @@ function TypeBadge({ fill_type, emailTypes }) {
   )
 }
 
+const PINNED_KEY = 'email-summary-pinned'
+
+function loadPinned() {
+  try { return new Set(JSON.parse(localStorage.getItem(PINNED_KEY) || '[]')) } catch { return new Set() }
+}
+
 export default function EmailSummaryPage() {
   const [emails, setEmails] = useState([])
   const [emailTypes, setEmailTypes] = useState([])
@@ -39,10 +45,21 @@ export default function EmailSummaryPage() {
   const [from, setFrom] = useState(firstDayOfMonth())
   const [to, setTo] = useState(todayStr())
   const [search, setSearch] = useState('')
-  const [filterType, setFilterType] = useState('') // '' = ทั้งหมด
+  const [filterType, setFilterType] = useState('')
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [pinnedIds, setPinnedIds] = useState(loadPinned)
+
+  function togglePin(id, e) {
+    e.stopPropagation()
+    setPinnedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      localStorage.setItem(PINNED_KEY, JSON.stringify([...next]))
+      return next
+    })
+  }
 
   useEffect(() => {
     fetch('/emails').then(r => r.json()).then(setEmails).catch(() => {})
@@ -63,11 +80,18 @@ export default function EmailSummaryPage() {
     return result
   }, [emails, emailTypes])
 
-  const filteredEmails = useMemo(() => emails.filter(e => {
-    if (filterType && e.fill_type !== filterType) return false
-    if (search && !e.email?.toLowerCase().includes(search.toLowerCase())) return false
-    return true
-  }), [emails, filterType, search])
+  const filteredEmails = useMemo(() => {
+    const filtered = emails.filter(e => {
+      if (filterType && e.fill_type !== filterType) return false
+      if (search && !e.email?.toLowerCase().includes(search.toLowerCase())) return false
+      return true
+    })
+    return filtered.sort((a, b) => {
+      const pa = pinnedIds.has(a.id) ? 0 : 1
+      const pb = pinnedIds.has(b.id) ? 0 : 1
+      return pa - pb
+    })
+  }, [emails, filterType, search, pinnedIds])
 
   async function loadSummary(emailId, fromDate = from, toDate = to) {
     if (!emailId) return
@@ -166,24 +190,40 @@ export default function EmailSummaryPage() {
             const typeColor = typeCfg?.color || 'bg-slate-100 text-slate-600'
             const typeLabel = typeCfg?.label || e.fill_type || '—'
             const isSelected = selectedEmailId === e.id
+            const isPinned = pinnedIds.has(e.id)
             return (
-              <button key={e.id} onClick={() => selectEmail(e.id)}
-                className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all cursor-pointer ${
+              <div key={e.id}
+                className={`flex items-center gap-1 rounded-lg border transition-all ${
                   isSelected ? 'bg-blue-50 border-blue-400 shadow-sm' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
                 }`}
               >
-                <div className="flex justify-between items-center gap-3 flex-wrap">
-                  <span className={`text-sm font-bold break-all ${isSelected ? 'text-blue-700' : 'text-slate-800'}`}>
-                    {e.email}
-                  </span>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${typeColor}`}>{typeLabel}</span>
-                    <span className="text-xs font-semibold text-slate-500">
-                      {e.credits?.toFixed(2) ?? '—'} <span className="font-normal text-slate-400">ดอลล์</span>
-                    </span>
+                <button
+                  onClick={() => selectEmail(e.id)}
+                  className="flex-1 text-left px-3 py-2.5 cursor-pointer min-w-0"
+                >
+                  <div className="flex justify-between items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {isPinned && <span className="text-amber-400 text-xs flex-shrink-0">📌</span>}
+                      <span className={`text-sm font-bold break-all ${isSelected ? 'text-blue-700' : 'text-slate-800'}`}>
+                        {e.email}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${typeColor}`}>{typeLabel}</span>
+                      <span className="text-xs font-semibold text-slate-500">
+                        {e.credits?.toFixed(2) ?? '—'} <span className="font-normal text-slate-400">ดอลล์</span>
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </button>
+                </button>
+                <button
+                  onClick={ev => togglePin(e.id, ev)}
+                  title={isPinned ? 'เลิกปักหมุด' : 'ปักหมุด'}
+                  className={`px-2 py-1.5 mr-1 rounded text-base cursor-pointer transition-opacity flex-shrink-0 ${
+                    isPinned ? 'opacity-100' : 'opacity-20 hover:opacity-60'
+                  }`}
+                >📌</button>
+              </div>
             )
           })}
         </div>
