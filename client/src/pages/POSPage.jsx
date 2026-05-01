@@ -87,9 +87,9 @@ export default function POSPage({ onNavigate }) {
   const [reserveNote, setReserveNote] = useState('')
   const [reservations, setReservations] = useState([])
   const [activeReservationId, setActiveReservationId] = useState(null)
-  const [editingResName, setEditingResName] = useState(null) // id ที่กำลัง inline-edit ชื่อ
+  const [editingResName, setEditingResName] = useState(null)
   const [editingResNameVal, setEditingResNameVal] = useState('')
-  const [editingResNote, setEditingResNote] = useState(null) // id ที่กำลัง inline-edit note
+  const [editingResNote, setEditingResNote] = useState(null)
   const [editingResNoteVal, setEditingResNoteVal] = useState('')
 
   function loadReservations() {
@@ -458,6 +458,7 @@ export default function POSPage({ onNavigate }) {
             note: reserveNote || null,
             transfer_amount: reserveAmount ? Number(reserveAmount) : null,
             channel: reserveChannel || null,
+            reserve_time: reserveTime || null,
             items: itemsPayload,
           }),
         })
@@ -506,6 +507,7 @@ export default function POSPage({ onNavigate }) {
     setReserveNote(r.note || '')
     setReserveAmount(r.transfer_amount != null ? String(r.transfer_amount) : '')
     setReserveChannel(r.channel || null)
+    setReserveTime(r.reserve_time || '')
     setCartMode('reserve')
   }
 
@@ -515,7 +517,10 @@ export default function POSPage({ onNavigate }) {
     try {
       const res = await fetch(`/reservations/${id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customer_name: field === 'name' ? val : r.customer_name, note: field === 'note' ? val : r.note }),
+        body: JSON.stringify({
+          customer_name: field === 'name' ? val : r.customer_name,
+          note: field === 'note' ? val : r.note,
+        }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'บันทึกไม่สำเร็จ') }
     } catch (e) { alert('เกิดข้อผิดพลาด: ' + e.message) }
@@ -890,13 +895,11 @@ export default function POSPage({ onNavigate }) {
                   placeholder="ยอดโอน (฿)"
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
                 />
-                {!activeReservationId && (
-                  <input
-                    type="datetime-local" value={reserveTime}
-                    onChange={e => setReserveTime(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
-                  />
-                )}
+                <input
+                  type="datetime-local" value={reserveTime}
+                  onChange={e => setReserveTime(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+                />
                 <div className="flex gap-2">
                   {[
                     { name: 'Facebook', active: 'bg-blue-600 text-white border-blue-600' },

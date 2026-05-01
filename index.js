@@ -1080,9 +1080,9 @@ initDB().then(() => {
 
   app.put('/reservations/:id', requireLogin, (req, res) => {
     try {
-      const { customer_name, note, transfer_amount, channel, items } = req.body
-      db.run('UPDATE reservations SET customer_name=?, note=?, transfer_amount=?, channel=? WHERE id=?',
-        [customer_name ?? null, note ?? null, transfer_amount ?? null, channel ?? null, req.params.id])
+      const { customer_name, note, transfer_amount, channel, reserve_time, items } = req.body
+      db.run('UPDATE reservations SET customer_name=?, note=?, transfer_amount=?, channel=?, reserve_time=? WHERE id=?',
+        [customer_name ?? null, note ?? null, transfer_amount ?? null, channel ?? null, reserve_time ?? null, req.params.id])
       if (Array.isArray(items)) {
         db.run('DELETE FROM reservation_items WHERE reservation_id=?', [req.params.id])
         for (const item of items) {
