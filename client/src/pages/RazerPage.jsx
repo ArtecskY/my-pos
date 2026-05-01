@@ -138,14 +138,12 @@ export default function RazerPage() {
                 ⏳ คิวรอ {pendingCount}
               </span>
             )}
-            {processingCount > 0 && (
-              <button
-                onClick={killBot}
-                className="inline-flex items-center gap-1 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
-              >
-                ✕ Kill Bot
-              </button>
-            )}
+            <button
+              onClick={killBot}
+              className="inline-flex items-center gap-1 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
+            >
+              ✕ Kill Bot
+            </button>
           </div>
         )}
       </div>

@@ -1316,17 +1316,20 @@ initDB().then(() => {
 
   app.post('/razer-bot/kill', requireLogin, (req, res) => {
     const { orderId } = req.body
-    const killed = razerBot?.killCurrentBot?.() ?? false
-    if (killed && orderId) {
-      db.run(
-        "UPDATE orders SET razer_status='failed', razer_note='ยกเลิกโดย admin', razer_finished_at=? WHERE id=?",
-        [new Date().toISOString(), orderId]
-      )
-      // unlock accounts ที่อาจค้าง
-      db.run("UPDATE emails SET is_locked=0 WHERE fill_type='RAZER' AND is_locked=1")
-      save()
-    }
-    res.json({ killed })
+    // kill active browser
+    razerBot?.killCurrentBot?.()
+    // clear pending queue
+    razerQueue.splice(0)
+    razerQueueRunning = false
+    // mark all pending/processing orders as failed
+    db.run(
+      "UPDATE orders SET razer_status='failed', razer_note='ยกเลิกโดย admin', razer_finished_at=? WHERE razer_status IN ('pending','processing')",
+      [new Date().toISOString()]
+    )
+    // unlock accounts
+    db.run("UPDATE emails SET is_locked=0 WHERE fill_type='RAZER' AND is_locked=1")
+    save()
+    res.json({ killed: true })
   })
 
   const regenningSet = new Set()  // email IDs ที่กำลัง regen อยู่
