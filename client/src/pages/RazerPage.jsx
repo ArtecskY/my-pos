@@ -20,8 +20,6 @@ export default function RazerPage() {
   const [newTypeName, setNewTypeName] = useState('')
   const [typeError, setTypeError] = useState('')
   const [serverRegenning, setServerRegenning] = useState(new Set())
-  const [botScreenshots, setBotScreenshots] = useState([])
-  const [shotTs, setShotTs] = useState(Date.now())
   const [pinnedIds, setPinnedIds] = useState(loadRazerPinned)
 
   function togglePin(id) {
@@ -47,18 +45,10 @@ export default function RazerPage() {
     fetch('/razer-regen-status').then(r => r.json()).then(ids => setServerRegenning(new Set(ids))).catch(() => {})
   }
 
-  function loadScreenshots() {
-    fetch('/razer-bot/screenshots').then(r => r.json()).then(urls => {
-      setBotScreenshots(urls)
-      setShotTs(Date.now())
-    }).catch(() => {})
-  }
-
   useEffect(() => {
-    loadEmails(); loadAccountTypes(); loadRazerOrders(); loadRegenStatus(); loadScreenshots()
+    loadEmails(); loadAccountTypes(); loadRazerOrders(); loadRegenStatus()
     const t = setInterval(() => {
       loadEmails(); loadAccountTypes(); loadRazerOrders(); loadRegenStatus()
-      loadScreenshots()
     }, 3000)
     return () => clearInterval(t)
   }, [])
@@ -174,25 +164,6 @@ export default function RazerPage() {
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700">{msg}</div>
       )}
 
-      {/* Bot Screenshots */}
-      {botScreenshots.length > 0 && (
-        <div className="bg-slate-900 rounded-xl p-3">
-          <div className="text-xs text-slate-400 font-semibold mb-2">📸 Bot View (อัปเดตทุก 3s)</div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {botScreenshots.map(url => (
-              <div key={url} className="relative">
-                <div className="text-xs text-slate-500 mb-1">{url.split('latest-')[1]?.replace('.png','') ?? url}</div>
-                <img
-                  src={`${url}?t=${shotTs}`}
-                  alt={url}
-                  className="w-full rounded border border-slate-700 cursor-pointer hover:opacity-80"
-                  onClick={() => window.open(`${url}?t=${shotTs}`, '_blank')}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Razer Orders — collapsible */}
       {razerOrders.length > 0 && (

@@ -710,7 +710,7 @@ export default function POSPage({ onNavigate }) {
             <div className="flex items-center gap-2">
             <div className="flex rounded-lg border border-slate-200 text-xs overflow-hidden">
               <button
-                onClick={() => { setCartMode('buy'); setActiveReservationId(null); setReserveName(''); setReserveNote('') }}
+                onClick={() => { setCartMode('buy') }}
                 className={`px-3 py-1.5 cursor-pointer transition-colors ${
                   cartMode === 'buy' ? 'bg-blue-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
                 }`}
