@@ -100,6 +100,8 @@ export default function OrdersPage() {
   const [customTypes, setCustomTypes] = useState([])
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedGame, setSelectedGame] = useState('')
+  const [selectedChannel, setSelectedChannel] = useState('')
+  const [filterTw, setFilterTw] = useState(false)
 
   const [showExport, setShowExport] = useState(false)
   const [savedSheetId, setSavedSheetId] = useState(null)
@@ -215,15 +217,21 @@ export default function OrdersPage() {
 
   const filteredOrders = useMemo(() => {
     if (!currentGroup) return []
-    const orders = selectedGame
+    let orders = selectedGame
       ? currentGroup.orders.filter(o => o.items.some(i => i.category_name === selectedGame))
       : currentGroup.orders
+    if (selectedChannel) {
+      orders = orders.filter(o => (o.channel || '') === selectedChannel)
+    }
+    if (filterTw) {
+      orders = orders.filter(o => o.tw)
+    }
     return [...orders].sort((a, b) => {
       const ta = (a.transfer_time || a.created_at || '').replace(' ', 'T')
       const tb = (b.transfer_time || b.created_at || '').replace(' ', 'T')
-      return ta < tb ? 1 : ta > tb ? -1 : 0 // ล่าสุดขึ้นก่อน
+      return ta < tb ? 1 : ta > tb ? -1 : 0
     })
-  }, [currentGroup, selectedGame])
+  }, [currentGroup, selectedGame, selectedChannel, filterTw])
 
   const dayTotal = filteredOrders.reduce((s, o) => s + (Number(o.transfer_amount) || 0), 0)
 
@@ -285,6 +293,19 @@ export default function OrdersPage() {
       i.order_id === orderId ? { ...i, transfer_amount: Number(editAmountValue) } : i
     ))
     setEditAmountOrderId(null)
+  }
+
+  async function toggleTw(orderId, currentTw) {
+    const newTw = currentTw ? 0 : 1
+    const res = await fetch(`/orders/${orderId}/tw`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tw: newTw }),
+    })
+    if (!res.ok) { alert('อัปเดต TW ไม่สำเร็จ'); return }
+    setOrderItems(prev => prev.map(i =>
+      i.order_id === orderId ? { ...i, tw: newTw } : i
+    ))
   }
 
   async function saveEditChannel(orderId, channel) {
@@ -444,6 +465,28 @@ export default function OrdersPage() {
           <option value="">ทุกเกม</option>
           {uniqueGames.map(g => <option key={g} value={g}>{g}</option>)}
         </select>
+
+        {/* Channel filter */}
+        <div className="flex rounded-lg border border-slate-200 text-xs overflow-hidden">
+          {['', 'หน้าบ้าน', 'หลังบ้าน'].map(ch => (
+            <button
+              key={ch}
+              onClick={() => setSelectedChannel(ch)}
+              className={`px-3 py-2 cursor-pointer border-l border-slate-200 first:border-l-0 transition-colors ${
+                selectedChannel === ch
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-white text-slate-500 hover:bg-slate-50'
+              }`}
+            >{ch || 'ทุกช่องทาง'}</button>
+          ))}
+        </div>
+
+        <button
+          onClick={() => setFilterTw(v => !v)}
+          className={`px-3 py-2 rounded-lg border text-xs font-semibold cursor-pointer transition-colors ${
+            filterTw ? 'bg-sky-500 text-white border-sky-500' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+          }`}
+        >TW</button>
 
         {currentGroup && (
           <span className="text-sm text-slate-400">
@@ -651,9 +694,16 @@ export default function OrdersPage() {
                                   {formatTimeOnly(order.transfer_time)}
                                   {order.transfer_time2 && `+${formatTimeOnly(order.transfer_time2)}`}
                                 </span>
-                                {order.tw && (
-                                  <span className="text-xs font-bold px-1.5 py-0.5 bg-sky-100 text-sky-600 rounded">TW</span>
-                                )}
+                                <span
+                                  onClick={() => toggleTw(order.order_id, order.tw)}
+                                  title={order.tw ? 'คลิกเพื่อปิด TW' : 'คลิกเพื่อเปิด TW'}
+                                  className="cursor-pointer"
+                                >
+                                  {order.tw
+                                    ? <span className="text-xs font-bold px-1.5 py-0.5 bg-sky-100 text-sky-600 rounded hover:bg-sky-200">TW</span>
+                                    : <span className="text-xs text-slate-300 hover:text-slate-400">—</span>
+                                  }
+                                </span>
                               </div>
                             )}
                           </td>

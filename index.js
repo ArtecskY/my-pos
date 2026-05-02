@@ -1143,6 +1143,13 @@ initDB().then(() => {
     res.json({ message: 'อัปเดตช่องทางสำเร็จ' })
   })
 
+  app.patch('/orders/:id/tw', requireLogin, (req, res) => {
+    const { tw } = req.body
+    db.run('UPDATE orders SET tw=? WHERE id=?', [tw ? 1 : 0, req.params.id])
+    save()
+    res.json({ message: 'อัปเดต TW สำเร็จ' })
+  })
+
   app.patch('/orders/:id/note', requireLogin, (req, res) => {
     const { note } = req.body
     db.run('UPDATE orders SET order_note=? WHERE id=?', [note || null, req.params.id])
