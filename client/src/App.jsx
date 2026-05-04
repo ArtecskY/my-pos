@@ -11,21 +11,44 @@ import BankPage from './pages/BankPage'
 import RazerPage from './pages/RazerPage'
 import EmailSummaryPage from './pages/EmailSummaryPage'
 
+const VALID_PAGES = ['pos', 'manage', 'emails', 'orders', 'dashboard', 'bank', 'email-summary', 'razer', 'users']
+const ADMIN_PAGES = new Set(['razer', 'users'])
+
+function hashPage() {
+  const h = window.location.hash.slice(1)
+  return VALID_PAGES.includes(h) ? h : 'pos'
+}
+
 export default function App() {
   const [user, setUser] = useState(null)
-  const [page, setPage] = useState('pos')
+  const [page, setPage] = useState(hashPage)
   const [loading, setLoading] = useState(true)
+
+  function navigate(p) {
+    setPage(p)
+    window.location.hash = p
+  }
 
   useEffect(() => {
     fetch('/me')
       .then(r => r.ok ? r.json() : null)
-      .then(u => { setUser(u); setLoading(false) })
+      .then(u => {
+        setUser(u)
+        setLoading(false)
+        if (u && ADMIN_PAGES.has(hashPage()) && !u.is_admin) navigate('pos')
+      })
+  }, [])
+
+  useEffect(() => {
+    const onHashChange = () => setPage(hashPage())
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
 
   async function logout() {
     await fetch('/logout', { method: 'POST' })
     setUser(null)
-    setPage('pos')
+    navigate('pos')
   }
 
   if (loading) {
@@ -54,12 +77,12 @@ export default function App() {
             </button>
           </div>
         </div>
-        <NavTabs page={page} onChangePage={setPage} user={user} />
+        <NavTabs page={page} onChangePage={navigate} user={user} />
       </div>
 
       {/* Page content */}
       <div className="px-3 sm:px-6 py-4 sm:py-6">
-        {page === 'pos' && <POSPage onNavigate={setPage} />}
+        {page === 'pos' && <POSPage onNavigate={navigate} />}
         {page === 'manage' && <ManagePage />}
         {page === 'emails' && <EmailsPage />}
         {page === 'orders' && <OrdersPage />}
