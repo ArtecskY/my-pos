@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 
+const EMAILS_PINNED_KEY = 'emails-pinned'
+function loadEmailsPinned() {
+  try { return new Set(JSON.parse(localStorage.getItem(EMAILS_PINNED_KEY) || '[]').map(String)) } catch { return new Set() }
+}
+
 const BUILTIN_TYPES = {
   'EMAIL': { label: 'Apple ID', color: 'bg-blue-100 text-blue-700' },
   'RAZER': { label: 'Razer',    color: 'bg-green-100 text-green-700' },
@@ -84,6 +89,17 @@ export default function EmailsPage() {
   const [hideZero, setHideZero] = useState(false)
   const [filterType, setFilterType] = useState('')
   const [search, setSearch] = useState('')
+  const [pinnedEmailIds, setPinnedEmailIds] = useState(loadEmailsPinned)
+
+  function toggleEmailPin(id) {
+    const sid = String(id)
+    setPinnedEmailIds(prev => {
+      const next = new Set(prev)
+      next.has(sid) ? next.delete(sid) : next.add(sid)
+      localStorage.setItem(EMAILS_PINNED_KEY, JSON.stringify([...next]))
+      return next
+    })
+  }
 
   async function loadAll() {
     const [emailData, typeData] = await Promise.all([
@@ -141,13 +157,20 @@ export default function EmailsPage() {
     loadAll()
   }
 
-  // Filtered email list
-  const filtered = useMemo(() => emails.filter(e => {
-    if (hideZero && Number(e.credits) === 0) return false
-    if (filterType && e.fill_type !== filterType) return false
-    if (search && !e.email.toLowerCase().includes(search.toLowerCase())) return false
-    return true
-  }), [emails, hideZero, filterType, search])
+  // Filtered email list — pinned ขึ้นก่อน
+  const filtered = useMemo(() => {
+    const result = emails.filter(e => {
+      if (hideZero && Number(e.credits) === 0) return false
+      if (filterType && e.fill_type !== filterType) return false
+      if (search && !e.email.toLowerCase().includes(search.toLowerCase())) return false
+      return true
+    })
+    return result.sort((a, b) => {
+      const pa = pinnedEmailIds.has(String(a.id)) ? 0 : 1
+      const pb = pinnedEmailIds.has(String(b.id)) ? 0 : 1
+      return pa - pb
+    })
+  }, [emails, hideZero, filterType, search, pinnedEmailIds])
 
   // Filter tabs — ประเภทที่มีอยู่จริงในข้อมูล + ทั้งหมด
   const presentFilterTypes = useMemo(() => {
@@ -492,6 +515,7 @@ export default function EmailsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-500 text-left">
+                    <th className="pb-2 px-2 font-medium whitespace-nowrap w-6"></th>
                     <th className="pb-2 px-2 font-medium whitespace-nowrap">ประเภท</th>
                     <th className="pb-2 px-2 font-medium text-right whitespace-nowrap">ต้นทุน</th>
                     <th className="pb-2 px-2 font-medium text-right whitespace-nowrap">เครดิต</th>
@@ -511,6 +535,15 @@ export default function EmailsPage() {
                         e.broken ? 'bg-red-50 hover:bg-red-100' : (Number(e.credits) === 0 ? 'opacity-50' : '')
                       }`}
                     >
+                      <td className="py-2.5 px-2 text-center">
+                        <button
+                          onClick={() => toggleEmailPin(e.id)}
+                          title={pinnedEmailIds.has(String(e.id)) ? 'เลิกปักหมุด' : 'ปักหมุด'}
+                          className={`text-sm cursor-pointer transition-opacity ${
+                            pinnedEmailIds.has(String(e.id)) ? 'opacity-100' : 'opacity-15 hover:opacity-50'
+                          }`}
+                        >📌</button>
+                      </td>
                       <td className="py-2.5 px-2">
                         {e.fill_type ? <FillTypeBadge fill_type={e.fill_type} allTypes={allTypes} /> : <span className="text-slate-300 text-xs">—</span>}
                       </td>

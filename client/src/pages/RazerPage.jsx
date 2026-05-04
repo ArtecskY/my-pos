@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 
 const RAZER_PINNED_KEY = 'razer-pinned'
 function loadRazerPinned() {
-  try { return new Set(JSON.parse(localStorage.getItem(RAZER_PINNED_KEY) || '[]')) } catch { return new Set() }
+  try { return new Set(JSON.parse(localStorage.getItem(RAZER_PINNED_KEY) || '[]').map(String)) } catch { return new Set() }
 }
 
 export default function RazerPage() {
@@ -23,12 +23,19 @@ export default function RazerPage() {
   const [pinnedIds, setPinnedIds] = useState(loadRazerPinned)
 
   function togglePin(id) {
+    const sid = String(id)
     setPinnedIds(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      next.has(sid) ? next.delete(sid) : next.add(sid)
       localStorage.setItem(RAZER_PINNED_KEY, JSON.stringify([...next]))
       return next
     })
+  }
+
+  async function deleteRazerOrder(id) {
+    if (!confirm('ลบ Order นี้?')) return
+    await fetch(`/orders/${id}`, { method: 'DELETE' })
+    loadRazerOrders()
   }
 
   function loadEmails() {
@@ -108,8 +115,8 @@ export default function RazerPage() {
       !searchEmail.trim() || e.email.toLowerCase().includes(searchEmail.toLowerCase())
     )
     return filtered.sort((a, b) => {
-      const pa = pinnedIds.has(a.id) ? 0 : 1
-      const pb = pinnedIds.has(b.id) ? 0 : 1
+      const pa = pinnedIds.has(String(a.id)) ? 0 : 1
+      const pb = pinnedIds.has(String(b.id)) ? 0 : 1
       return pa - pb
     })
   }, [emails, searchEmail, pinnedIds])
@@ -194,7 +201,8 @@ export default function RazerPage() {
 
                 const toThai = iso => {
                   if (!iso) return '—'
-                  return new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', hour12: false,
+                  const s = (iso.includes('Z') || /[+-]\d{2}:?\d{2}$/.test(iso)) ? iso : iso.replace(' ', 'T') + 'Z'
+                  return new Date(s).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', hour12: false,
                     year: 'numeric', month: '2-digit', day: '2-digit',
                     hour: '2-digit', minute: '2-digit', second: '2-digit' })
                 }
@@ -228,6 +236,12 @@ export default function RazerPage() {
                         </div>
                       )}
                     </div>
+                    <button
+                      onClick={() => deleteRazerOrder(o.id)}
+                      className="shrink-0 px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg text-xs cursor-pointer"
+                    >
+                      ลบ
+                    </button>
                   </div>
                 )
               })}
@@ -329,7 +343,7 @@ export default function RazerPage() {
                     }>
                       <td className="px-3 py-2.5 font-medium text-slate-700">
                         <div className="flex items-center gap-1 min-w-0">
-                          {pinnedIds.has(email.id) && <span className="text-amber-400 text-xs flex-shrink-0">📌</span>}
+                          {pinnedIds.has(String(email.id)) && <span className="text-amber-400 text-xs shrink-0">📌</span>}
                           <span className="truncate">{email.email}</span>
                         </div>
                       </td>
@@ -359,9 +373,9 @@ export default function RazerPage() {
                       <td className="px-3 py-2.5 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <button onClick={() => togglePin(email.id)}
-                            title={pinnedIds.has(email.id) ? 'เลิกปักหมุด' : 'ปักหมุด'}
+                            title={pinnedIds.has(String(email.id)) ? 'เลิกปักหมุด' : 'ปักหมุด'}
                             className={`px-1.5 py-1 rounded text-sm cursor-pointer transition-opacity ${
-                              pinnedIds.has(email.id) ? 'opacity-100' : 'opacity-20 hover:opacity-60'
+                              pinnedIds.has(String(email.id)) ? 'opacity-100' : 'opacity-20 hover:opacity-60'
                             }`}>📌</button>
                           <button onClick={() => openEdit(email)}
                             className="px-2.5 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs cursor-pointer">แก้ไข</button>
