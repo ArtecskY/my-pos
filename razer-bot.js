@@ -657,17 +657,12 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
 
   try {
     let razerGoldAmount = null
-    const client = await browser.target().createCDPSession()
 
     for (const acc of allAccounts) {
       checkKill()
-      try { await client.send('Network.clearBrowserCookies') } catch {}
-      // ล้าง localStorage/sessionStorage ของ Razer origins ด้วย — ป้องกัน session เก่าค้างข้าม account
-      for (const origin of ['https://pay.gold.razer.com', 'https://razerid.razer.com', 'https://account.razer.com']) {
-        try { await client.send('Storage.clearDataForOrigin', { origin, storageTypes: 'local_storage,session_storage,indexeddb,cache_storage' }) } catch {}
-      }
-
-      const page = await browser.newPage()
+      // แต่ละ account ใช้ BrowserContext แยก → cookies/localStorage/session ไม่ปนกันเด็ดขาด
+      const ctx = await browser.createBrowserContext()
+      const page = await ctx.newPage()
       try {
         await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' })
         await page.goto(payUrl, { waitUntil: 'networkidle2' })
@@ -678,7 +673,7 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
         try {
           await page.waitForSelector('#userTotalGold', { timeout: 10000 })
         } catch {
-          await page.close()
+          await ctx.close()
           continue
         }
 
@@ -706,7 +701,7 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
 
         if (goldToDeduct > 0 && liveCredit < goldToDeduct) {
           console.log(`[razer-bot] account#${acc.id} credit ไม่พอ (${liveCredit} < ${goldToDeduct}) → ข้าม`)
-          await page.close()
+          await ctx.close()
           continue
         }
 
@@ -746,7 +741,7 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
           }
         }
 
-        await page.close()
+        await ctx.close()
         return
 
       } catch (err) {
@@ -759,7 +754,7 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
           db.run('UPDATE emails SET is_locked=0 WHERE id=?', [acc.id])
           save()
         }
-        try { await page.close() } catch {}
+        try { await ctx.close() } catch {}
         selectedAccount = null
       }
     }
