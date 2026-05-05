@@ -662,6 +662,10 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
     for (const acc of allAccounts) {
       checkKill()
       try { await client.send('Network.clearBrowserCookies') } catch {}
+      // ล้าง localStorage/sessionStorage ของ Razer origins ด้วย — ป้องกัน session เก่าค้างข้าม account
+      for (const origin of ['https://pay.gold.razer.com', 'https://razerid.razer.com', 'https://account.razer.com']) {
+        try { await client.send('Storage.clearDataForOrigin', { origin, storageTypes: 'local_storage,session_storage,indexeddb,cache_storage' }) } catch {}
+      }
 
       const page = await browser.newPage()
       try {
