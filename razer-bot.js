@@ -719,8 +719,8 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
           [goldToDeduct, JSON.stringify(acc.backup_codes.slice(1)), acc.id]
         )
         db.run(
-          'UPDATE order_items SET email_id_used=?, credit_deducted=? WHERE order_id=?',
-          [acc.id, goldToDeduct, orderId]
+          'UPDATE order_items SET email_id_used=?, credit_deducted=COALESCE(credit_deducted,0)+? WHERE order_id=? AND product_id=?',
+          [acc.id, goldToDeduct, orderId, order.packageId]
         )
         if (jobIndex === totalJobs) {
           db.run('UPDATE orders SET razer_status=?, razer_note=?, razer_finished_at=? WHERE id=?',
