@@ -102,6 +102,8 @@ export default function OrdersPage() {
   const [selectedGame, setSelectedGame] = useState('')
   const [selectedChannel, setSelectedChannel] = useState('')
   const [filterTw, setFilterTw] = useState(false)
+  const [sortKey, setSortKey] = useState('time')
+  const [sortDir, setSortDir] = useState('desc')
 
   const [showExport, setShowExport] = useState(false)
   const [savedSheetId, setSavedSheetId] = useState(null)
@@ -227,11 +229,25 @@ export default function OrdersPage() {
       orders = orders.filter(o => o.tw)
     }
     return [...orders].sort((a, b) => {
-      const ta = (a.transfer_time || a.created_at || '').replace(' ', 'T')
-      const tb = (b.transfer_time || b.created_at || '').replace(' ', 'T')
-      return ta < tb ? 1 : ta > tb ? -1 : 0
+      let cmp = 0
+      if (sortKey === 'amount') {
+        cmp = (Number(a.transfer_amount) || 0) - (Number(b.transfer_amount) || 0)
+      } else if (sortKey === 'channel') {
+        const ca = (a.channel || '').toLowerCase()
+        const cb = (b.channel || '').toLowerCase()
+        cmp = ca < cb ? -1 : ca > cb ? 1 : 0
+      } else if (sortKey === 'email') {
+        const ea = (a.items[0]?.email_used || '').toLowerCase()
+        const eb = (b.items[0]?.email_used || '').toLowerCase()
+        cmp = ea < eb ? -1 : ea > eb ? 1 : 0
+      } else {
+        const ta = (a.transfer_time || a.created_at || '').replace(' ', 'T')
+        const tb = (b.transfer_time || b.created_at || '').replace(' ', 'T')
+        cmp = ta < tb ? -1 : ta > tb ? 1 : 0
+      }
+      return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [currentGroup, selectedGame, selectedChannel, filterTw])
+  }, [currentGroup, selectedGame, selectedChannel, filterTw, sortKey, sortDir])
 
   const dayTotal = filteredOrders.reduce((s, o) => s + (Number(o.transfer_amount) || 0), 0)
 
@@ -242,6 +258,16 @@ export default function OrdersPage() {
     const next = d.toISOString().slice(0, 10)
     setSelectedDate(next)
     setSelectedGame('')
+  }
+
+  function toggleSort(key) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('desc') }
+  }
+
+  function SortIcon({ col }) {
+    if (sortKey !== col) return <span className="ml-1 text-slate-300">↕</span>
+    return <span className="ml-1 text-blue-500">{sortDir === 'asc' ? '↑' : '↓'}</span>
   }
 
   async function deleteOrder(id) {
@@ -525,13 +551,13 @@ export default function OrdersPage() {
               <thead>
                 <tr className="text-slate-500 text-left border-b-2 border-slate-100">
                   <th className="pb-3 pt-4 px-4 font-medium">No.</th>
-                  <th className="pb-3 pt-4 px-3 font-medium">ยอดโอน</th>
-                  <th className="pb-3 pt-4 px-3 font-medium">เวลา</th>
+                  <th className="pb-3 pt-4 px-3 font-medium cursor-pointer select-none hover:text-blue-600" onClick={() => toggleSort('amount')}>ยอดโอน<SortIcon col="amount" /></th>
+                  <th className="pb-3 pt-4 px-3 font-medium cursor-pointer select-none hover:text-blue-600" onClick={() => toggleSort('time')}>เวลา<SortIcon col="time" /></th>
                   <th className="pb-3 pt-4 px-3 font-medium">ชื่อเกม</th>
                   <th className="pb-3 pt-4 px-3 font-medium">ชื่อสินค้า</th>
                   <th className="pb-3 pt-4 px-3 font-medium text-right">จำนวน / เครดิต</th>
-                  <th className="pb-3 pt-4 px-3 font-medium">Email ที่ใช้</th>
-                  <th className="pb-3 pt-4 px-3 font-medium text-center">ช่องทาง</th>
+                  <th className="pb-3 pt-4 px-3 font-medium cursor-pointer select-none hover:text-blue-600" onClick={() => toggleSort('email')}>Email ที่ใช้<SortIcon col="email" /></th>
+                  <th className="pb-3 pt-4 px-3 font-medium text-center cursor-pointer select-none hover:text-blue-600" onClick={() => toggleSort('channel')}>ช่องทาง<SortIcon col="channel" /></th>
                   <th className="pb-3 pt-4 px-3 font-medium text-center">ประเภท</th>
                   <th className="pb-3 pt-4 px-3 font-medium">บันทึก</th>
                   <th className="pb-3 pt-4 px-2"></th>
