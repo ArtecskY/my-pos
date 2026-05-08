@@ -531,8 +531,8 @@ export default function EmailsPage() {
                   {filtered.map(e => (
                     <tr
                       key={e.id}
-                      className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${
-                        e.broken ? 'bg-red-50 hover:bg-red-100' : (Number(e.credits) === 0 ? 'opacity-50' : '')
+                      className={`border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors ${
+                        e.broken ? 'bg-red-50 hover:bg-red-100 dark:bg-red-950/60 dark:hover:bg-red-900/70' : (Number(e.credits) === 0 ? 'opacity-50' : '')
                       }`}
                     >
                       <td className="py-2.5 px-2 text-center">

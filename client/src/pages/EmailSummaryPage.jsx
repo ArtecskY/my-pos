@@ -289,7 +289,7 @@ export default function EmailSummaryPage() {
                   {data.items.map((item, i) => {
                     const { date, time } = splitDateTime(item.created_at)
                     return (
-                      <tr key={i} className="hover:bg-slate-50 transition-colors">
+                      <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors">
                         <td className="px-4 py-3 whitespace-nowrap">
                           <p className="text-sm font-bold text-slate-700">{date}</p>
                           {time && <p className="text-xs text-slate-400 mt-0.5">{time}</p>}

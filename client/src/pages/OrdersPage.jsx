@@ -528,19 +528,19 @@ export default function OrdersPage() {
       ) : (
         <>
           {/* Day summary */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl px-6 py-4 border border-blue-100 flex items-center justify-between">
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800 rounded-xl px-6 py-4 border border-blue-100 dark:border-slate-600 flex items-center justify-between">
             <div>
-              <p className="text-xs text-blue-400 font-medium uppercase tracking-wide mb-0.5">วันที่</p>
-              <p className="text-xl font-bold text-blue-900">{formatThaiDate(currentGroup.rawDate)}</p>
+              <p className="text-xs text-blue-400 dark:text-blue-400 font-medium uppercase tracking-wide mb-0.5">วันที่</p>
+              <p className="text-xl font-bold text-blue-900 dark:text-white">{formatThaiDate(currentGroup.rawDate)}</p>
             </div>
             <div className="flex gap-8 text-right">
               <div>
-                <p className="text-xs text-slate-400 mb-0.5">จำนวนรายการ</p>
-                <p className="text-2xl font-bold text-slate-700">{filteredOrders.length}</p>
+                <p className="text-xs text-slate-400 dark:text-slate-400 mb-0.5">จำนวนรายการ</p>
+                <p className="text-2xl font-bold text-slate-700 dark:text-white">{filteredOrders.length}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400 mb-0.5">ยอดโอนรวม</p>
-                <p className="text-2xl font-bold text-emerald-600">฿{dayTotal.toLocaleString()}</p>
+                <p className="text-xs text-slate-400 dark:text-slate-400 mb-0.5">ยอดโอนรวม</p>
+                <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">฿{dayTotal.toLocaleString()}</p>
               </div>
             </div>
           </div>
@@ -640,7 +640,7 @@ export default function OrdersPage() {
                 return (
                   <tbody key={order.order_id} className="border-t border-slate-100">
                     {displayRows.map((row, di) => { const item = row.item; return (
-                      <tr key={di} className="hover:bg-slate-50">
+                      <tr key={di} className="hover:bg-slate-50 dark:hover:bg-slate-700/60">
                         {/* No. รีเซ็ตทุกวัน */}
                         {di === 0 && (
                           <td rowSpan={displayRows.length} className="py-3 px-4 align-top">

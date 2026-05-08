@@ -2,25 +2,41 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+const BACKEND = 'http://localhost:3000'
+const p = target => ({ target, changeOrigin: true })
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
+    host: true,
     proxy: {
-      '/products': { target: 'http://localhost:3000', changeOrigin: true },
-      '/orders': { target: 'http://localhost:3000', changeOrigin: true },
-      '/login': { target: 'http://localhost:3000', changeOrigin: true },
-      '/logout': { target: 'http://localhost:3000', changeOrigin: true },
-      '/register': { target: 'http://localhost:3000', changeOrigin: true },
-      '/me': { target: 'http://localhost:3000', changeOrigin: true },
-      '/uploads': { target: 'http://localhost:3000', changeOrigin: true },
-      '/categories': { target: 'http://localhost:3000', changeOrigin: true },
-      '/sheet-config': { target: 'http://localhost:3000', changeOrigin: true },
-      '/export-to-sheets': { target: 'http://localhost:3000', changeOrigin: true },
-      '/emails': { target: 'http://localhost:3000', changeOrigin: true },
-      '/order-items': { target: 'http://localhost:3000', changeOrigin: true },
-      '/product-lots': { target: 'http://localhost:3000', changeOrigin: true },
-      '/id-pass-dashboard': { target: 'http://localhost:3000', changeOrigin: true },
+      '/products':          p(BACKEND),
+      '/orders':            p(BACKEND),
+      '/order-items':       p(BACKEND),
+      '/categories':        p(BACKEND),
+      '/emails':            p(BACKEND),
+      '/email-types':       p(BACKEND),
+      '/email-summary':     p(BACKEND),
+      '/email-topups':      p(BACKEND),
+      '/product-lots':      p(BACKEND),
+      '/users':             p(BACKEND),
+      '/reservations':      p(BACKEND),
+      '/razer-accounts':    p(BACKEND),
+      '/razer-account-types': p(BACKEND),
+      '/bot-status':        p(BACKEND),
+      '/bot-kill':          p(BACKEND),
+      '/bot-screenshots':   p(BACKEND),
+      '/admin':             p(BACKEND),
+      '/login':             p(BACKEND),
+      '/logout':            p(BACKEND),
+      '/register':          p(BACKEND),
+      '/me':                p(BACKEND),
+      '/uploads':           p(BACKEND),
+      '/sheet-config':      p(BACKEND),
+      '/export-to-sheets':  p(BACKEND),
+      '/id-pass-dashboard': p(BACKEND),
+      '/health':            p(BACKEND),
     }
   }
 })

@@ -15,7 +15,7 @@ const app = express()
 app.set('trust proxy', 1)
 app.use(express.json())
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: (origin, cb) => cb(null, true),
   credentials: true
 }))
 const UPLOADS_DIR = path.join(process.env.DATA_DIR || path.join(__dirname, 'public'), 'uploads')
@@ -1967,7 +1967,7 @@ initDB().then(() => {
   })
 
   const PORT = process.env.PORT || 3000
-  const server = app.listen(PORT, () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server รันอยู่ที่ port ${PORT}`)
   })
   server.timeout = 600000 // 10 นาที สำหรับ bot snapshot

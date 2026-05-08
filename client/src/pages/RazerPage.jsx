@@ -177,7 +177,7 @@ export default function RazerPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <button
             onClick={() => setOrdersCollapsed(v => !v)}
-            className="w-full px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between hover:bg-slate-100 transition-colors cursor-pointer"
+            className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors cursor-pointer"
           >
             <div className="flex items-center gap-2">
               <h3 className="font-semibold text-slate-700 text-sm">รายการ Razer Auto ล่าสุด</h3>
@@ -250,29 +250,24 @@ export default function RazerPage() {
         </div>
       )}
 
-      {/* Account Types + Accounts — side by side on wide screens */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-
-        {/* Account Types */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-          <h3 className="font-semibold text-slate-700 mb-3 text-sm">Account Types</h3>
-          <div className="flex gap-2 mb-3">
+      {/* Account Types */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <h3 className="font-semibold text-slate-700 text-sm shrink-0">Account Types</h3>
+          <div className="flex gap-2 sm:w-56">
             <input
               type="text" value={newTypeName}
               onChange={e => setNewTypeName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && addAccountType()}
               placeholder="เช่น TH-A, SG-B..."
-              className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-400"
+              className="flex-1 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-orange-400"
             />
             <button onClick={addAccountType}
-              className="px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm cursor-pointer font-medium">
+              className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm cursor-pointer font-medium">
               +
             </button>
           </div>
-          {typeError && <p className="text-red-500 text-xs mb-2">{typeError}</p>}
-          {accountTypes.length === 0 ? (
-            <p className="text-slate-400 text-xs">ยังไม่มี Account Type</p>
-          ) : (
+          {accountTypes.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {accountTypes.map(t => (
                 <div key={t.id} className="flex items-center gap-1 bg-orange-50 border border-orange-200 rounded-full px-2.5 py-1">
@@ -283,10 +278,13 @@ export default function RazerPage() {
               ))}
             </div>
           )}
+          {typeError && <p className="text-red-500 text-xs">{typeError}</p>}
+          {accountTypes.length === 0 && <p className="text-slate-400 text-xs">ยังไม่มี Account Type</p>}
         </div>
+      </div>
 
-        {/* Accounts Table */}
-        <div className="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+      {/* Accounts Table */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           {/* Search bar */}
           <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
             <input
@@ -304,7 +302,79 @@ export default function RazerPage() {
             </span>
           </div>
 
-          <div>
+          {/* Mobile card view */}
+          <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-700">
+            {filteredEmails.length === 0 && (
+              <p className="text-center py-8 text-slate-400 text-sm">
+                {searchEmail ? 'ไม่พบ Email ที่ค้นหา' : 'ยังไม่มี Razer accounts'}
+              </p>
+            )}
+            {filteredEmails.map(email => {
+              const codes = email.backup_codes || []
+              const hasType = !!email.razer_account_type
+              const botReady = hasType && codes.length > 0 && !email.broken
+              const creditsNeg = Number(email.credits) < 0
+              const isPinned = pinnedIds.has(String(email.id))
+              const isRegenning = regenning[email.id] || serverRegenning.has(email.id)
+              return (
+                <div key={email.id} className={`px-4 py-3 ${
+                  email.broken ? 'bg-red-50 dark:bg-red-950/60' :
+                  email.is_locked ? 'bg-yellow-50 dark:bg-yellow-950/40' :
+                  creditsNeg ? 'bg-orange-50 dark:bg-orange-950/40' : ''
+                }`}>
+                  {/* Row 1: email + status */}
+                  <div className="flex items-center justify-between gap-2 min-w-0">
+                    <div className="flex items-center gap-1 min-w-0 flex-1">
+                      {isPinned && <span className="text-amber-400 text-xs shrink-0">📌</span>}
+                      <span className="font-medium text-sm text-slate-700 dark:text-white truncate">{email.email}</span>
+                    </div>
+                    <div className="shrink-0">
+                      {email.broken    && <span className="bg-red-100 text-red-600 dark:bg-red-900/60 dark:text-red-300 rounded-full px-2 py-0.5 text-xs">Broken</span>}
+                      {email.is_locked && <span className="bg-yellow-100 text-yellow-600 dark:bg-yellow-900/60 dark:text-yellow-300 rounded-full px-2 py-0.5 text-xs">Locked</span>}
+                      {creditsNeg && !email.broken && <span className="bg-orange-100 text-orange-600 rounded-full px-2 py-0.5 text-xs">Credit-</span>}
+                      {botReady && !email.is_locked && !creditsNeg && <span className="bg-green-100 text-green-700 dark:bg-green-900/60 dark:text-green-300 rounded-full px-2 py-0.5 text-xs">พร้อม</span>}
+                      {!botReady && !email.broken && !email.is_locked && !creditsNeg && <span className="bg-slate-100 text-slate-400 dark:bg-slate-700 rounded-full px-2 py-0.5 text-xs">ไม่พร้อม</span>}
+                    </div>
+                  </div>
+                  {/* Row 2: type + credits + codes */}
+                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                    {hasType
+                      ? <span className="bg-orange-100 text-orange-700 dark:bg-orange-900/60 dark:text-orange-300 rounded-full px-2 py-0.5 text-xs font-semibold">{email.razer_account_type}</span>
+                      : <span className="bg-slate-100 text-slate-400 dark:bg-slate-700 rounded-full px-2 py-0.5 text-xs">ไม่มี Type</span>}
+                    <span className={`font-mono text-xs font-semibold ${creditsNeg ? 'text-red-500' : 'text-slate-600 dark:text-slate-300'}`}>
+                      ฿{Number(email.credits).toFixed(2)}
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                      codes.length >= 3 ? 'bg-green-100 text-green-700' :
+                      codes.length > 0  ? 'bg-yellow-100 text-yellow-700' :
+                                          'bg-red-100 text-red-700'}`}>
+                      {codes.length} codes
+                    </span>
+                  </div>
+                  {/* Row 3: actions */}
+                  <div className="flex items-center gap-2 mt-2">
+                    <button onClick={() => togglePin(email.id)}
+                      title={isPinned ? 'เลิกปักหมุด' : 'ปักหมุด'}
+                      className={`px-2 py-1.5 rounded-lg text-sm cursor-pointer transition-opacity border border-slate-200 dark:border-slate-600 ${isPinned ? 'opacity-100' : 'opacity-30 hover:opacity-70'}`}>📌</button>
+                    <button onClick={() => openEdit(email)}
+                      className="flex-1 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs cursor-pointer font-medium">แก้ไข</button>
+                    <button onClick={() => triggerRegen(email.id)} disabled={isRegenning}
+                      className="flex-1 py-1.5 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white rounded-lg text-xs cursor-pointer font-medium flex items-center justify-center gap-1">
+                      {isRegenning ? (
+                        <><svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                        </svg>Regen...</>
+                      ) : 'Regen'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Desktop table view */}
+          <div className="hidden md:block">
             <table className="w-full text-sm table-fixed">
               <colgroup>
                 <col className="w-[35%]" />
@@ -337,9 +407,9 @@ export default function RazerPage() {
                   const creditsNeg = Number(email.credits) < 0
                   return (
                     <tr key={email.id} className={
-                      email.broken ? 'bg-red-50' :
-                      email.is_locked ? 'bg-yellow-50' :
-                      creditsNeg ? 'bg-orange-50' : ''
+                      email.broken ? 'bg-red-50 dark:bg-red-950/60' :
+                      email.is_locked ? 'bg-yellow-50 dark:bg-yellow-950/40' :
+                      creditsNeg ? 'bg-orange-50 dark:bg-orange-950/40' : ''
                     }>
                       <td className="px-3 py-2.5 font-medium text-slate-700">
                         <div className="flex items-center gap-1 min-w-0">
@@ -405,7 +475,6 @@ export default function RazerPage() {
             </table>
           </div>
         </div>
-      </div>
 
       {/* Edit Modal */}
       {editModal && (

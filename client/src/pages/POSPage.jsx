@@ -569,7 +569,7 @@ export default function POSPage({ onNavigate }) {
       <div>
         <label className="block text-xs text-slate-500 mb-1">
           Email ที่ใช้ตัดเครดิต
-          {neededLabel && <span className="text-blue-600 ml-1">({neededLabel})</span>}
+          {neededLabel && <span className="text-blue-600 dark:text-blue-400 ml-1">({neededLabel})</span>}
         </label>
         {emails === undefined ? (
           <p className="text-xs text-slate-400 py-1">กำลังโหลด...</p>
@@ -581,7 +581,7 @@ export default function POSPage({ onNavigate }) {
           <select
             value={selectedEmails[stateKey] || ''}
             onChange={e => setSelectedEmails(prev => ({ ...prev, [stateKey]: e.target.value }))}
-            className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white"
+            className="w-full border border-blue-300 dark:border-slate-500 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white dark:bg-slate-700 dark:text-white"
           >
             <option value="">— เลือก Email —</option>
             {emails.map(e => (
@@ -671,7 +671,7 @@ export default function POSPage({ onNavigate }) {
           <p className="text-slate-400 text-sm py-6 text-center">ไม่มีสินค้าในระบบ</p>
         ) : grouped.map(cat => (
           <div key={cat.id}>
-            <h3 className="font-bold text-slate-700 text-base mb-3 pb-2 border-b border-slate-200">
+            <h3 className="font-bold text-slate-700 dark:text-white text-base mb-3 pb-2 border-b border-slate-200 dark:border-slate-700">
               {cat.name}
             </h3>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(155px,1fr))] gap-3">
@@ -682,14 +682,14 @@ export default function POSPage({ onNavigate }) {
                 >
                   {p.image
                     ? <img src={p.image} alt={p.name} className="w-full h-28 object-cover" />
-                    : <div className="w-full h-28 bg-slate-100 flex items-center justify-center text-4xl">🛍️</div>
+                    : <div className="w-full h-28 bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-4xl">🛍️</div>
                   }
                   <div className="p-3">
-                    <div className="font-semibold text-sm mb-1">{p.name}</div>
-                    <div className="text-blue-500 font-medium">฿{p.price}</div>
+                    <div className="font-semibold text-sm mb-1 text-slate-800 dark:text-white">{p.name}</div>
+                    <div className="text-blue-500 dark:text-brand font-semibold">฿{p.price}</div>
                     {p.stock === -1
-                      ? <div className="text-xs text-emerald-500 mt-0.5">ไม่จำกัด</div>
-                      : p.stock <= 5 && <div className="text-xs text-orange-400 mt-0.5">เหลือ {p.stock} ชิ้น</div>
+                      ? <div className="text-xs text-emerald-500 dark:text-emerald-400 mt-0.5">ไม่จำกัด</div>
+                      : p.stock <= 5 && <div className="text-xs text-orange-400 dark:text-orange-300 mt-0.5">เหลือ {p.stock} ชิ้น</div>
                     }
                   </div>
                 </div>
@@ -952,7 +952,7 @@ export default function POSPage({ onNavigate }) {
           <div className="bg-white rounded-xl p-4">
             <p className="text-sm font-semibold text-slate-700 mb-3">
               รายการจอง
-              <span className="ml-2 px-2 py-0.5 bg-orange-100 text-orange-600 rounded-full text-xs font-medium">{reservations.length}</span>
+              <span className="ml-2 px-2 py-0.5 bg-orange-100 text-orange-600 dark:bg-orange-900/60 dark:text-orange-300 rounded-full text-xs font-medium">{reservations.length}</span>
             </p>
             <div className="space-y-2">
               {reservations.map((r, idx) => (
@@ -961,19 +961,19 @@ export default function POSPage({ onNavigate }) {
                   onClick={() => { if (editingResName === r.id || editingResNote === r.id) return; loadReservation(r) }}
                   className={`rounded-xl p-3 cursor-pointer transition-all border ${
                     activeReservationId === r.id
-                      ? 'bg-orange-100 border-orange-400 shadow-sm'
-                      : 'bg-orange-50 border-orange-200 hover:bg-orange-100'
+                      ? 'bg-orange-100 border-orange-400 shadow-sm dark:bg-slate-700 dark:border-orange-500'
+                      : 'bg-orange-50 border-orange-200 hover:bg-orange-100 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700'
                   }`}
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-xs font-bold text-orange-400">#{idx + 1}</span>
+                        <span className="text-xs font-bold text-orange-400 dark:text-orange-300">#{idx + 1}</span>
                         {/* Inline edit: ชื่อ */}
                         {editingResName === r.id ? (
                           <input
                             autoFocus
-                            className="text-sm font-semibold text-orange-800 border-b border-orange-400 bg-transparent outline-none w-28"
+                            className="text-sm font-semibold text-orange-800 dark:text-white border-b border-orange-400 dark:border-orange-500 bg-transparent outline-none w-28"
                             value={editingResNameVal}
                             onChange={e => setEditingResNameVal(e.target.value)}
                             onClick={e => e.stopPropagation()}
@@ -982,32 +982,32 @@ export default function POSPage({ onNavigate }) {
                           />
                         ) : (
                           <span
-                            className="text-sm font-semibold text-orange-800 hover:underline decoration-dotted cursor-text"
+                            className="text-sm font-semibold text-orange-800 dark:text-white hover:underline decoration-dotted cursor-text"
                             onClick={e => { e.stopPropagation(); setEditingResName(r.id); setEditingResNameVal(r.customer_name || '') }}
                           >{r.customer_name || 'ไม่ระบุชื่อ'}</span>
                         )}
                         {r.channel && (
                           <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                            r.channel === 'Facebook' ? 'bg-blue-100 text-blue-700'
-                            : r.channel === 'หลังบ้าน' ? 'bg-purple-100 text-purple-700'
-                            : 'bg-green-100 text-green-700'
+                            r.channel === 'Facebook' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300'
+                            : r.channel === 'หลังบ้าน' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300'
+                            : 'bg-green-100 text-green-700 dark:bg-green-900/60 dark:text-green-300'
                           }`}>{r.channel}</span>
                         )}
                       </div>
                       {r.transfer_amount != null && (
-                        <p className="text-xs text-green-600 mt-0.5">โอน ฿{r.transfer_amount}</p>
+                        <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">โอน ฿{r.transfer_amount}</p>
                       )}
                       {r.reserve_time && (
                         <p className="text-xs text-slate-400">{r.reserve_time.replace('T', ' ')}</p>
                       )}
-                      <p className="text-xs text-slate-500 mt-1 truncate">
+                      <p className="text-xs text-slate-500 dark:text-slate-300 mt-1 truncate">
                         {[...new Set(r.items.map(item => item.category_name || item.name))].join(' · ')}
                       </p>
                       {/* Inline edit: note */}
                       {editingResNote === r.id ? (
                         <textarea
                           autoFocus rows={2}
-                          className="mt-1 w-full text-xs text-slate-600 border border-orange-300 rounded px-2 py-1 bg-white outline-none resize-none"
+                          className="mt-1 w-full text-xs text-slate-600 dark:text-slate-200 border border-orange-300 dark:border-slate-500 rounded px-2 py-1 bg-white dark:bg-slate-700 outline-none resize-none"
                           value={editingResNoteVal}
                           onChange={e => setEditingResNoteVal(e.target.value)}
                           onClick={e => e.stopPropagation()}
@@ -1016,7 +1016,7 @@ export default function POSPage({ onNavigate }) {
                         />
                       ) : (
                         <p
-                          className="text-xs text-slate-400 mt-0.5 italic cursor-text hover:text-slate-600 truncate"
+                          className="text-xs text-slate-400 dark:text-slate-400 mt-0.5 italic cursor-text hover:text-slate-600 dark:hover:text-slate-300 truncate"
                           onClick={e => { e.stopPropagation(); setEditingResNote(r.id); setEditingResNoteVal(r.note || '') }}
                         >{r.note || <span className="text-slate-300">+ หมายเหตุ</span>}</p>
                       )}
@@ -1144,8 +1144,8 @@ export default function POSPage({ onNavigate }) {
             {cart.some(i => isRazerAuto(i.fill_type)) && (
               <div className="mb-6 space-y-3">
                 {cart.filter(i => isRazerAuto(i.fill_type)).map(item => (
-                  <div key={item.id} className="border border-yellow-300 rounded-xl p-4 bg-yellow-50 space-y-3">
-                    <p className="text-sm font-semibold text-yellow-800">{item.name} × {item.quantity}</p>
+                  <div key={item.id} className="border border-yellow-300 dark:border-slate-600 rounded-xl p-4 bg-yellow-50 dark:bg-slate-800 space-y-3">
+                    <p className="text-sm font-semibold text-yellow-800 dark:text-white">{item.name} × {item.quantity}</p>
                     {Array.from({ length: item.quantity }, (_, qi) => {
                       const url = (razerUrls[item.id] || [])[qi] || ''
                       return (
@@ -1183,10 +1183,10 @@ export default function POSPage({ onNavigate }) {
                   const isBundleEmail = item.is_bundle && usesEmailCredits(item.fill_type, emailTypes) && !isRazerBehavior(item.fill_type, emailTypes)
                   const compSplit = bundleCompSplit[item.id]
                   return (
-                    <div key={item.id} className="border border-blue-200 rounded-xl p-4 bg-blue-50 space-y-3">
+                    <div key={item.id} className="border border-blue-200 dark:border-slate-600 rounded-xl p-4 bg-blue-50 dark:bg-slate-800 space-y-3">
                       {/* Header */}
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-semibold text-blue-800">
+                        <p className="text-sm font-semibold text-blue-800 dark:text-white">
                           {item.name} × {item.quantity}
                         </p>
                         {isBundleEmail ? (
@@ -1225,7 +1225,7 @@ export default function POSPage({ onNavigate }) {
                             {compSplit.map(e => {
                               const totalCredits = e.credits * (e.quantity || 1)
                               return (
-                                <div key={e.splitKey} className="bg-white rounded-lg p-3 border border-purple-100">
+                                <div key={e.splitKey} className="bg-white dark:bg-slate-700 rounded-lg p-3 border border-purple-100 dark:border-slate-600">
                                   <div className="flex items-center justify-between mb-2">
                                     <p className="text-xs text-slate-600 font-medium">
                                       {e.name}{e.quantity > 1 ? ` × ${e.quantity}` : ''} — {totalCredits.toFixed(2)} เครดิต
@@ -1263,7 +1263,7 @@ export default function POSPage({ onNavigate }) {
                         /* --- Split mode (non-bundle) --- */
                         <div className="space-y-3">
                           {splits.map((s, idx) => (
-                            <div key={s.splitKey} className="bg-white rounded-lg p-3 border border-blue-100">
+                            <div key={s.splitKey} className="bg-white dark:bg-slate-700 rounded-lg p-3 border border-blue-100 dark:border-slate-600">
                               <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-1.5">
                                   <span className="text-xs text-slate-500 font-medium">รายการที่ {idx + 1}</span>
@@ -1299,7 +1299,7 @@ export default function POSPage({ onNavigate }) {
                                       if (needed > 0) fetchEmailsFor(s.splitKey, item.fill_type, needed)
                                       else setAvailableEmails(prev => ({ ...prev, [s.splitKey]: [] }))
                                     }}
-                                    className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white"
+                                    className="w-full border border-blue-300 dark:border-slate-500 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white dark:bg-slate-600 dark:text-white"
                                     placeholder="จำนวนเครดิต"
                                   />
                                 </div>

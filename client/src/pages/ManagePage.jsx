@@ -712,7 +712,7 @@ export default function ManagePage() {
                         {cat.items.map((p, idx) => (
                           <tr
                             key={p.id}
-                            className="border-b border-slate-100 hover:bg-slate-50"
+                            className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60"
                             draggable
                             onDragStart={() => handleDragStart(cat.id, idx)}
                             onDragOver={e => handleDragOver(e, cat.id, idx)}
@@ -1246,7 +1246,7 @@ export default function ManagePage() {
                       {products.map((product, idx) => (
                         <tr
                           key={product.id}
-                          className="hover:bg-slate-50"
+                          className="hover:bg-slate-50 dark:hover:bg-slate-700/60"
                           draggable
                           onDragStart={e => handleDashDragStart(e, idx)}
                           onDragOver={e => handleDashDragOver(e, idx)}

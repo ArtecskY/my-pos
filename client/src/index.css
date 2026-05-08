@@ -1,1 +1,92 @@
 @import "tailwindcss";
+
+/* ── Dark mode: class-based ── */
+@variant dark (&:where(.dark, .dark *));
+
+/* ── Brand + semantic tokens ── */
+@theme {
+  --color-brand:    #02abff;
+  --color-brand-50: #e6f7ff;
+  --color-brand-100:#b3e8ff;
+  --color-brand-500:#02abff;
+  --color-brand-600:#0090e0;
+  --color-brand-700:#0077c2;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ── CSS variables for light / dark ── */
+:root {
+  --bg:          #f1f5f9;
+  --surface:     #ffffff;
+  --surface2:    #f8fafc;
+  --border:      #e2e8f0;
+  --text:        #0f172a;
+  --text-muted:  #64748b;
+  --sidebar-bg:  #ffffff;
+  --sidebar-w:   224px;
+}
+
+.dark {
+  --bg:          #0f172a;
+  --surface:     #1e293b;
+  --surface2:    #162032;
+  --border:      #334155;
+  --text:        #f1f5f9;
+  --text-muted:  #94a3b8;
+  --sidebar-bg:  #1e293b;
+}
+
+/* ── Smooth dark mode transitions ── */
+*, *::before, *::after {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.15s ease;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+.dark ::-webkit-scrollbar-thumb { background: #475569; }
+
+/* ── Base ── */
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Dark mode compat: existing pages use bg-white / slate classes ── */
+.dark .bg-white           { background-color: var(--surface) !important; }
+.dark .bg-slate-50        { background-color: var(--surface2) !important; }
+.dark .bg-slate-100       { background-color: var(--surface2) !important; }
+.dark .bg-slate-200       { background-color: #334155 !important; }
+.dark .border-slate-100   { border-color: var(--border) !important; }
+.dark .border-slate-200   { border-color: var(--border) !important; }
+.dark .border-slate-300   { border-color: var(--border) !important; }
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-700     { color: var(--text) !important; }
+.dark .text-slate-600,
+.dark .text-slate-500     { color: var(--text-muted) !important; }
+.dark .text-slate-400     { color: #64748b !important; }
+.dark .text-blue-900      { color: #7dd3fc !important; }
+.dark input, .dark select, .dark textarea {
+  background-color: var(--surface2);
+  border-color: var(--border);
+  color: var(--text);
+}
+.dark input::placeholder, .dark textarea::placeholder { color: var(--text-muted); }
+.dark table thead tr      { background-color: var(--surface2); }
+
+/* ── Shimmer skeleton animation ── */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--border) 25%, var(--surface2) 50%, var(--border) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 6px;
+}
