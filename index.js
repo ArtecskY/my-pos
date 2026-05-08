@@ -66,6 +66,13 @@ const reservationSseClients = new Set()
 // Health check — Railway ใช้ตรวจสอบว่า server ทำงานอยู่
 app.get('/health', (req, res) => res.json({ status: 'ok' }))
 
+app.get('/admin/download-db', (req, res) => {
+  if (!req.session.user?.is_admin) return res.status(403).json({ error: 'Admin only' })
+  const dbPath = path.join(process.env.DATA_DIR || __dirname, 'pos.db')
+  if (!fs.existsSync(dbPath)) return res.status(404).json({ error: 'ไม่พบไฟล์ pos.db' })
+  res.download(dbPath, 'pos.db')
+})
+
 initDB().then(() => {
   const db = getDB()
 
