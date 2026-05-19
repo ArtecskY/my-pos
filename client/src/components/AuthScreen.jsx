@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Eye, EyeOff, Loader2, ShoppingCart } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { Eye, EyeOff, Loader2, ShoppingCart, RefreshCw } from 'lucide-react'
 import { cn } from '../lib/utils'
 
 export default function AuthScreen({ onLogin }) {
@@ -8,10 +8,14 @@ export default function AuthScreen({ onLogin }) {
   const [showPass, setShowPass] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [serverDown, setServerDown] = useState(false)
+  const [restarting, setRestarting] = useState(false)
+  const pollRef = useRef(null)
 
   async function submit(e) {
     e?.preventDefault()
     setError('')
+    setServerDown(false)
     if (!username || !password) { setError('กรุณากรอก username และ password'); return }
     setLoading(true)
     try {
@@ -24,10 +28,35 @@ export default function AuthScreen({ onLogin }) {
       if (!res.ok) { setError(data.error || 'เกิดข้อผิดพลาด'); return }
       onLogin(data)
     } catch {
-      setError('ไม่สามารถเชื่อมต่อ server ได้ กรุณาลองใหม่')
+      setError('ไม่สามารถเชื่อมต่อ server ได้')
+      setServerDown(true)
     } finally {
       setLoading(false)
     }
+  }
+
+  async function restartServer() {
+    setRestarting(true)
+    setError('')
+    try {
+      await fetch('/restart', { method: 'POST' })
+    } catch {
+      // server อาจตายก่อน response — ปกติ
+    }
+    // poll /health จนกว่า server จะกลับมา
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch('/health')
+        if (res.ok) {
+          clearInterval(pollRef.current)
+          setRestarting(false)
+          setServerDown(false)
+          setError('Server พร้อมแล้ว — ลองเข้าสู่ระบบอีกครั้ง')
+        }
+      } catch {
+        // ยังรอ server ขึ้น
+      }
+    }, 2000)
   }
 
   return (
@@ -52,7 +81,12 @@ export default function AuthScreen({ onLogin }) {
 
             <form onSubmit={submit} className="space-y-4">
               {error && (
-                <div className="bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/40 text-red-500 text-xs px-3 py-2.5 rounded-xl">
+                <div className={cn(
+                  'border text-xs px-3 py-2.5 rounded-xl',
+                  serverDown
+                    ? 'bg-green-50 dark:bg-green-950/30 border-green-100 dark:border-green-900/40 text-green-600'
+                    : 'bg-red-50 dark:bg-red-950/30 border-red-100 dark:border-red-900/40 text-red-500'
+                )}>
                   {error}
                 </div>
               )}
@@ -102,7 +136,7 @@ export default function AuthScreen({ onLogin }) {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || restarting}
                 className={cn(
                   'w-full py-2.5 rounded-xl text-sm font-semibold text-white mt-2',
                   'bg-brand hover:bg-brand-600 active:scale-[0.98]',
@@ -115,6 +149,25 @@ export default function AuthScreen({ onLogin }) {
                 {loading && <Loader2 size={15} className="animate-spin" />}
                 {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
               </button>
+
+              {serverDown && (
+                <button
+                  type="button"
+                  onClick={restartServer}
+                  disabled={restarting}
+                  className={cn(
+                    'w-full py-2.5 rounded-xl text-sm font-semibold',
+                    'bg-(--surface2) border border-(--border)',
+                    'text-(--text-muted) hover:text-(--text)',
+                    'active:scale-[0.98] transition-all duration-150 cursor-pointer',
+                    'disabled:opacity-60 disabled:cursor-not-allowed',
+                    'flex items-center justify-center gap-2'
+                  )}
+                >
+                  <RefreshCw size={14} className={restarting ? 'animate-spin' : ''} />
+                  {restarting ? 'กำลัง Restart Server...' : 'Restart Server'}
+                </button>
+              )}
             </form>
           </div>
         </div>

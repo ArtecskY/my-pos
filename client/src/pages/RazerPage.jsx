@@ -194,10 +194,10 @@ export default function RazerPage() {
               {razerOrders.map(o => {
                 const status = o.razer_status
                 const badge =
-                  status === 'success'     ? <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-semibold whitespace-nowrap">✅ สำเร็จ</span>
-                  : status === 'failed'   ? <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-semibold whitespace-nowrap">❌ ล้มเหลว</span>
-                  : status === 'processing' ? <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold whitespace-nowrap">⚙️ กำลังทำ</span>
-                  : <span className="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-xs font-semibold whitespace-nowrap">⏳ รอ</span>
+                  status === 'success'     ? <span className="px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 text-xs font-semibold whitespace-nowrap">✅ สำเร็จ</span>
+                  : status === 'failed'   ? <span className="px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 text-xs font-semibold whitespace-nowrap">❌ ล้มเหลว</span>
+                  : status === 'processing' ? <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 text-xs font-semibold whitespace-nowrap">⚙️ กำลังทำ</span>
+                  : <span className="px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 text-xs font-semibold whitespace-nowrap">⏳ รอ</span>
 
                 const toThai = iso => {
                   if (!iso) return '—'
@@ -215,10 +215,10 @@ export default function RazerPage() {
                 const noteLines = o.razer_note ? o.razer_note.split(' | ').filter(Boolean) : []
 
                 return (
-                  <div key={o.id} className={`px-5 py-3 flex items-start gap-3 text-sm ${noteLines.length ? 'bg-red-50/40' : ''}`}>
+                  <div key={o.id} className={`px-5 py-3 flex items-start gap-3 text-sm ${noteLines.length ? 'bg-red-50/40 dark:bg-red-950/20' : ''}`}>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-medium text-slate-700">{o.product_name || `Order #${o.id}`}</p>
+                        <p className="font-medium text-slate-700 dark:text-slate-200">{o.product_name || `Order #${o.id}`}</p>
                         {badge}
                       </div>
                       <p className="text-xs text-slate-400 mt-0.5">
@@ -226,9 +226,9 @@ export default function RazerPage() {
                         {durSec !== null && <span className="ml-2 text-slate-300">⏱ {durSec}s</span>}
                       </p>
                       {noteLines.length > 0 && (
-                        <div className="mt-1.5 rounded-lg bg-red-50 border border-red-100 px-3 py-2 space-y-1">
+                        <div className="mt-1.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-800/30 px-3 py-2 space-y-1">
                           {noteLines.map((line, i) => (
-                            <p key={i} className="text-xs text-red-600 break-all leading-relaxed">
+                            <p key={i} className="text-xs text-red-600 dark:text-red-400 break-all leading-relaxed">
                               {noteLines.length > 1 && <span className="font-semibold mr-1">#{i + 1}</span>}
                               {line.trim()}
                             </p>
@@ -238,7 +238,7 @@ export default function RazerPage() {
                     </div>
                     <button
                       onClick={() => deleteRazerOrder(o.id)}
-                      className="shrink-0 px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg text-xs cursor-pointer"
+                      className="shrink-0 px-2.5 py-1 bg-red-100 dark:bg-red-900/40 hover:bg-red-200 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 rounded-lg text-xs cursor-pointer"
                     >
                       ลบ
                     </button>

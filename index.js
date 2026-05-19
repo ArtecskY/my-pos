@@ -66,6 +66,28 @@ const reservationSseClients = new Set()
 // Health check — Railway ใช้ตรวจสอบว่า server ทำงานอยู่
 app.get('/health', (req, res) => res.json({ status: 'ok' }))
 
+// Restart server — ใช้สำหรับ user กด Restart จากหน้า Login
+app.post('/restart', (req, res) => {
+  res.json({ message: 'กำลัง Restart Server...' })
+  setTimeout(() => {
+    const isRailway = !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID)
+    if (isRailway) {
+      process.exit(0)
+    } else {
+      const { spawn } = require('child_process')
+      const child = spawn(process.execPath, [__filename], {
+        detached: true,
+        stdio: 'ignore',
+        cwd: __dirname,
+        env: process.env,
+        windowsHide: true,
+      })
+      child.unref()
+      process.exit(0)
+    }
+  }, 300)
+})
+
 app.get('/admin/download-db', (req, res) => {
   if (!req.session.user?.is_admin) return res.status(403).json({ error: 'Admin only' })
   const dbPath = path.join(process.env.DATA_DIR || __dirname, 'pos.db')
