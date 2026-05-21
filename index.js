@@ -980,13 +980,14 @@ initDB().then(() => {
     const id = req.params.id
     const items = db.exec(`
       SELECT oi.product_id, oi.quantity, oi.price, oi.credit_deducted, oi.email_id_used,
-             COALESCE(p.is_bundle, 0), oi.lot_id_used, c.fill_type, oi.topup_breakdown, oi.bundle_lot_info
+             COALESCE(p.is_bundle, 0), oi.lot_id_used, c.fill_type, oi.topup_breakdown, oi.bundle_lot_info,
+             oi.razer_jobs
       FROM order_items oi
       LEFT JOIN products p ON p.id = oi.product_id
       LEFT JOIN categories c ON c.id = p.category_id
       WHERE oi.order_id=?`, [id])
     if (items[0]) {
-      for (const [product_id, quantity, price, credit_deducted, email_id_used, is_bundle, lot_id_used, fill_type, topup_breakdown, bundle_lot_info] of items[0].values) {
+      for (const [product_id, quantity, price, credit_deducted, email_id_used, is_bundle, lot_id_used, fill_type, topup_breakdown, bundle_lot_info, razer_jobs_str] of items[0].values) {
         if (is_bundle) {
           if (credit_deducted != null && email_id_used != null) {
             // EMAIL-type bundle (single email): คืน email credits
@@ -1022,7 +1023,12 @@ initDB().then(() => {
             db.run('UPDATE product_lots SET stock = stock + ? WHERE id=?', [quantity, lot_id_used])
           }
         } else if (credit_deducted != null) {
-          if (email_id_used != null) {
+          if (razer_jobs_str) {
+            try {
+              const razerJobs = JSON.parse(razer_jobs_str)
+              for (const job of razerJobs) restoreRazerFIFO(job.email_id, job.amount, null)
+            } catch { if (email_id_used != null) restoreRazerFIFO(email_id_used, credit_deducted, topup_breakdown) }
+          } else if (email_id_used != null) {
             restoreRazerFIFO(email_id_used, credit_deducted, topup_breakdown)
           } else {
             const pRes = db.exec('SELECT category_id FROM products WHERE id=?', [product_id])
@@ -1622,7 +1628,7 @@ initDB().then(() => {
              p.name, oi.quantity, oi.price, oi.credit_deducted, COALESCE(e.email, oi.shop_name), oi.price_usd_used, c.name, oi.cost_used,
              COALESCE(oi.lot_cost_used, pl.cost) as lot_cost_used, oi.bundle_lot_info, o.channel, c.fill_type,
              o.transfer_time2, o.tw, oi.manual_data, oi.id AS item_id, oi.topup_breakdown, COALESCE(p.is_bundle, 0) as is_bundle, oi.product_id,
-             o.order_note
+             o.order_note, oi.razer_jobs
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
@@ -1644,6 +1650,7 @@ initDB().then(() => {
         transfer_time2: row[17] || null, tw: row[18] === 1, manual_data: row[19] ?? null,
         item_id: row[20] ?? null, topup_breakdown: row[21] ?? null, is_bundle: row[22] === 1, product_id: row[23] ?? null,
         order_note: row[24] ?? null,
+        razer_jobs: row[25] ? (() => { try { return JSON.parse(row[25]) } catch { return null } })() : null,
       }
       if (item.manual_data) {
         try {

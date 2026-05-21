@@ -1,4 +1,4 @@
-const fs = require('fs')
+﻿const fs = require('fs')
 const path = require('path')
 const initSqlJs = require('sql.js')
 
@@ -85,7 +85,7 @@ async function initDB() {
   try { db.run('ALTER TABLE emails ADD COLUMN note TEXT') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE emails ADD COLUMN cost REAL DEFAULT 0') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE emails ADD COLUMN fill_type TEXT') } catch (e) { /* column exists */ }
-  // migrate fill_type จาก categories สำหรับ email เก่าที่มี category_id
+  // migrate fill_type à¸ˆà¸²à¸ categories à¸ªà¸³à¸«à¸£à¸±à¸š email à¹€à¸à¹ˆà¸²à¸—à¸µà¹ˆà¸¡à¸µ category_id
   db.run(`UPDATE emails SET fill_type = (SELECT fill_type FROM categories WHERE id = emails.category_id) WHERE fill_type IS NULL AND category_id IS NOT NULL`)
   try { db.run('ALTER TABLE order_items ADD COLUMN credit_deducted REAL') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE order_items ADD COLUMN email_id_used INTEGER') } catch (e) { /* column exists */ }
@@ -143,6 +143,7 @@ async function initDB() {
   try { db.run("ALTER TABLE email_types ADD COLUMN behavior TEXT NOT NULL DEFAULT 'EMAIL'") } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE product_lots ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE order_items ADD COLUMN uid TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN razer_jobs TEXT') } catch (e) { /* column exists */ }
 
   db.run(`CREATE TABLE IF NOT EXISTS reservations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -162,10 +163,10 @@ async function initDB() {
     quantity INTEGER NOT NULL DEFAULT 1
   )`)
 
-  // ผู้ใช้คนแรกเป็น admin เสมอ
+  // à¸œà¸¹à¹‰à¹ƒà¸Šà¹‰à¸„à¸™à¹à¸£à¸à¹€à¸›à¹‡à¸™ admin à¹€à¸ªà¸¡à¸­
   db.run('UPDATE users SET is_admin=1 WHERE id=(SELECT MIN(id) FROM users)')
 
-  console.log('✅ เชื่อมต่อฐานข้อมูลสำเร็จ')
+  console.log('âœ… à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­à¸à¸²à¸™à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸ªà¸³à¹€à¸£à¹‡à¸ˆ')
   return db
 }
 

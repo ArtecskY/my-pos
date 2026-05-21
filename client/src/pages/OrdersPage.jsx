@@ -987,6 +987,15 @@ export default function OrdersPage() {
                                 </span>
                               )
                             }
+                            if (item.razer_jobs && item.razer_jobs.length > 1) {
+                              return (
+                                <span className="text-blue-500 flex flex-col gap-0.5">
+                                  {item.razer_jobs.map((job, i) => (
+                                    <span key={i}>{job.email}: {job.amount.toFixed(2)}</span>
+                                  ))}
+                                </span>
+                              )
+                            }
                             return item.email_used ? item.email_used : (() => {
                               if (!item.bundle_lot_info) {
                                 return <span className="text-slate-200">—</span>

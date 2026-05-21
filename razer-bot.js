@@ -719,9 +719,13 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
           'UPDATE emails SET credits=credits-?, is_locked=0, backup_codes=? WHERE id=?',
           [goldToDeduct, JSON.stringify(acc.backup_codes.slice(1)), acc.id]
         )
+        const _rjRow = db.exec('SELECT razer_jobs FROM order_items WHERE order_id=? AND product_id=?', [orderId, order.packageId])
+        let _prevJobs = []
+        try { _prevJobs = JSON.parse(_rjRow[0]?.values[0][0] || '[]') } catch {}
+        _prevJobs.push({ email_id: acc.id, email: acc.email, amount: goldToDeduct })
         db.run(
-          'UPDATE order_items SET email_id_used=?, credit_deducted=COALESCE(credit_deducted,0)+? WHERE order_id=? AND product_id=?',
-          [acc.id, goldToDeduct, orderId, order.packageId]
+          'UPDATE order_items SET email_id_used=?, credit_deducted=COALESCE(credit_deducted,0)+?, razer_jobs=? WHERE order_id=? AND product_id=?',
+          [acc.id, goldToDeduct, JSON.stringify(_prevJobs), orderId, order.packageId]
         )
         if (jobIndex === totalJobs) {
           db.run('UPDATE orders SET razer_status=?, razer_note=?, razer_finished_at=? WHERE id=?',
