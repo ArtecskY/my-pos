@@ -72,6 +72,8 @@ export default function POSPage({ onNavigate }) {
 
   // RAZER_AUTO: { [itemId]: string[] } — index ตรงกับ unit ที่ 1..N
   const [razerUrls, setRazerUrls] = useState({})
+  // RAZER_AUTO bundle components: { [itemId]: [{product_id, name, quantity, price_usd}] }
+  const [razerBundleComps, setRazerBundleComps] = useState({})
 
   // Manual order
   const [showManualOrder, setShowManualOrder] = useState(false)
@@ -109,6 +111,16 @@ export default function POSPage({ onNavigate }) {
     es.onmessage = e => { try { setReservations(JSON.parse(e.data)) } catch {} }
     return () => es.close()
   }, [])
+
+  useEffect(() => {
+    for (const item of cart) {
+      if (item.is_bundle && isRazerAuto(item.fill_type) && !razerBundleComps[item.id]) {
+        fetch(/products/+item.id+/bundle-components)
+          .then(r => r.json())
+          .then(comps => setRazerBundleComps(prev => ({ ...prev, [item.id]: comps })))
+      }
+    }
+  }, [cart])
 
   const FILL_TYPE_LABELS = {
     'UID': 'UID', 'EMAIL': 'Apple ID', 'RAZER': 'Razer',
@@ -404,7 +416,13 @@ export default function POSPage({ onNavigate }) {
     const razerUrlsList = []
     for (const item of cart.filter(i => isRazerAuto(i.fill_type))) {
       const urls = razerUrls[item.id] || []
-      for (let qi = 0; qi < item.quantity; qi++) razerUrlsList.push(urls[qi] || '')
+      if (item.is_bundle) {
+        const comps = razerBundleComps[item.id] || []
+        const totalUnits = comps.reduce((s, c) => s + c.quantity, 0) * item.quantity
+        for (let qi = 0; qi < totalUnits; qi++) razerUrlsList.push(urls[qi] || '')
+      } else {
+        for (let qi = 0; qi < item.quantity; qi++) razerUrlsList.push(urls[qi] || '')
+      }
     }
     const razerUrlsPayload = razerUrlsList.length > 0 ? razerUrlsList : null
 
@@ -1140,38 +1158,55 @@ export default function POSPage({ onNavigate }) {
               )}
             </div>
 
-            {/* RAZER_AUTO URL input — 1 ช่องต่อ 1 หน่วย */}
+            {/* RAZER_AUTO URL input — 1 ช่องต่อ 1 หน่วย (bundle: 1 ช่องต่อ 1 component unit) */}
             {cart.some(i => isRazerAuto(i.fill_type)) && (
               <div className="mb-6 space-y-3">
-                {cart.filter(i => isRazerAuto(i.fill_type)).map(item => (
-                  <div key={item.id} className="border border-yellow-300 dark:border-slate-600 rounded-xl p-4 bg-yellow-50 dark:bg-slate-800 space-y-3">
-                    <p className="text-sm font-semibold text-yellow-800 dark:text-white">{item.name} × {item.quantity}</p>
-                    {Array.from({ length: item.quantity }, (_, qi) => {
-                      const url = (razerUrls[item.id] || [])[qi] || ''
-                      return (
-                        <div key={qi} className="space-y-1">
-                          <label className="block text-xs text-slate-500">
-                            {item.quantity > 1 ? `Link ชิ้นที่ ${qi + 1}` : 'Link'} (pay.gold.razer.com)
-                          </label>
-                          <input
-                            type="url"
-                            value={url}
-                            onChange={e => {
-                              const arr = [...(razerUrls[item.id] || Array(item.quantity).fill(''))]
-                              arr[qi] = e.target.value
-                              setRazerUrls(prev => ({ ...prev, [item.id]: arr }))
-                            }}
-                            placeholder="https://pay.gold.razer.com/..."
-                            className="w-full border border-yellow-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 bg-white"
-                          />
-                          {url && !url.startsWith('https://pay.gold.razer.com') && (
-                            <p className="text-xs text-red-500">Link ต้องขึ้นต้นด้วย https://pay.gold.razer.com</p>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                ))}
+                {cart.filter(i => isRazerAuto(i.fill_type)).map(item => {
+                  const bundleComps = (item.is_bundle ? razerBundleComps[item.id] : null) || null
+                  const urlSlots = []
+                  if (bundleComps) {
+                    for (let bq = 0; bq < item.quantity; bq++) {
+                      for (const comp of bundleComps) {
+                        for (let cq = 0; cq < comp.quantity; cq++) {
+                          const label = item.quantity > 1
+                            ? `ชุดที่ ${bq + 1} — ${comp.name}${comp.quantity > 1 ? ` (${cq + 1}/${comp.quantity})` : ''}`
+                            : `${comp.name}${comp.quantity > 1 ? ` (${cq + 1}/${comp.quantity})` : ''}`
+                          urlSlots.push(label)
+                        }
+                      }
+                    }
+                  } else {
+                    for (let qi = 0; qi < item.quantity; qi++)
+                      urlSlots.push(item.quantity > 1 ? `Link ชิ้นที่ ${qi + 1}` : 'Link')
+                  }
+                  return (
+                    <div key={item.id} className="border border-yellow-300 dark:border-slate-600 rounded-xl p-4 bg-yellow-50 dark:bg-slate-800 space-y-3">
+                      <p className="text-sm font-semibold text-yellow-800 dark:text-white">{item.name} × {item.quantity}</p>
+                      {urlSlots.map((label, qi) => {
+                        const url = (razerUrls[item.id] || [])[qi] || ''
+                        return (
+                          <div key={qi} className="space-y-1">
+                            <label className="block text-xs text-slate-500">{label} (pay.gold.razer.com)</label>
+                            <input
+                              type="url"
+                              value={url}
+                              onChange={e => {
+                                const arr = [...(razerUrls[item.id] || Array(urlSlots.length).fill(''))]
+                                arr[qi] = e.target.value
+                                setRazerUrls(prev => ({ ...prev, [item.id]: arr }))
+                              }}
+                              placeholder="https://pay.gold.razer.com/..."
+                              className="w-full border border-yellow-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-500 bg-white"
+                            />
+                            {url && !url.startsWith('https://pay.gold.razer.com') && (
+                              <p className="text-xs text-red-500">Link ต้องขึ้นต้นด้วย https://pay.gold.razer.com</p>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })}
               </div>
             )}
 

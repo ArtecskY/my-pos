@@ -659,6 +659,7 @@ initDB().then(() => {
       if (is_bundle) {
         const catRes0 = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
         const bundleFillType0 = catRes0[0]?.values[0][0] || 'UID'
+        if (bundleFillType0 === 'RAZER_AUTO') continue
         if (usesEmailCredits(bundleFillType0)) {
           // EMAIL-type bundle: validate email credits
           if (item.bundle_email_ids && item.bundle_email_ids.length > 0) {
@@ -754,6 +755,25 @@ initDB().then(() => {
     for (const item of items) {
       const pRes = db.exec('SELECT price, category_id, is_bundle, price_usd, name FROM products WHERE id=?', [item.product_id])
       const [price, category_id, is_bundle, price_usd, productName] = pRes[0].values[0]
+
+      // RAZER_AUTO bundle: insert 1 row per component unit, bot handles the rest
+      if (is_bundle) {
+        const _bFt = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])[0]?.values[0][0]
+        if (_bFt === 'RAZER_AUTO') {
+          const _bComps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [item.product_id])
+          if (_bComps[0]) {
+            for (let _bq = 0; _bq < item.quantity; _bq++) {
+              for (const [_cId, _cQty] of _bComps[0].values) {
+                const _cPrice = db.exec('SELECT price FROM products WHERE id=?', [_cId])[0]?.values[0][0] || 0
+                for (let _cq = 0; _cq < _cQty; _cq++) {
+                  db.run('INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)', [orderId, _cId, 1, _cPrice])
+                }
+              }
+            }
+          }
+          continue
+        }
+      }
 
       db.run('INSERT INTO order_items (order_id, product_id, quantity, price, uid) VALUES (?,?,?,?,?)',
         [orderId, item.product_id, item.quantity, price, item.uid || null])
@@ -929,17 +949,35 @@ initDB().then(() => {
       const jobs = []
       let urlIdx = 0
       for (const razerItem of razerAutoItems) {
-        const p = db.exec('SELECT category_id FROM products WHERE id=?', [razerItem.product_id])
-        const gameId = p[0]?.values[0][0]
-        for (let q = 0; q < razerItem.quantity && urlIdx < urlList.length; q++, urlIdx++) {
-          jobs.push({ gameId, packageId: razerItem.product_id, url: urlList[urlIdx] })
+        const _isBundleRes = db.exec('SELECT is_bundle FROM products WHERE id=?', [razerItem.product_id])
+        const _isBundle = _isBundleRes[0]?.values[0][0] === 1
+        if (_isBundle) {
+          const _comps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [razerItem.product_id])
+          if (_comps[0]) {
+            for (let _bq = 0; _bq < razerItem.quantity; _bq++) {
+              for (const [_cId, _cQty] of _comps[0].values) {
+                const _cCatId = db.exec('SELECT category_id FROM products WHERE id=?', [_cId])[0]?.values[0][0]
+                const _oiRows = db.exec('SELECT id FROM order_items WHERE order_id=? AND product_id=? ORDER BY id ASC', [orderId, _cId])
+                for (let _cq = 0; _cq < _cQty && urlIdx < urlList.length; _cq++, urlIdx++) {
+                  const _oiId = _oiRows[0]?.values[_bq * _cQty + _cq]?.[0]
+                  if (_oiId) jobs.push({ gameId: _cCatId, packageId: _cId, url: urlList[urlIdx], orderItemId: _oiId })
+                }
+              }
+            }
+          }
+        } else {
+          const p = db.exec('SELECT category_id FROM products WHERE id=?', [razerItem.product_id])
+          const gameId = p[0]?.values[0][0]
+          for (let q = 0; q < razerItem.quantity && urlIdx < urlList.length; q++, urlIdx++) {
+            jobs.push({ gameId, packageId: razerItem.product_id, url: urlList[urlIdx] })
+          }
         }
       }
       const totalJobs = jobs.length
       jobs.forEach((job, i) => {
         enqueueRazerOrder(
           orderId,
-          { gameId: job.gameId, packageId: job.packageId, userFields: { urlLink: job.url } },
+          { gameId: job.gameId, packageId: job.packageId, userFields: { urlLink: job.url }, orderItemId: job.orderItemId || null },
           i + 1,
           totalJobs
         )
