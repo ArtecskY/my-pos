@@ -773,6 +773,22 @@ initDB().then(() => {
           }
           continue
         }
+        // RAZER/EMAIL bundle with per-component email split: insert component rows instead of bundle row
+        if (usesEmailCredits(_bFt) && item.bundle_email_ids && item.bundle_email_ids.length > 0) {
+          for (const be of item.bundle_email_ids) {
+            const _beComp = db.exec('SELECT name, price, price_usd FROM products WHERE id=?', [be.component_product_id])
+            const [_beName, _bePrice, _bePriceUsd] = _beComp[0]?.values[0] || ['', 0, null]
+            const _beCredits = parseBundleCompCredit(_beName, _bePrice, _bePriceUsd) * (be.quantity || 1)
+            const _beCost = db.exec('SELECT cost FROM emails WHERE id=?', [be.email_id])[0]?.values[0][0]
+            deductFromEmail(be.email_id, _beCredits)
+            db.run('INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)',
+              [orderId, be.component_product_id, be.quantity || 1, _bePrice])
+            const _beOiId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
+            db.run('UPDATE order_items SET credit_deducted=?, email_id_used=?, price_usd_used=?, cost_used=? WHERE id=?',
+              [_beCredits, be.email_id, _bePriceUsd ?? null, (_beCost != null && _beCost > 0) ? _beCost : null, _beOiId])
+          }
+          continue
+        }
       }
 
       db.run('INSERT INTO order_items (order_id, product_id, quantity, price, uid) VALUES (?,?,?,?,?)',
