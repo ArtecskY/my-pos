@@ -115,7 +115,7 @@ export default function POSPage({ onNavigate }) {
   useEffect(() => {
     for (const item of cart) {
       if (item.is_bundle && isRazerAuto(item.fill_type) && !razerBundleComps[item.id]) {
-        fetch(/products/+item.id+/bundle-components)
+        fetch(`/products/${item.id}/bundle-components`)
           .then(r => r.json())
           .then(comps => setRazerBundleComps(prev => ({ ...prev, [item.id]: comps })))
       }
