@@ -14,6 +14,7 @@ const StealthPlugin  = require('puppeteer-extra-plugin-stealth')
 puppeteerExtra.use(StealthPlugin())
 
 const VALID_PAY_ORIGIN = 'https://pay.gold.razer.com'
+class OrderValidationError extends Error {}
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const fs = require('fs')
 const path = require('path')
@@ -682,7 +683,7 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
           console.log(`[razer-bot] Gold amount from page: ${razerGoldAmount}`)
           if (razerGoldAmount != null) {
             const check = validateAmount(razerGoldAmount, pkg)
-            if (!check.valid) throw new Error(check.reason)
+            if (!check.valid) throw new OrderValidationError(check.reason)
           }
         }
 
@@ -745,6 +746,7 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
         return
 
       } catch (err) {
+        if (err instanceof OrderValidationError) throw err
         const msg = `account#${acc.id}(${acc.email}): ${err.message}`
         console.error(`[razer-bot] ${msg}`)
         accountErrors.push(msg)
