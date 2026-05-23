@@ -158,6 +158,8 @@ export default function OrdersPage() {
           channel: item.channel || null,
           tw: item.tw || false,
           order_note: item.order_note || null,
+          razer_status: item.razer_status || null,
+          razer_note: item.razer_note || null,
           items: [],
         }
         dateGroup.orderMap[item.order_id] = g
