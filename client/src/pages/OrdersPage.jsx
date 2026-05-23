@@ -126,11 +126,18 @@ export default function OrdersPage() {
   const [editShopNameValue, setEditShopNameValue] = useState('')
   const [editNoteOrderId, setEditNoteOrderId] = useState(null)
   const [editNoteValue, setEditNoteValue] = useState('')
+  const [fetchError, setFetchError] = useState(null)
 
   useEffect(() => {
     function loadData() {
-      fetch('/order-items').then(r => r.json()).then(setOrderItems)
-      fetch('/email-types').then(r => r.json()).then(setCustomTypes)
+      fetch('/order-items')
+        .then(r => r.json())
+        .then(data => {
+          if (Array.isArray(data)) { setOrderItems(data); setFetchError(null) }
+          else setFetchError(data?.error || JSON.stringify(data).slice(0, 200))
+        })
+        .catch(err => setFetchError(String(err)))
+      fetch('/email-types').then(r => r.json()).then(setCustomTypes).catch(() => {})
     }
     loadData()
     const timer = setInterval(loadData, 8000)
@@ -450,6 +457,11 @@ export default function OrdersPage() {
 
   return (
     <div className="space-y-4">
+      {fetchError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm font-mono">
+          โหลดข้อมูลไม่สำเร็จ: {fetchError}
+        </div>
+      )}
       {/* Header */}
       <div className="flex flex-wrap justify-between items-center gap-2">
         <h2 className="font-semibold text-slate-800 text-lg">ประวัติการทำรายการ</h2>
@@ -991,7 +1003,7 @@ export default function OrdersPage() {
                               return (
                                 <span className="text-blue-500 flex flex-col gap-0.5">
                                   {item.razer_jobs.map((job, i) => (
-                                    <span key={i}>{job.email}: {job.amount.toFixed(2)}</span>
+                                    <span key={i}>{job.email}: {Number(job.amount || 0).toFixed(2)}</span>
                                   ))}
                                 </span>
                               )

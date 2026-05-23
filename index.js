@@ -1652,6 +1652,7 @@ initDB().then(() => {
   })
 
   app.get('/order-items', requireLogin, (req, res) => {
+    try {
     // Pre-load bundle components map for bundle display
     const bundleCompsRes = db.exec(
       'SELECT pb.product_id, p.name, pb.quantity, p.price_usd FROM product_bundles pb JOIN products p ON p.id = pb.component_id ORDER BY pb.product_id, pb.rowid'
@@ -1743,6 +1744,10 @@ initDB().then(() => {
       return item
     }) : []
     res.json(items)
+    } catch (err) {
+      console.error('[order-items] error:', err.message, err.stack)
+      res.status(500).json({ error: err.message })
+    }
   })
 
   app.get('/orders/:id/items', requireLogin, (req, res) => {
