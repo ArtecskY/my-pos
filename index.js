@@ -1682,13 +1682,14 @@ initDB().then(() => {
              p.name, oi.quantity, oi.price, oi.credit_deducted, COALESCE(e.email, oi.shop_name), oi.price_usd_used, c.name, oi.cost_used,
              COALESCE(oi.lot_cost_used, pl.cost) as lot_cost_used, oi.bundle_lot_info, o.channel, c.fill_type,
              o.transfer_time2, o.tw, oi.manual_data, oi.id AS item_id, oi.topup_breakdown, COALESCE(p.is_bundle, 0) as is_bundle, oi.product_id,
-             o.order_note, oi.razer_jobs, o.razer_status, o.razer_note
+             o.order_note, oi.razer_jobs
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
       LEFT JOIN categories c ON c.id = p.category_id
       LEFT JOIN emails e ON e.id = oi.email_id_used
       LEFT JOIN product_lots pl ON pl.id = oi.lot_id_used
+      WHERE (o.razer_status IS NULL OR o.razer_status != 'failed')
       ORDER BY COALESCE(o.transfer_time, o.created_at) DESC, o.id DESC, oi.id ASC
     `)
     const items = result[0] ? result[0].values.map(row => {
@@ -1704,8 +1705,6 @@ initDB().then(() => {
         item_id: row[20] ?? null, topup_breakdown: row[21] ?? null, is_bundle: row[22] === 1, product_id: row[23] ?? null,
         order_note: row[24] ?? null,
         razer_jobs: row[25] ? (() => { try { return JSON.parse(row[25]) } catch { return null } })() : null,
-        razer_status: row[26] || null,
-        razer_note: row[27] || null,
       }
       if (item.manual_data) {
         try {
