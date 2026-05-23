@@ -1743,6 +1743,7 @@ initDB().then(() => {
       }
       return item
     }) : []
+    res.set('Cache-Control', 'no-store')
     res.json(items)
     } catch (err) {
       console.error('[order-items] error:', err.message, err.stack)
