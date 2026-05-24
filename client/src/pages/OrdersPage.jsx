@@ -776,6 +776,17 @@ export default function OrdersPage() {
                                       : ''}
                                   </InfoTooltip>
                                 )}
+                                {/* ⓘ RAZER bundle — แสดง component breakdown */}
+                                {item.bundle_lot_info && (() => {
+                                  try {
+                                    const _bp = JSON.parse(item.bundle_lot_info)
+                                    if (!_bp.bundle_email_ids) return null
+                                    const _bLines = _bp.bundle_email_ids.map(be =>
+                                      `${be.component_name || '?'} ×${be.quantity || 1} (${Number(be.credits).toFixed(2)} เครดิต)\n  ${be.email || '?'}`
+                                    ).join('\n')
+                                    return <InfoTooltip>{_bLines}</InfoTooltip>
+                                  } catch { return null }
+                                })()}
                               </>
                             )}
                           </td>

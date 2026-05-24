@@ -71,10 +71,26 @@ function computeItemData(item) {
           lot_cost_used, price_usd_used, cost_used,
           is_bundle, bundle_lot_info, topup_breakdown } = item
 
-  // Bundle: คำนวณต้นทุนจาก bundle_lot_info (price_usd/qty ถูก enrich จาก products table ใน index.js)
+  // Bundle: คำนวณต้นทุนจาก bundle_lot_info
   if (is_bundle && bundle_lot_info) {
     try {
-      const components = JSON.parse(bundle_lot_info)
+      const parsed = JSON.parse(bundle_lot_info)
+      // RAZER manual bundle: { bundle_email_ids: [...] }
+      if (parsed.bundle_email_ids) {
+        const bes = parsed.bundle_email_ids
+        const totalCredits = bes.reduce((s, be) => s + Number(be.credits || 0), 0)
+        const parts = bes.map(be =>
+          `  ${be.component_name || '?'} ×${be.quantity || 1} (${Number(be.credits).toFixed(2)} เครดิต)`
+        )
+        return {
+          unitQty: totalCredits || quantity,
+          cost: cost_used ?? 0,
+          totalCost: totalCredits * (cost_used ?? 0),
+          note: product_name + '\n' + parts.join('\n'),
+        }
+      }
+      // Array-format bundle (EMAIL bundle enriched by server)
+      const components = parsed
       let totalCoins = 0
       let totalCost = 0
       const parts = []
@@ -195,17 +211,22 @@ async function exportDailyOrders(spreadsheetId, orders) {
       itemDataList.forEach(({ item, data }, i) => {
         // ตรวจว่า bundle item มี bundle_email_ids หรือเปล่า
         let bundleEmailRows = null
+        let bundleEmailNotes = {}
         if (item.bundle_lot_info) {
           try {
             const parsed = JSON.parse(item.bundle_lot_info)
             if (parsed.bundle_email_ids) {
               const em = {}
+              const emNotes = {}
               parsed.bundle_email_ids.forEach(be => {
                 const k = be.email || '?'
                 if (!em[k]) em[k] = 0
                 em[k] += Number(be.credits)
+                if (!emNotes[k]) emNotes[k] = []
+                emNotes[k].push(`${be.component_name || '?'} ×${be.quantity || 1} (${Number(be.credits).toFixed(2)} เครดิต)`)
               })
               bundleEmailRows = Object.entries(em)
+              bundleEmailNotes = Object.fromEntries(Object.entries(emNotes).map(([k, lines]) => [k, lines.join('\n')]))
             }
           } catch {}
         }
@@ -253,7 +274,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
               fmt(rowCostPerCredit),                              // ต้นทุน (ต่อเครดิต)
               fmt(rowTotalCost),                                  // ต้นทุนรวม
               fmt(rowProfit),                                     // กำไร (แยกต่อ email)
-              si === 0 ? data.note : '',                          // หมายเหตุ
+              bundleEmailNotes[email] ?? '',                       // หมายเหตุ — ชื่อแพ็กของ component ที่ email นี้ใช้
               isFirstRow && si === 0 ? (o.order_note || '') : '', // บันทึก
             ])
             globalRowIdx++

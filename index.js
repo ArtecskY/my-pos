@@ -660,15 +660,16 @@ initDB().then(() => {
         const catRes0 = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
         const bundleFillType0 = catRes0[0]?.values[0][0] || 'UID'
         if (bundleFillType0 === 'RAZER_AUTO') continue
+        const _bValIsRazer = bundleFillType0 === 'RAZER' || ['RAZER', 'CREDITS'].includes(getCustomEmailBehavior(bundleFillType0))
         if (usesEmailCredits(bundleFillType0)) {
           // EMAIL-type bundle: validate email credits
           if (item.bundle_email_ids && item.bundle_email_ids.length > 0) {
-            // Per-component email validation — server คำนวณ credits เอง
             for (const be of item.bundle_email_ids) {
               if (!be.email_id) return res.status(400).json({ error: `กรุณาเลือก Email สำหรับ "${name}"` })
-              // คำนวณ credits จาก component product (parse จากชื่อก่อน × quantity)
               const compRes = db.exec('SELECT name, price, price_usd FROM products WHERE id=?', [be.component_product_id])
-              const compCredits = compRes[0] ? parseBundleCompCredit(...compRes[0].values[0]) * (be.quantity || 1) : 0
+              const compCredits = _bValIsRazer && be.credit_amount != null
+                ? Number(be.credit_amount)
+                : (compRes[0] ? parseBundleCompCredit(...compRes[0].values[0]) * (be.quantity || 1) : 0)
               const emailRes = db.exec('SELECT credits FROM emails WHERE id=? AND fill_type=?', [be.email_id, bundleFillType0])
               if (!emailRes[0]) return res.status(400).json({ error: `ไม่พบ Email ที่เลือกสำหรับ "${name}"` })
               const emailCredits = emailRes[0].values[0][0]
@@ -773,7 +774,27 @@ initDB().then(() => {
           }
           continue
         }
-        // RAZER/EMAIL bundle with per-component email split: insert component rows instead of bundle row
+        // RAZER manual bundle: insert ONE bundle row with bundle_lot_info (user-specified credit_amount)
+        const _bIsRazer = _bFt === 'RAZER' || ['RAZER', 'CREDITS'].includes(getCustomEmailBehavior(_bFt))
+        if (_bIsRazer && item.bundle_email_ids && item.bundle_email_ids.length > 0) {
+          db.run('INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)', [orderId, item.product_id, item.quantity, price])
+          const _brOiId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
+          let _brTotal = 0
+          const _brLog = []
+          for (const be of item.bundle_email_ids) {
+            const _brCredits = be.credit_amount != null ? Number(be.credit_amount) : 0
+            const _brEmail = db.exec('SELECT email FROM emails WHERE id=?', [be.email_id])[0]?.values[0][0] || ''
+            const _brName = db.exec('SELECT name FROM products WHERE id=?', [be.component_product_id])[0]?.values[0][0] || '?'
+            deductFromEmail(be.email_id, _brCredits)
+            _brTotal += _brCredits
+            _brLog.push({ component_product_id: be.component_product_id, component_name: _brName, email_id: be.email_id, credits: _brCredits, email: _brEmail, quantity: be.quantity || 1 })
+          }
+          const _brCost = db.exec('SELECT cost FROM emails WHERE id=?', [item.bundle_email_ids[0].email_id])[0]?.values[0][0]
+          db.run('UPDATE order_items SET credit_deducted=?, email_id_used=?, bundle_lot_info=?, cost_used=? WHERE id=?',
+            [_brTotal, null, JSON.stringify({ bundle_email_ids: _brLog }), (_brCost != null && _brCost > 0) ? _brCost : null, _brOiId])
+          continue
+        }
+        // EMAIL bundle with per-component email split: insert component rows instead of bundle row
         if (usesEmailCredits(_bFt) && item.bundle_email_ids && item.bundle_email_ids.length > 0) {
           for (const be of item.bundle_email_ids) {
             const _beComp = db.exec('SELECT name, price, price_usd FROM products WHERE id=?', [be.component_product_id])
