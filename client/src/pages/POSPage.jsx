@@ -55,6 +55,7 @@ export default function POSPage({ onNavigate }) {
   const [transferAmount, setTransferAmount] = useState('')
   const [transferTime, setTransferTime] = useState('')
   const [transferTime2, setTransferTime2] = useState('')
+  const [orderNote, setOrderNote] = useState('')
 
   // keyed by item.id (non-split) หรือ splitKey (split)
   const [razerAmounts, setRazerAmounts] = useState({})
@@ -459,6 +460,7 @@ export default function POSPage({ onNavigate }) {
         tw: tw ? 1 : 0,
         reservation_id: activeReservationId || null,
         razer_urls: razerUrlsPayload,
+        order_note: orderNote || null,
       }),
     })
     const order = await res.json()
@@ -470,6 +472,7 @@ export default function POSPage({ onNavigate }) {
     setChannel(null)
     setTw(false)
     setTransferTime2('')
+    setOrderNote('')
     if (activeReservationId) {
       setActiveReservationId(null)
       loadReservations()
@@ -1428,6 +1431,17 @@ export default function POSPage({ onNavigate }) {
                 })}
               </div>
             )}
+
+            <div className="mb-5">
+              <label className="block text-sm text-slate-500 mb-1.5">หมายเหตุ</label>
+              <textarea
+                value={orderNote}
+                onChange={e => setOrderNote(e.target.value)}
+                rows={2}
+                placeholder="ไม่บังคับกรอก"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 resize-none"
+              />
+            </div>
 
             <div className="flex gap-2.5">
               <button onClick={confirmCheckout}
