@@ -600,12 +600,23 @@ export default function OrdersPage() {
                           }
                         })
                         bundleEmails = Object.entries(em).map(([email, data]) => ({ email, credits: data.credits, entries: data.entries }))
+                      } else if (p.bundle_url_ids) {
+                        // RAZER_AUTO bundle: 1 row per successful component (unique key even if same email)
+                        const successComps = p.bundle_url_ids.filter(c => c.status === 'success')
+                        if (successComps.length) {
+                          bundleEmails = successComps.map((c, idx) => ({
+                            email: c.email_used || '?',
+                            emailGroupKey: `${c.email_used || '?'}__${idx}`,
+                            credits: Number(c.gold || 0),
+                            entries: [{ name: c.component_name || '?', qty: 1, priceUsd: Number(c.gold || 0) }],
+                          }))
+                        }
                       }
                     } catch {}
                   }
                   if (bundleEmails?.length) {
-                    bundleEmails.forEach(({ email, credits, entries }, si) =>
-                      displayRows.push({ item, si, count: bundleEmails.length, email, credits, entries, split: true })
+                    bundleEmails.forEach(({ email, emailGroupKey, credits, entries }, si) =>
+                      displayRows.push({ item, si, count: bundleEmails.length, email, emailGroupKey, credits, entries, split: true })
                     )
                   } else {
                     displayRows.push({ item, si: 0, count: 1, email: null, credits: null, entries: null, split: false })
@@ -640,7 +651,7 @@ export default function OrdersPage() {
                 const splitEmailGroupMap = {}
                 displayRows.forEach((row, i) => {
                   if (!row.split) return
-                  const k = row.email || '?'
+                  const k = row.emailGroupKey || row.email || '?'
                   if (!splitEmailGroupMap[k]) splitEmailGroupMap[k] = { firstIdx: i, size: 0, totalCredits: 0, bundles: [] }
                   const g = splitEmailGroupMap[k]
                   g.size++
@@ -793,7 +804,7 @@ export default function OrdersPage() {
                         ) : null}
                         {/* จำนวน / เครดิต */}
                         {row.split ? (() => {
-                          const emailKey = row.email || '?'
+                          const emailKey = row.emailGroupKey || row.email || '?'
                           const eg = splitEmailGroupMap[emailKey]
                           const isFirst = eg?.firstIdx === di
                           if (!isFirst) return null
@@ -964,7 +975,7 @@ export default function OrdersPage() {
                         )}
                         {/* Email */}
                         {row.split ? (() => {
-                          const emailKey = row.email || '?'
+                          const emailKey = row.emailGroupKey || row.email || '?'
                           const eg = splitEmailGroupMap[emailKey]
                           const isFirst = eg?.firstIdx === di
                           if (!isFirst) return null
@@ -1025,6 +1036,19 @@ export default function OrdersPage() {
                               }
                               try {
                                 const parsed = JSON.parse(item.bundle_lot_info)
+                                if (parsed.bundle_url_ids) {
+                                  const ok = parsed.bundle_url_ids.filter(c => c.status === 'success' && c.email_used)
+                                  if (!ok.length) return <span className="text-slate-200">—</span>
+                                  const emailMap = {}
+                                  ok.forEach(c => { emailMap[c.email_used] = (emailMap[c.email_used] || 0) + Number(c.gold || 0) })
+                                  return (
+                                    <span className="text-orange-500 flex flex-col gap-0.5">
+                                      {Object.entries(emailMap).map(([email, gold], i) => (
+                                        <span key={i}>{email}: {gold.toFixed(2)}</span>
+                                      ))}
+                                    </span>
+                                  )
+                                }
                                 if (!parsed.bundle_email_ids) return <span className="text-slate-200">—</span>
                                 const emailMap = {}
                                 parsed.bundle_email_ids.forEach(be => {

@@ -21,6 +21,8 @@ export default function RazerPage() {
   const [typeError, setTypeError] = useState('')
   const [serverRegenning, setServerRegenning] = useState(new Set())
   const [pinnedIds, setPinnedIds] = useState(loadRazerPinned)
+  const [retryUrls, setRetryUrls] = useState({})
+  const [retrying, setRetrying] = useState(new Set())
 
   function togglePin(id) {
     const sid = String(id)
@@ -125,6 +127,28 @@ export default function RazerPage() {
   const processingCount = razerOrders.filter(o => o.razer_status === 'processing').length
   const processingOrder = razerOrders.find(o => o.razer_status === 'processing')
 
+
+  async function retryComponent(orderId, orderItemId, componentIndex) {
+    const key = `${orderId}_${componentIndex}`
+    const url = retryUrls[key]?.trim()
+    if (!url) { alert('กรุณากรอก URL ใหม่'); return }
+    setRetrying(prev => new Set([...prev, key]))
+    try {
+      const res = await fetch('/razer-retry-component', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: orderId, order_item_id: orderItemId, component_index: componentIndex, new_url: url }),
+      })
+      const d = await res.json()
+      if (!res.ok) { alert(d.error || 'เกิดข้อผิดพลาด'); return }
+      setRetryUrls(prev => { const n = { ...prev }; delete n[key]; return n })
+    } catch {
+      alert('ไม่สามารถเชื่อมต่อได้')
+    } finally {
+      setRetrying(prev => { const n = new Set(prev); n.delete(key); return n })
+    }
+    loadRazerOrders()
+  }
+
   async function killBot() {
     if (!confirm('ยืนยันยกเลิก Bot ที่กำลังทำงานอยู่?')) return
     await fetch('/razer-bot/kill', {
@@ -145,26 +169,26 @@ export default function RazerPage() {
             พร้อมใช้งาน <span className="font-semibold text-green-600">{botReadyCount}</span> / {emails.length} accounts
           </p>
         </div>
-        {(pendingCount + processingCount) > 0 && (
-          <div className="flex gap-2 items-center">
-            {processingCount > 0 && (
-              <span className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold px-3 py-1.5 rounded-full">
-                ⚙️ กำลังทำ {processingCount}
-              </span>
-            )}
-            {pendingCount > 0 && (
-              <span className="inline-flex items-center gap-1.5 bg-yellow-50 border border-yellow-200 text-yellow-700 text-xs font-semibold px-3 py-1.5 rounded-full">
-                ⏳ คิวรอ {pendingCount}
-              </span>
-            )}
+        <div className="flex gap-2 items-center">
+          {processingCount > 0 && (
+            <span className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold px-3 py-1.5 rounded-full">
+              ⚙️ กำลังทำ {processingCount}
+            </span>
+          )}
+          {pendingCount > 0 && (
+            <span className="inline-flex items-center gap-1.5 bg-yellow-50 border border-yellow-200 text-yellow-700 text-xs font-semibold px-3 py-1.5 rounded-full">
+              ⏳ คิวรอ {pendingCount}
+            </span>
+          )}
+          {(pendingCount + processingCount) > 0 && (
             <button
               onClick={killBot}
               className="inline-flex items-center gap-1 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
             >
               ✕ Kill Bot
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {msg && (
@@ -184,8 +208,8 @@ export default function RazerPage() {
               <span className="text-xs text-slate-400">({razerOrders.length} รายการ)</span>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-slate-400">อัปเดตทุก 5 วินาที</span>
-              <span className="text-slate-400 text-xs">{ordersCollapsed ? '▼' : '▲'}</span>
+              <span className="text-xs text-slate-400">อัปเดตทุก 3 วินาที</span>
+<span className="text-slate-400 text-xs">{ordersCollapsed ? '▼' : '▲'}</span>
             </div>
           </button>
 
@@ -195,9 +219,12 @@ export default function RazerPage() {
                 const status = o.razer_status
                 const badge =
                   status === 'success'     ? <span className="px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 text-xs font-semibold whitespace-nowrap">✅ สำเร็จ</span>
-                  : status === 'failed'   ? <span className="px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 text-xs font-semibold whitespace-nowrap">❌ ล้มเหลว</span>
+                  : status === 'failed'    ? <span className="px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 text-xs font-semibold whitespace-nowrap">❌ ล้มเหลว</span>
+                  : status === 'partial'   ? <span className="px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400 text-xs font-semibold whitespace-nowrap">⚠️ บางส่วนล้มเหลว</span>
                   : status === 'processing' ? <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 text-xs font-semibold whitespace-nowrap">⚙️ กำลังทำ</span>
                   : <span className="px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 text-xs font-semibold whitespace-nowrap">⏳ รอ</span>
+
+                const bundleComponents = o.bundle_lot_info?.bundle_url_ids
 
                 const toThai = iso => {
                   if (!iso) return '—'
@@ -233,6 +260,49 @@ export default function RazerPage() {
                               {line.trim()}
                             </p>
                           ))}
+                        </div>
+                      )}
+                      {/* Bundle component breakdown for partial / success orders */}
+                      {bundleComponents && (status === 'partial' || status === 'success') && (
+                        <div className="mt-2 space-y-2">
+                          {bundleComponents.map((comp, idx) => {
+                            const key = `${o.id}_${idx}`
+                            const isRetrying = retrying.has(key)
+                            return (
+                              <div key={idx} className={`rounded-lg border px-3 py-2 text-xs ${
+                                comp.status === 'success' ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-700' :
+                                comp.status === 'failed'  ? 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-700' :
+                                'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-700'
+                              }`}>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold text-slate-700 dark:text-slate-200">{comp.component_name || `ชิ้นที่ ${idx + 1}`}</span>
+                                  {comp.status === 'success' && <span className="text-green-600 dark:text-green-400 font-semibold">✅ สำเร็จ</span>}
+                                  {comp.status === 'failed'  && <span className="text-red-600 dark:text-red-400 font-semibold">❌ ล้มเหลว</span>}
+                                  {comp.status === 'pending' && <span className="text-yellow-600 dark:text-yellow-400 font-semibold">⏳ รอ</span>}
+                                  {comp.email_used && <span className="text-slate-400 dark:text-slate-400">({comp.email_used})</span>}
+                                </div>
+                                {comp.status === 'failed' && (
+                                  <div className="mt-1.5 flex gap-1.5">
+                                    <input
+                                      type="text"
+                                      value={retryUrls[key] || ''}
+                                      onChange={e => setRetryUrls(prev => ({ ...prev, [key]: e.target.value }))}
+                                      placeholder="วาง Link ใหม่จาก Razer..."
+                                      className="flex-1 border border-red-200 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-orange-400 bg-white"
+                                    />
+                                    <button
+                                      onClick={() => retryComponent(o.id, o.order_item_id, idx)}
+                                      disabled={isRetrying || !retryUrls[key]?.trim()}
+                                      className="px-3 py-1 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap"
+                                    >
+                                      {isRetrying ? '...' : 'Retry'}
+                                    </button>
+                                  </div>
+                                )}
+                                {comp.error && <p className="mt-1 text-red-500 text-xs break-all">{comp.error}</p>}
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
                     </div>

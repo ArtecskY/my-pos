@@ -743,8 +743,10 @@ export default function ManagePage() {
                             <td className="py-2.5 px-2 text-slate-500">฿{p.price}</td>
                             {p.is_bundle
                               ? <td className="py-2.5 px-2 text-slate-400">
-                                  สต็อก {p.stock}
-                                  {p.price_usd != null && <span className="ml-1.5 text-green-600 text-xs font-medium">${p.price_usd}</span>}
+                                  {p.stock === -1
+                                    ? <span className="text-emerald-600 font-medium">ไม่จำกัด</span>
+                                    : `สต็อก ${p.stock}`}
+                                  {p.price_usd != null && cat.fill_type !== 'RAZER_AUTO' && <span className="ml-1.5 text-green-600 text-xs font-medium">${p.price_usd}</span>}
                                 </td>
                               : p.fill_type === 'ID_PASS'
                                 ? <td className="py-2.5 px-2 text-slate-400">
@@ -1519,7 +1521,7 @@ export default function ManagePage() {
                 </div>
               </div>
             )}
-            {(!usesEmailCredits(editModal.fill_type, customEmailTypes) || editModal.fill_type === 'EMAIL') && !isIDPass(editModal.fill_type) && (
+            {(!usesEmailCredits(editModal.fill_type, customEmailTypes) || editModal.fill_type === 'EMAIL') && !isIDPass(editModal.fill_type) && !editModal.is_bundle && (
               <div className="mb-3.5">
                 <label className="block text-sm text-slate-500 mb-1.5">
                   {editModal.fill_type === 'EMAIL' ? 'เครดิต Apple ID ($)' : 'ราคา $ (ราคาขายในหน่วย USD)'}
@@ -1543,7 +1545,7 @@ export default function ManagePage() {
                 )}
               </div>
             )}
-            {(editModal.fill_type === 'RAZER_AUTO') && (
+            {(editModal.fill_type === 'RAZER_AUTO') && !editModal.is_bundle && (
               <div className="mb-3.5">
                 <label className="block text-sm text-slate-500 mb-1.5">
                   ช่วงเครดิต Razer Gold <span className="text-slate-400">(Min – Max)</span>

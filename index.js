@@ -72,7 +72,7 @@ app.post('/restart', (req, res) => {
   setTimeout(() => {
     const isRailway = !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID)
     if (isRailway) {
-      process.exit(0)
+      process.exit(1)
     } else {
       const { spawn } = require('child_process')
       const child = spawn(process.execPath, [__filename], {
@@ -428,8 +428,32 @@ initDB().then(() => {
     botFn(orderId, order, { loadRazerAccounts, saveRazerAccounts, db, save }, jobIndex, totalJobs)
       .catch(e => {
         console.error(`[razer-queue] order#${orderId} job${jobIndex}/${totalJobs} failed:`, e.message)
-        db.run('UPDATE orders SET razer_status=?, razer_note=?, razer_finished_at=? WHERE id=?',
-          ['failed', `ชิ้นที่ ${jobIndex}/${totalJobs} ล้มเหลว: ${e.message}`, new Date().toISOString(), orderId])
+        if (order.componentIndex != null && order.orderItemId) {
+          // Option B bundle: mark this component as failed in bundle_lot_info
+          try {
+            const _fLotRes = db.exec('SELECT bundle_lot_info FROM order_items WHERE id=?', [order.orderItemId])
+            const _fLotStr = _fLotRes[0]?.values[0][0]
+            if (_fLotStr) {
+              const _fLot = JSON.parse(_fLotStr)
+              if (_fLot.bundle_url_ids?.[order.componentIndex]) {
+                _fLot.bundle_url_ids[order.componentIndex].status = 'failed'
+                _fLot.bundle_url_ids[order.componentIndex].error = e.message
+                db.run('UPDATE order_items SET bundle_lot_info=? WHERE id=?', [JSON.stringify(_fLot), order.orderItemId])
+                const _fAllDone = _fLot.bundle_url_ids.every(c => c.status === 'success' || c.status === 'failed')
+                if (_fAllDone) {
+                  const _fFinalStatus = _fLot.bundle_url_ids.every(c => c.status === 'success') ? 'success' : 'partial'
+                  db.run('UPDATE orders SET razer_status=?, razer_note=?, razer_finished_at=? WHERE id=?',
+                    [_fFinalStatus, _fFinalStatus === 'partial' ? 'บางรายการล้มเหลว รอ retry' : null, new Date().toISOString(), orderId])
+                } else {
+                  db.run('UPDATE orders SET razer_note=? WHERE id=?', [`ชิ้นที่ ${jobIndex}/${totalJobs} ล้มเหลว รอรายการถัดไป...`, orderId])
+                }
+              }
+            }
+          } catch {}
+        } else {
+          db.run('UPDATE orders SET razer_status=?, razer_note=?, razer_finished_at=? WHERE id=?',
+            ['failed', `ชิ้นที่ ${jobIndex}/${totalJobs} ล้มเหลว: ${e.message}`, new Date().toISOString(), orderId])
+        }
         save()
       })
       .finally(() => {
@@ -757,21 +781,27 @@ initDB().then(() => {
       const pRes = db.exec('SELECT price, category_id, is_bundle, price_usd, name FROM products WHERE id=?', [item.product_id])
       const [price, category_id, is_bundle, price_usd, productName] = pRes[0].values[0]
 
-      // RAZER_AUTO bundle: insert 1 row per component unit, bot handles the rest
+      // RAZER_AUTO bundle: insert ONE bundle row with bundle_lot_info (Option B)
       if (is_bundle) {
         const _bFt = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])[0]?.values[0][0]
         if (_bFt === 'RAZER_AUTO') {
-          const _bComps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [item.product_id])
+          db.run('INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)', [orderId, item.product_id, item.quantity, price])
+          const _baOiId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
+          const _bComps = db.exec('SELECT pb.component_id, pb.quantity, p.name FROM product_bundles pb JOIN products p ON p.id=pb.component_id WHERE pb.product_id=?', [item.product_id])
+          const _baUrlIds = []
           if (_bComps[0]) {
+            const _baUrls = Array.isArray(razer_urls) ? razer_urls : []
+            let _baUrlIdx = 0
             for (let _bq = 0; _bq < item.quantity; _bq++) {
-              for (const [_cId, _cQty] of _bComps[0].values) {
-                const _cPrice = db.exec('SELECT price FROM products WHERE id=?', [_cId])[0]?.values[0][0] || 0
+              for (const [_cId, _cQty, _cName] of _bComps[0].values) {
                 for (let _cq = 0; _cq < _cQty; _cq++) {
-                  db.run('INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)', [orderId, _cId, 1, _cPrice])
+                  _baUrlIds.push({ component_product_id: _cId, component_name: _cName, url: _baUrls[_baUrlIdx] || '', status: 'pending', quantity: _cQty })
+                  _baUrlIdx++
                 }
               }
             }
           }
+          db.run('UPDATE order_items SET bundle_lot_info=? WHERE id=?', [JSON.stringify({ bundle_url_ids: _baUrlIds }), _baOiId])
           continue
         }
         // RAZER manual bundle: insert ONE bundle row with bundle_lot_info (user-specified credit_amount)
@@ -989,17 +1019,17 @@ initDB().then(() => {
         const _isBundleRes = db.exec('SELECT is_bundle FROM products WHERE id=?', [razerItem.product_id])
         const _isBundle = _isBundleRes[0]?.values[0][0] === 1
         if (_isBundle) {
-          const _comps = db.exec('SELECT component_id, quantity FROM product_bundles WHERE product_id=?', [razerItem.product_id])
-          if (_comps[0]) {
-            for (let _bq = 0; _bq < razerItem.quantity; _bq++) {
-              for (const [_cId, _cQty] of _comps[0].values) {
-                const _cCatId = db.exec('SELECT category_id FROM products WHERE id=?', [_cId])[0]?.values[0][0]
-                const _oiRows = db.exec('SELECT id FROM order_items WHERE order_id=? AND product_id=? ORDER BY id ASC', [orderId, _cId])
-                for (let _cq = 0; _cq < _cQty && urlIdx < urlList.length; _cq++, urlIdx++) {
-                  const _oiId = _oiRows[0]?.values[_bq * _cQty + _cq]?.[0]
-                  if (_oiId) jobs.push({ gameId: _cCatId, packageId: _cId, url: urlList[urlIdx], orderItemId: _oiId })
-                }
-              }
+          // Option B: read bundle_lot_info from the single bundle row
+          const _baOiRow = db.exec('SELECT id, bundle_lot_info FROM order_items WHERE order_id=? AND product_id=? ORDER BY id ASC', [orderId, razerItem.product_id])
+          const _baOiId = _baOiRow[0]?.values[0]?.[0]
+          const _baLotStr = _baOiRow[0]?.values[0]?.[1]
+          if (_baOiId && _baLotStr) {
+            const _baLot = JSON.parse(_baLotStr)
+            if (_baLot.bundle_url_ids) {
+              _baLot.bundle_url_ids.forEach((comp, compIdx) => {
+                const _cCatId = db.exec('SELECT category_id FROM products WHERE id=?', [comp.component_product_id])[0]?.values[0][0]
+                jobs.push({ gameId: _cCatId, packageId: comp.component_product_id, url: comp.url || urlList[urlIdx++] || '', orderItemId: _baOiId, componentIndex: compIdx })
+              })
             }
           }
         } else {
@@ -1014,7 +1044,7 @@ initDB().then(() => {
       jobs.forEach((job, i) => {
         enqueueRazerOrder(
           orderId,
-          { gameId: job.gameId, packageId: job.packageId, userFields: { urlLink: job.url }, orderItemId: job.orderItemId || null },
+          { gameId: job.gameId, packageId: job.packageId, userFields: { urlLink: job.url }, orderItemId: job.orderItemId || null, componentIndex: job.componentIndex ?? null },
           i + 1,
           totalJobs
         )
@@ -1484,7 +1514,8 @@ initDB().then(() => {
   app.get('/razer-orders', requireLogin, (req, res) => {
     const r = db.exec(`
       SELECT o.id, o.created_at, o.total, o.razer_status, o.razer_note, o.razer_url,
-             p.name AS product_name, o.razer_started_at, o.razer_finished_at
+             p.name AS product_name, o.razer_started_at, o.razer_finished_at,
+             oi.bundle_lot_info, oi.id AS order_item_id
       FROM orders o
       LEFT JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN products p ON p.id = oi.product_id
@@ -1497,8 +1528,36 @@ initDB().then(() => {
       id: v[0], created_at: v[1], total: v[2],
       razer_status: v[3], razer_note: v[4], razer_url: v[5],
       product_name: v[6], razer_started_at: v[7], razer_finished_at: v[8],
+      bundle_lot_info: v[9] ? (() => { try { return JSON.parse(v[9]) } catch { return null } })() : null,
+      order_item_id: v[10],
     }))
     res.json(rows)
+  })
+
+  // Retry a single failed component in a RAZER_AUTO bundle
+  app.post('/razer-retry-component', requireLogin, (req, res) => {
+    const { order_id, order_item_id, component_index, new_url } = req.body
+    if (!order_id || order_item_id == null || component_index == null || !new_url) {
+      return res.status(400).json({ error: 'ข้อมูลไม่ครบ' })
+    }
+    const lotRow = db.exec('SELECT bundle_lot_info FROM order_items WHERE id=?', [order_item_id])
+    const lotStr = lotRow[0]?.values[0]?.[0]
+    if (!lotStr) return res.status(404).json({ error: 'ไม่พบ bundle_lot_info' })
+    let lot
+    try { lot = JSON.parse(lotStr) } catch { return res.status(400).json({ error: 'parse bundle_lot_info ล้มเหลว' }) }
+    const comp = lot.bundle_url_ids?.[component_index]
+    if (!comp) return res.status(404).json({ error: 'ไม่พบ component' })
+    comp.url = new_url
+    comp.status = 'pending'
+    delete comp.error
+    db.run('UPDATE order_items SET bundle_lot_info=? WHERE id=?', [JSON.stringify(lot), order_item_id])
+    db.run("UPDATE orders SET razer_status='processing', razer_note='กำลัง retry...' WHERE id=?", [order_id])
+    save()
+    if (razerBot) {
+      const _cCatId = db.exec('SELECT category_id FROM products WHERE id=?', [comp.component_product_id])[0]?.values[0][0]
+      enqueueRazerOrder(order_id, { gameId: _cCatId, packageId: comp.component_product_id, userFields: { urlLink: new_url }, orderItemId: order_item_id, componentIndex: component_index }, 1, 1)
+    }
+    res.json({ message: 'retry queued' })
   })
 
   app.post('/emails/:id/topup', requireLogin, (req, res) => {
@@ -1563,7 +1622,7 @@ initDB().then(() => {
       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
       LEFT JOIN categories c ON c.id = p.category_id
       LEFT JOIN emails e ON e.id = oi.email_id_used
-      WHERE (o.razer_status IS NULL OR o.razer_status != 'failed')
+      WHERE (o.razer_status IS NULL OR o.razer_status NOT IN ('failed','partial'))
       ${dateFilter}
       ORDER BY ts, o.id, oi.id
     `)
@@ -1711,7 +1770,7 @@ initDB().then(() => {
       LEFT JOIN categories c ON c.id = p.category_id
       LEFT JOIN emails e ON e.id = oi.email_id_used
       LEFT JOIN product_lots pl ON pl.id = oi.lot_id_used
-      WHERE (o.razer_status IS NULL OR o.razer_status != 'failed')
+      WHERE (o.razer_status IS NULL OR o.razer_status NOT IN ('failed','partial'))
       ORDER BY COALESCE(o.transfer_time, o.created_at) DESC, o.id DESC, oi.id ASC
     `)
     const items = result[0] ? result[0].values.map(row => {
@@ -1875,7 +1934,7 @@ initDB().then(() => {
       LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
       LEFT JOIN categories c ON c.id = p.category_id
       LEFT JOIN emails e ON e.id = oi.email_id_used
-      WHERE (o.razer_status IS NULL OR o.razer_status != 'failed')
+      WHERE (o.razer_status IS NULL OR o.razer_status NOT IN ('failed','partial'))
       ${dateFilter}
       ORDER BY ts, o.id, oi.id
     `)

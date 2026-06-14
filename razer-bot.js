@@ -625,6 +625,7 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
   const pkg = pkgRow ? { credits_min: pkgRow[0], credits_max: pkgRow[1] } : {}
   const reqAccountType = pkgRow?.[2] || null
 
+
   const hasMax = pkg.credits_max != null
   const allAccounts = loadRazerAccounts()
     .filter(a =>
@@ -736,7 +737,29 @@ async function runRazerOrder(orderId, order, { loadRazerAccounts, saveRazerAccou
             [acc.id, goldToDeduct, JSON.stringify(_prevJobs), orderId, order.packageId]
           )
         }
-        if (jobIndex === totalJobs) {
+        // Option B bundle: update per-component status in bundle_lot_info
+        if (order.componentIndex != null && order.orderItemId) {
+          try {
+            const _lotRes = db.exec('SELECT bundle_lot_info FROM order_items WHERE id=?', [order.orderItemId])
+            const _lotStr = _lotRes[0]?.values[0][0]
+            if (_lotStr) {
+              const _lot = JSON.parse(_lotStr)
+              if (_lot.bundle_url_ids?.[order.componentIndex]) {
+                const _accCost = db.exec('SELECT cost FROM emails WHERE id=?', [acc.id])[0]?.values[0][0] ?? 0
+                _lot.bundle_url_ids[order.componentIndex].status = 'success'
+                _lot.bundle_url_ids[order.componentIndex].email_used = acc.email
+                _lot.bundle_url_ids[order.componentIndex].gold = goldToDeduct
+                _lot.bundle_url_ids[order.componentIndex].cost = _accCost
+                db.run('UPDATE order_items SET bundle_lot_info=? WHERE id=?', [JSON.stringify(_lot), order.orderItemId])
+                const _allDone = _lot.bundle_url_ids.every(c => c.status === 'success' || c.status === 'failed')
+                if (_allDone) {
+                  const _finalStatus = _lot.bundle_url_ids.every(c => c.status === 'success') ? 'success' : 'partial'
+                  db.run('UPDATE orders SET razer_status=?, razer_note=NULL, razer_finished_at=? WHERE id=?', [_finalStatus, new Date().toISOString(), orderId])
+                }
+              }
+            }
+          } catch {}
+        } else if (jobIndex === totalJobs) {
           db.run('UPDATE orders SET razer_status=?, razer_note=?, razer_finished_at=? WHERE id=?',
             ['success', totalJobs > 1 ? `เสร็จสิ้น ${totalJobs}/${totalJobs} ชิ้น` : null, new Date().toISOString(), orderId])
         } else {
