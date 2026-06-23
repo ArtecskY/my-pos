@@ -1521,10 +1521,10 @@ export default function ManagePage() {
                 </div>
               </div>
             )}
-            {(!usesEmailCredits(editModal.fill_type, customEmailTypes) || editModal.fill_type === 'EMAIL') && !isIDPass(editModal.fill_type) && !editModal.is_bundle && (
+            {(!usesEmailCredits(editModal.fill_type, customEmailTypes) || editModal.fill_type === 'EMAIL' || customEmailTypes.some(t => t.key === editModal.fill_type)) && !isIDPass(editModal.fill_type) && !editModal.is_bundle && (
               <div className="mb-3.5">
                 <label className="block text-sm text-slate-500 mb-1.5">
-                  {editModal.fill_type === 'EMAIL' ? 'เครดิต Apple ID ($)' : 'ราคา $ (ราคาขายในหน่วย USD)'}
+                  {editModal.fill_type === 'EMAIL' || customEmailTypes.some(t => t.key === editModal.fill_type) ? 'เครดิต Apple ID ($)' : 'ราคา $ (ราคาขายในหน่วย USD)'}
                 </label>
                 {editModal.is_bundle ? (
                   <input
