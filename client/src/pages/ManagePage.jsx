@@ -574,6 +574,7 @@ export default function ManagePage() {
 
   const searchLower = search.toLowerCase()
   const grouped = categories
+    .filter(c => c.fill_type !== '24PAY_AUTO' || !!c.pay24_enabled)
     .filter(c => !selectedFillType || c.fill_type === selectedFillType)
     .filter(c => !selectedCat || String(c.id) === selectedCat)
     .map(c => ({
@@ -607,7 +608,7 @@ export default function ManagePage() {
             className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white"
           >
             <option value="">ทุกเกม</option>
-            {categories.map(c => (
+            {categories.filter(c => c.fill_type !== '24PAY_AUTO' || !!c.pay24_enabled).map(c => (
               <option key={c.id} value={String(c.id)}>{c.name}</option>
             ))}
           </select>
