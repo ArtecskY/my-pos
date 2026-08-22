@@ -58,7 +58,7 @@ export default function RazerPage() {
     loadEmails(); loadAccountTypes(); loadRazerOrders(); loadRegenStatus()
     const t = setInterval(() => {
       loadEmails(); loadAccountTypes(); loadRazerOrders(); loadRegenStatus()
-    }, 3000)
+    }, 10000)
     return () => clearInterval(t)
   }, [])
 

@@ -41,7 +41,7 @@ export default function Pay24BotPage() {
 
   useEffect(() => {
     loadOrders(); loadBalance()
-    const t = setInterval(() => { loadOrders(); loadBalance() }, 5000)
+    const t = setInterval(() => { loadOrders(); loadBalance() }, 10000)
     return () => clearInterval(t)
   }, [])
 

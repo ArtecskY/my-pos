@@ -23,7 +23,7 @@ export default function BankPage() {
 
   useEffect(() => {
     loadStatus()
-    pollingRef.current = setInterval(loadStatus, 3000)
+    pollingRef.current = setInterval(loadStatus, 10000)
     return () => clearInterval(pollingRef.current)
   }, [])
 
