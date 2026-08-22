@@ -56,8 +56,8 @@ async function ensureSheetTab(sheetsClient, spreadsheetId, tabName) {
 function isEmailLike(fill_type) {
   if (!fill_type) return false
   if (['EMAIL', 'OTHER_EMAIL', 'RAZER'].includes(fill_type)) return true
-  // custom types (ไม่ใช่ UID, ID_PASS)
-  if (!['UID', 'OTHER_UID', 'ID_PASS'].includes(fill_type)) return true
+  // custom types (ไม่ใช่ UID, ID_PASS, RAZER_AUTO, 24PAY_AUTO)
+  if (!['UID', 'OTHER_UID', 'ID_PASS', 'RAZER_AUTO', '24PAY_AUTO'].includes(fill_type)) return true
   return false
 }
 
@@ -332,7 +332,7 @@ async function exportDailyOrders(spreadsheetId, orders) {
             time,                                            // เวลาโอน
             item.product_name,                               // รายการสินค้า
             data.unitQty,                                    // จำนวนเหรียญ/ต้นทุน
-            item.email_used || (['UID', 'OTHER_UID'].includes(item.fill_type) ? String.fromCharCode(50,52) : '-'), // Email ที่ใช้
+            item.fill_type === '24PAY_AUTO' ? 'API' : (item.email_used || (['UID', 'OTHER_UID'].includes(item.fill_type) ? String.fromCharCode(50,52) : '-')), // Email ที่ใช้
             fmt(data.cost),                                  // ต้นทุน
             fmt(data.totalCost),                             // ต้นทุนรวม
             item.price != null && Number(item.price) > 0 ? fmt(itemProfit) : (isFirstRow ? fmt(itemProfit) : ''), // กำไรต่อแพ็ก

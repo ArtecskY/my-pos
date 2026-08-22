@@ -8,6 +8,7 @@ const FILL_TYPE_BADGE = {
   'ID_PASS':     { label: 'Stock77',     cls: 'bg-yellow-100 text-yellow-700' },
   'OTHER_UID':   { label: 'UID',         cls: 'bg-slate-100 text-slate-600' },
   'OTHER_EMAIL': { label: 'Email',       cls: 'bg-purple-100 text-purple-700' },
+  '24PAY_AUTO':  { label: '24Pay',       cls: 'bg-cyan-100 text-cyan-700' },
 }
 
 function FillBadge({ fill_type, customTypes = [] }) {

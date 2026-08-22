@@ -145,6 +145,19 @@ async function initDB() {
   try { db.run('ALTER TABLE order_items ADD COLUMN uid TEXT') } catch (e) { /* column exists */ }
   try { db.run('ALTER TABLE order_items ADD COLUMN razer_jobs TEXT') } catch (e) { /* column exists */ }
 
+  // 24Pay API system
+  try { db.run('ALTER TABLE categories ADD COLUMN pay24_enabled INTEGER DEFAULT 0') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE products ADD COLUMN pay24_data TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN pay24_transaction_id TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN pay24_status TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN pay24_result_code TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN pay24_input TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN pay24_finished_at TEXT') } catch (e) { /* column exists */ }
+  db.run(`CREATE TABLE IF NOT EXISTS pay24_config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )`)
+
   db.run(`CREATE TABLE IF NOT EXISTS reservations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     customer_name TEXT,

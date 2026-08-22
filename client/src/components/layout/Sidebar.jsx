@@ -26,8 +26,10 @@ const NAV_GROUPS = [
 const ADMIN_GROUP = {
   label: 'Admin',
   items: [
-    { key: 'razer', label: 'Razer Bot',    icon: Bot },
-    { key: 'users', label: 'จัดการผู้ใช้', icon: Users },
+    { key: 'razer',    label: 'Razer Bot',     icon: Bot },
+    { key: 'pay24',    label: '24Pay จัดการ',  icon: Package },
+    { key: 'pay24-bot', label: '24Pay Bot',    icon: Bot },
+    { key: 'users',    label: 'จัดการผู้ใช้',  icon: Users },
   ],
 }
 

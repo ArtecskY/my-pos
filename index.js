@@ -10,6 +10,8 @@ const { exportDailyOrders } = require('./sheets')
 const cron = require('node-cron')
 let razerBot = null
 try { razerBot = require('./razer-bot') } catch (e) { console.warn('[razer-bot] puppeteer ไม่พร้อม:', e.message) }
+let pay24Bot = null
+try { pay24Bot = require('./pay24-bot') } catch (e) { console.warn('[pay24-bot] โหลดไม่สำเร็จ:', e.message) }
 
 const app = express()
 app.set('trust proxy', 1)
@@ -99,9 +101,10 @@ initDB().then(() => {
   const db = getDB()
 
   app.get('/categories', (req, res) => {
-    const result = db.exec('SELECT id, name, fill_type, shop_name, razer_account_type FROM categories ORDER BY name')
+    const result = db.exec('SELECT id, name, fill_type, shop_name, razer_account_type, pay24_enabled FROM categories ORDER BY name')
     const categories = result[0] ? result[0].values.map(row => ({
-      id: row[0], name: row[1], fill_type: row[2] || 'UID', shop_name: row[3] || null, razer_account_type: row[4] || null
+      id: row[0], name: row[1], fill_type: row[2] || 'UID', shop_name: row[3] || null,
+      razer_account_type: row[4] || null, pay24_enabled: row[5] ? true : false,
     })) : []
     res.json(categories)
   })
@@ -144,7 +147,7 @@ initDB().then(() => {
     const result = db.exec(`
       SELECT p.id, p.name, p.price, p.stock, p.image, p.category_id, c.name, c.fill_type, p.is_bundle,
         COALESCE((SELECT SUM(e.credits) FROM emails e WHERE e.fill_type = c.fill_type), 0),
-        p.price_usd, p.cost, p.credits_min, p.credits_max
+        p.price_usd, p.cost, p.credits_min, p.credits_max, p.pay24_data
       FROM products p
       LEFT JOIN categories c ON c.id = p.category_id
       ORDER BY p.sort_order ASC, p.id ASC
@@ -161,6 +164,7 @@ initDB().then(() => {
         cost: row[11] ?? 0,
         credits_min: row[12] ?? null,
         credits_max: row[13] ?? null,
+        pay24_data: row[14] ? (() => { try { return JSON.parse(row[14]) } catch { return null } })() : null,
       }
     }) : []
     // คำนวณ stock ของ bundle และ ID_PASS จาก sub-tables
@@ -406,6 +410,46 @@ initDB().then(() => {
     const r = db.exec('SELECT behavior FROM email_types WHERE key=?', [fill_type])
     return r[0]?.values[0][0] || 'EMAIL'
   }
+
+  // ── Pay24 Queue ──────────────────────────────────────────────
+  const pay24Queue = []
+  let pay24QueueRunning = false
+
+  function getPay24Config() {
+    const r = db.exec('SELECT key, value FROM pay24_config')
+    const cfg = {}
+    if (r[0]) r[0].values.forEach(([k, v]) => { cfg[k] = v })
+    return { apiKey: cfg.api_key || '', apiUrl: cfg.api_url || 'https://x.24payseller.com' }
+  }
+
+  function enqueuePay24Item(orderItemId) {
+    if (!pay24Bot) { console.warn('[pay24] bot not loaded'); return }
+    pay24Queue.push(orderItemId)
+    console.log(`[pay24-queue] เพิ่ม item#${orderItemId} (รวม: ${pay24Queue.length})`)
+    processPay24Queue()
+  }
+
+  function processPay24Queue() {
+    if (pay24QueueRunning || pay24Queue.length === 0) return
+    const orderItemId = pay24Queue.shift()
+    pay24QueueRunning = true
+    console.log(`[pay24-queue] เริ่ม item#${orderItemId}`)
+    const cfg = getPay24Config()
+    pay24Bot.processPay24Item(orderItemId, { db, save, ...cfg })
+      .catch(e => {
+        console.error(`[pay24-queue] item#${orderItemId} failed:`, e.message)
+        try {
+          db.run('UPDATE order_items SET pay24_status=?, pay24_result_code=?, pay24_finished_at=? WHERE id=?',
+            ['failed', e.message.slice(0, 100), new Date().toISOString(), orderItemId])
+          save()
+        } catch {}
+      })
+      .finally(() => {
+        pay24QueueRunning = false
+        processPay24Queue()
+      })
+  }
+  // ─────────────────────────────────────────────────────────────
 
   // ── Razer Order Queue (ทำทีละ 1 รายการ) ─────────────────────
   const razerQueue = []
@@ -677,13 +721,14 @@ initDB().then(() => {
       if (!is_bundle) {
         const catCheck = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
         const autoType = catCheck[0]?.values[0][0]
-        if (autoType === 'RAZER_AUTO' || autoType === 'RAZER_KUROKO_UID') continue
+        if (autoType === 'RAZER_AUTO' || autoType === 'RAZER_KUROKO_UID' || autoType === '24PAY_AUTO') continue
       }
 
       if (is_bundle) {
         const catRes0 = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
         const bundleFillType0 = catRes0[0]?.values[0][0] || 'UID'
         if (bundleFillType0 === 'RAZER_AUTO') continue
+        if (bundleFillType0 === '24PAY_AUTO') continue
         const _bValIsRazer = bundleFillType0 === 'RAZER' || ['RAZER', 'CREDITS'].includes(getCustomEmailBehavior(bundleFillType0))
         if (usesEmailCredits(bundleFillType0)) {
           // EMAIL-type bundle: validate email credits
@@ -784,6 +829,30 @@ initDB().then(() => {
       // RAZER_AUTO bundle: insert ONE bundle row with bundle_lot_info (Option B)
       if (is_bundle) {
         const _bFt = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])[0]?.values[0][0]
+        // 24PAY_AUTO bundle: 1 order_item, bot ประมวลผล components ตามลำดับ
+        if (_bFt === '24PAY_AUTO') {
+          db.run('INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)', [orderId, item.product_id, item.quantity, price])
+          const _p24bOiId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
+          const _p24bInputStr = JSON.stringify(item.pay24_input || {})
+          const _p24bComps = db.exec(
+            'SELECT pb.component_id, pb.quantity, p.name, p.cost FROM product_bundles pb JOIN products p ON p.id=pb.component_id WHERE pb.product_id=?',
+            [item.product_id]
+          )
+          const _p24bCompList = []
+          if (_p24bComps[0]) {
+            for (let _qi = 0; _qi < (item.quantity || 1); _qi++) {
+              for (const [_cId, _cQty, _cName, _cCost] of _p24bComps[0].values) {
+                for (let _cqi = 0; _cqi < _cQty; _cqi++) {
+                  _p24bCompList.push({ product_id: _cId, name: _cName, cost: _cCost ?? null, status: 'pending' })
+                }
+              }
+            }
+          }
+          db.run('UPDATE order_items SET pay24_input=?, pay24_status=?, bundle_lot_info=? WHERE id=?',
+            [_p24bInputStr, 'pending', JSON.stringify({ pay24_bundle_components: _p24bCompList }), _p24bOiId])
+          enqueuePay24Item(_p24bOiId)
+          continue
+        }
         if (_bFt === 'RAZER_AUTO') {
           db.run('INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)', [orderId, item.product_id, item.quantity, price])
           const _baOiId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
@@ -837,6 +906,24 @@ initDB().then(() => {
             const _beOiId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
             db.run('UPDATE order_items SET credit_deducted=?, email_id_used=?, price_usd_used=?, cost_used=? WHERE id=?',
               [_beCredits, be.email_id, _bePriceUsd ?? null, (_beCost != null && _beCost > 0) ? _beCost : null, _beOiId])
+          }
+          continue
+        }
+      }
+
+      // 24PAY_AUTO: สร้าง order_item แยกทีละชิ้น (1 bot job ต่อ 1 ชิ้น)
+      if (!is_bundle) {
+        const _p24Cat = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
+        if (_p24Cat[0]?.values[0][0] === '24PAY_AUTO') {
+          const _p24Cost = db.exec('SELECT cost FROM products WHERE id=?', [item.product_id])[0]?.values[0][0] ?? null
+          const _p24InputStr = JSON.stringify(item.pay24_input || {})
+          for (let _qi = 0; _qi < (item.quantity || 1); _qi++) {
+            db.run('INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)',
+              [orderId, item.product_id, 1, price])
+            const _p24OiId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
+            db.run('UPDATE order_items SET pay24_input=?, pay24_status=?, cost_used=? WHERE id=?',
+              [_p24InputStr, 'pending', _p24Cost, _p24OiId])
+            enqueuePay24Item(_p24OiId)
           }
           continue
         }
@@ -2129,6 +2216,202 @@ initDB().then(() => {
       bankBotRunning = false
     }
   })
+
+  // ── Pay24 API Endpoints ───────────────────────────────────────
+  app.get('/pay24/config', requireLogin, (req, res) => {
+    const cfg = getPay24Config()
+    res.json(cfg)
+  })
+
+  app.put('/pay24/config', requireLogin, (req, res) => {
+    const { apiKey, apiUrl } = req.body
+    if (apiKey !== undefined) {
+      db.run('INSERT OR REPLACE INTO pay24_config (key, value) VALUES (?, ?)', ['api_key', apiKey])
+    }
+    if (apiUrl !== undefined) {
+      db.run('INSERT OR REPLACE INTO pay24_config (key, value) VALUES (?, ?)', ['api_url', apiUrl || 'https://x.24payseller.com'])
+    }
+    save()
+    res.json({ message: 'บันทึก config สำเร็จ' })
+  })
+
+  app.get('/pay24/balance', requireLogin, async (req, res) => {
+    const { apiKey, apiUrl } = getPay24Config()
+    if (!apiKey) return res.status(400).json({ error: 'ยังไม่ได้ตั้ง API Key' })
+    try {
+      const r = await fetch(`${apiUrl}/agent/info`, { headers: { 'X-Api-Key': apiKey } })
+      const data = await r.json()
+      res.json(data)
+    } catch (e) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  app.get('/pay24/sync', requireLogin, async (req, res) => {
+    const { apiKey, apiUrl } = getPay24Config()
+    if (!apiKey) return res.status(400).json({ error: 'ยังไม่ได้ตั้ง API Key' })
+    try {
+      const baseUrl = (apiUrl || 'https://x.24payseller.com').replace(/\/+$/, '')
+      const r = await fetch(`${baseUrl}/products/list`, { headers: { 'X-Api-Key': apiKey } })
+      if (!r.ok) {
+        const errText = await r.text().catch(() => '')
+        return res.status(502).json({ error: `API ตอบ ${r.status}: ${errText.slice(0, 200)}` })
+      }
+      const games = await r.json()
+      const gameList = Array.isArray(games) ? games : (games?.data || games?.products || [])
+      let created = 0, updated = 0
+      for (const game of gameList) {
+        // find or create category — ชื่อ 24Pay เกมจะต่อท้ายด้วย [24Pay] เสมอ
+        const catName = `${game.name} [24Pay]`
+        let catId
+        const byKey = db.exec("SELECT id FROM categories WHERE fill_type='24PAY_AUTO' AND shop_name=?", [game.key])
+        if (byKey[0]?.values[0]) {
+          catId = byKey[0].values[0][0]
+          db.run('UPDATE categories SET name=? WHERE id=?', [catName, catId])
+        } else {
+          const byName = db.exec('SELECT id FROM categories WHERE name=?', [catName])
+          if (byName[0]?.values[0]) {
+            catId = byName[0].values[0][0]
+            db.run("UPDATE categories SET fill_type='24PAY_AUTO', shop_name=? WHERE id=?", [game.key, catId])
+          } else {
+            db.run("INSERT INTO categories (name, fill_type, shop_name, pay24_enabled) VALUES (?, '24PAY_AUTO', ?, 0)", [catName, game.key])
+            catId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
+          }
+        }
+        for (const item of (game.items || [])) {
+          const pay24Data = JSON.stringify({
+            product_key: game.key,
+            item_sku: item.sku,
+            inputs: game.inputs || [],
+          })
+          const apiPrice = parseFloat(item.price) || 0
+          const existRes = db.exec(
+            "SELECT id, price FROM products WHERE category_id=? AND pay24_data LIKE ?",
+            [catId, `%"item_sku":"${item.sku}"%`]
+          )
+          if (existRes[0]?.values[0]) {
+            const [pid] = existRes[0].values[0]
+            db.run('UPDATE products SET name=?, cost=?, pay24_data=? WHERE id=?',
+              [item.name, apiPrice, pay24Data, pid])
+            updated++
+          } else {
+            db.run('INSERT INTO products (name, price, stock, category_id, cost, pay24_data, sort_order) VALUES (?,?,0,?,?,?,?)',
+              [item.name, 0, catId, apiPrice, pay24Data, 0])
+            created++
+          }
+        }
+      }
+      save()
+      res.json({ message: `Sync สำเร็จ: รับมา ${gameList.length} เกม, สร้าง ${created} รายการ, อัปเดต ${updated} รายการ`, created, updated, total_games: gameList.length })
+    } catch (e) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  app.get('/pay24/games', requireLogin, (req, res) => {
+    const cats = db.exec(
+      "SELECT id, name, shop_name, pay24_enabled FROM categories WHERE fill_type='24PAY_AUTO' ORDER BY name"
+    )
+    const games = cats[0] ? cats[0].values.map(([id, name, key, enabled]) => {
+      const prods = db.exec(
+        'SELECT id, name, price, cost, stock, pay24_data FROM products WHERE category_id=? ORDER BY sort_order, id',
+        [id]
+      )
+      const items = prods[0] ? prods[0].values.map(([pid, pname, price, cost, stock, pd]) => ({
+        id: pid, name: pname, sell_price: price, api_cost: cost,
+        item_enabled: stock === -1,
+        pay24_data: pd ? (() => { try { return JSON.parse(pd) } catch { return null } })() : null,
+      })) : []
+      return { id, name, game_key: key, game_enabled: !!enabled, items }
+    }) : []
+    res.json(games)
+  })
+
+  app.put('/pay24/games/:catId/toggle', requireLogin, (req, res) => {
+    const { enabled } = req.body
+    db.run('UPDATE categories SET pay24_enabled=? WHERE id=?', [enabled ? 1 : 0, req.params.catId])
+    save()
+    res.json({ message: 'อัปเดตสำเร็จ' })
+  })
+
+  app.put('/pay24/items/:productId', requireLogin, (req, res) => {
+    const { sell_price, item_enabled } = req.body
+    if (sell_price !== undefined) {
+      db.run('UPDATE products SET price=? WHERE id=?', [Number(sell_price), req.params.productId])
+    }
+    if (item_enabled !== undefined) {
+      db.run('UPDATE products SET stock=? WHERE id=?', [item_enabled ? -1 : 0, req.params.productId])
+    }
+    save()
+    res.json({ message: 'อัปเดตสำเร็จ' })
+  })
+
+  app.get('/pay24/orders', requireLogin, (req, res) => {
+    const r = db.exec(`
+      SELECT oi.id, o.id as order_id, o.created_at, p.name as product_name,
+             oi.pay24_status, oi.pay24_transaction_id, oi.pay24_result_code,
+             oi.pay24_input, oi.pay24_finished_at, oi.price, oi.bundle_lot_info
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      JOIN products p ON p.id = oi.product_id
+      JOIN categories c ON c.id = p.category_id
+      WHERE c.fill_type = '24PAY_AUTO'
+      ORDER BY o.id DESC
+      LIMIT 100
+    `)
+    const orders = r[0] ? r[0].values.map(row => ({
+      id: row[0], order_id: row[1], created_at: row[2], product_name: row[3],
+      status: row[4] || 'pending', transaction_id: row[5], result_code: row[6],
+      input: (() => { try { return JSON.parse(row[7] || '{}') } catch { return {} } })(),
+      finished_at: row[8], price: row[9],
+      bundle_components: (() => { try { const l = JSON.parse(row[10] || ''); return l?.pay24_bundle_components || null } catch { return null } })(),
+    })) : []
+    res.json(orders)
+  })
+
+  app.post('/pay24/retry/:orderItemId', requireLogin, (req, res) => {
+    const id = Number(req.params.orderItemId)
+    const lotRow = db.exec('SELECT bundle_lot_info FROM order_items WHERE id=?', [id])
+    const lotStr = lotRow[0]?.values[0][0]
+    let lot = null
+    if (lotStr) { try { lot = JSON.parse(lotStr) } catch {} }
+    if (lot?.pay24_bundle_components) {
+      // Bundle: reset เฉพาะ component ที่ failed/processing ไม่แตะ success
+      lot.pay24_bundle_components = lot.pay24_bundle_components.map(c =>
+        (c.status === 'failed' || c.status === 'processing')
+          ? { product_id: c.product_id, name: c.name, cost: c.cost, status: 'pending' }
+          : c
+      )
+      db.run('UPDATE order_items SET pay24_status=?, pay24_transaction_id=NULL, pay24_result_code=NULL, pay24_finished_at=NULL, bundle_lot_info=? WHERE id=?',
+        ['pending', JSON.stringify(lot), id])
+    } else {
+      db.run('UPDATE order_items SET pay24_status=?, pay24_transaction_id=NULL, pay24_result_code=NULL, pay24_finished_at=NULL WHERE id=?',
+        ['pending', id])
+    }
+    save()
+    enqueuePay24Item(id)
+    res.json({ message: 'เพิ่มในคิว retry แล้ว' })
+  })
+  // ─────────────────────────────────────────────────────────────
+
+  // Re-queue pending pay24 items on startup
+  setTimeout(() => {
+    try {
+      const pending = db.exec(`
+        SELECT oi.id FROM order_items oi
+        JOIN products p ON p.id = oi.product_id
+        JOIN categories c ON c.id = p.category_id
+        WHERE oi.pay24_status = 'pending' AND c.fill_type = '24PAY_AUTO'
+      `)
+      if (!pending[0]) return
+      for (const [id] of pending[0].values) {
+        console.log(`[startup] re-queue pay24 item#${id}`)
+        enqueuePay24Item(id)
+      }
+    } catch (e) {
+      console.error('[startup] pay24 re-queue error:', e.message)
+    }
+  }, 3000)
 
   // SPA fallback — ต้องอยู่หลัง API routes ทั้งหมด
   app.use((req, res) => {

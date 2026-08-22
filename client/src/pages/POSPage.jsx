@@ -27,6 +27,9 @@ function isRazerBehavior(fill_type, emailTypes = []) {
 function isRazerAuto(fill_type) {
   return fill_type === 'RAZER_AUTO'
 }
+function is24PayAuto(fill_type) {
+  return fill_type === '24PAY_AUTO'
+}
 
 const EMAIL_BUILTINS = ['EMAIL', 'OTHER_EMAIL']
 function creditsNeeded(item, emailTypes, qty) {
@@ -70,6 +73,9 @@ export default function POSPage({ onNavigate }) {
   const [tw, setTw] = useState(false)
   const [emailTypes, setEmailTypes] = useState([])
   const [selectedFillType, setSelectedFillType] = useState('')
+
+  // 24PAY_AUTO: { [itemId]: { [fieldKey]: value } }
+  const [pay24Inputs, setPay24Inputs] = useState({})
 
   // RAZER_AUTO: { [itemId]: string[] } — index ตรงกับ unit ที่ 1..N
   const [razerUrls, setRazerUrls] = useState({})
@@ -126,6 +132,7 @@ export default function POSPage({ onNavigate }) {
   const FILL_TYPE_LABELS = {
     'UID': 'UID', 'EMAIL': 'Apple ID', 'RAZER': 'Razer',
     'ID_PASS': 'Stock77', 'OTHER_UID': 'อื่นๆ (UID)', 'OTHER_EMAIL': 'อื่นๆ (Email)',
+    '24PAY_AUTO': '24Pay',
   }
   function fillTypeLabel(ft) {
     if (FILL_TYPE_LABELS[ft]) return FILL_TYPE_LABELS[ft]
@@ -135,10 +142,13 @@ export default function POSPage({ onNavigate }) {
   // fill types ที่มีสินค้า (stock > 0 หรือ -1 หรือ Bot type) อยู่จริง
   const activeFillTypes = [...new Set(
     categories
-      .filter(cat => products.some(p =>
-        p.category_id === cat.id &&
-        (cat.fill_type === 'RAZER_AUTO' ? true : (p.stock > 0 || p.stock === -1))
-      ))
+      .filter(cat => {
+        if (cat.fill_type === '24PAY_AUTO') return cat.pay24_enabled && products.some(p => p.category_id === cat.id && p.stock === -1)
+        return products.some(p =>
+          p.category_id === cat.id &&
+          (cat.fill_type === 'RAZER_AUTO' ? true : (p.stock > 0 || p.stock === -1))
+        )
+      })
       .map(cat => cat.fill_type)
       .filter(Boolean)
   )]
@@ -146,6 +156,7 @@ export default function POSPage({ onNavigate }) {
   const grouped = categories
     .filter(cat => !selectedCat || String(cat.id) === selectedCat)
     .filter(cat => !selectedFillType || cat.fill_type === selectedFillType)
+    .filter(cat => cat.fill_type !== '24PAY_AUTO' || !!cat.pay24_enabled)
     .map(cat => {
       const searchLower = search.toLowerCase()
       const catMatch = !search || cat.name.toLowerCase().includes(searchLower)
@@ -153,7 +164,9 @@ export default function POSPage({ onNavigate }) {
         ...cat,
         products: products.filter(p =>
           p.category_id === cat.id &&
-          (cat.fill_type === 'RAZER_AUTO' ? true : (p.stock > 0 || p.stock === -1)) &&
+          (cat.fill_type === 'RAZER_AUTO' ? true :
+           cat.fill_type === '24PAY_AUTO' ? p.stock === -1 :
+           (p.stock > 0 || p.stock === -1)) &&
           (catMatch || p.name.toLowerCase().includes(searchLower))
         ),
       }
@@ -339,6 +352,7 @@ export default function POSPage({ onNavigate }) {
     setAvailableEmails({})
     setSplitState({})
     setBundleCompSplit({})
+    setPay24Inputs({})
     setShowPayModal(true)
     // pre-fetch สำหรับ EMAIL/OTHER_EMAIL (ก่อน split)
     for (const item of cart) {
@@ -383,6 +397,29 @@ export default function POSPage({ onNavigate }) {
           })
         }
         orderItems.push({ product_id: item.id, quantity: item.quantity, bundle_email_ids })
+        continue
+      }
+
+      if (is24PayAuto(item.fill_type)) {
+        const inputs = pay24Inputs[item.id] || {}
+        let pd = item.pay24_data
+        if (!pd?.inputs?.length && item.is_bundle) {
+          const cat = grouped.find(g => g.id === item.category_id)
+          const sibling = cat?.products?.find(p => !p.is_bundle && p.pay24_data?.inputs?.length)
+          if (sibling) pd = sibling.pay24_data
+        }
+        if (pd?.inputs) {
+          for (const field of pd.inputs) {
+            const val = inputs[field.key] || ''
+            if (!val.trim()) {
+              alert(`กรุณากรอก ${field.title} สำหรับ "${item.name}"`); return
+            }
+            if (field.regex && !new RegExp(field.regex).test(val)) {
+              alert(`${field.title} ไม่ถูกต้องสำหรับ "${item.name}"`); return
+            }
+          }
+        }
+        orderItems.push({ product_id: item.id, quantity: item.quantity, pay24_input: inputs })
         continue
       }
 
@@ -469,6 +506,7 @@ export default function POSPage({ onNavigate }) {
     setReceipt(order)
     setCart([])
     setRazerUrls({})
+    setPay24Inputs({})
     setChannel(null)
     setTw(false)
     setTransferTime2('')
@@ -482,6 +520,10 @@ export default function POSPage({ onNavigate }) {
     // ถ้ามี RAZER_AUTO ไปดูสถานะที่หน้า Razer Bot
     if (razerUrlsPayload?.length > 0 && onNavigate) {
       onNavigate('razer')
+    }
+    // ถ้ามี 24PAY_AUTO ไปดูสถานะที่หน้า 24Pay Bot
+    if (orderItems.some(i => i.pay24_input) && onNavigate) {
+      onNavigate('pay24-bot')
     }
   }
 
@@ -675,7 +717,7 @@ export default function POSPage({ onNavigate }) {
               className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white"
             >
               <option value="">ทุกหมวดหมู่</option>
-              {categories.map(c => (
+              {categories.filter(c => c.fill_type !== '24PAY_AUTO' || c.pay24_enabled).map(c => (
                 <option key={c.id} value={String(c.id)}>{c.name}</option>
               ))}
             </select>
@@ -1087,7 +1129,7 @@ export default function POSPage({ onNavigate }) {
                   onChange={e => setManualForm(f => ({ ...f, game_select: e.target.value, game_name: e.target.value !== 'อื่นๆ' ? e.target.value : '' }))}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-green-500 bg-white">
                   <option value="">-- เลือกเกม --</option>
-                  {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  {categories.filter(c => c.fill_type !== '24PAY_AUTO' || c.pay24_enabled).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                   <option value="อื่นๆ">อื่นๆ (กรอกเอง)</option>
                 </select>
                 {manualForm.game_select === 'อื่นๆ' && (
@@ -1180,6 +1222,101 @@ export default function POSPage({ onNavigate }) {
                 </div>
               )}
             </div>
+
+            {/* 24PAY_AUTO input fields */}
+            {cart.some(i => is24PayAuto(i.fill_type)) && (
+              <div className="mb-6 space-y-3">
+                <p className="text-sm font-semibold text-(--text)">ข้อมูลสำหรับ 24Pay</p>
+                {(() => {
+                  const pay24Items = cart.filter(i => is24PayAuto(i.fill_type))
+                  return pay24Items.map((item, idx) => {
+                  const fields = (() => {
+                    if (item.pay24_data?.inputs?.length) return item.pay24_data.inputs
+                    if (item.is_bundle) {
+                      const cat = grouped.find(g => g.id === item.category_id)
+                      const sibling = cat?.products?.find(p => !p.is_bundle && p.pay24_data?.inputs?.length)
+                      if (sibling) return sibling.pay24_data.inputs
+                    }
+                    return []
+                  })()
+                  const isFirst = idx === 0
+                  const hasMore = pay24Items.length > 1
+                  return (
+                    <div key={item.id} className="border border-blue-200 dark:border-blue-700 rounded-xl p-4 bg-blue-50 dark:bg-blue-900/20 space-y-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <p className="text-sm font-semibold text-blue-800 dark:text-blue-200">{item.name}</p>
+                        <div className="flex items-center gap-2">
+                          {item.is_bundle && (
+                            <span className="text-xs font-bold bg-purple-500 text-white px-2 py-0.5 rounded-full">
+                              Bundle
+                            </span>
+                          )}
+                          {item.quantity > 1 && (
+                            <span className="text-xs font-bold bg-blue-500 text-white px-2 py-0.5 rounded-full">
+                              × {item.quantity} (Bot จะยิง {item.quantity} ครั้ง)
+                            </span>
+                          )}
+                          {isFirst && hasMore && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const src = pay24Inputs[item.id] || {}
+                                setPay24Inputs(prev => {
+                                  const next = { ...prev }
+                                  pay24Items.slice(1).forEach(other => { next[other.id] = { ...src } })
+                                  return next
+                                })
+                              }}
+                              className="text-xs text-blue-600 dark:text-blue-400 underline cursor-pointer hover:text-blue-800"
+                            >
+                              📋 คัดลอกไปทุกรายการ
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {fields.length === 0 && (
+                        <p className="text-xs text-(--text-muted)">ไม่มี input fields (สินค้านี้ไม่ต้องกรอกข้อมูลเพิ่มเติม)</p>
+                      )}
+                      {fields.map(field => {
+                        const val = (pay24Inputs[item.id] || {})[field.key] || ''
+                        return (
+                          <div key={field.key} className="space-y-1">
+                            <label className="block text-xs text-slate-500">{field.title}</label>
+                            {field.type === 'select' && field.options?.length > 0 ? (
+                              <select
+                                value={val}
+                                onChange={e => setPay24Inputs(prev => ({
+                                  ...prev,
+                                  [item.id]: { ...(prev[item.id] || {}), [field.key]: e.target.value },
+                                }))}
+                                className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white dark:bg-slate-800 text-(--text)"
+                              >
+                                <option value="">-- เลือก --</option>
+                                {field.options.map(opt => (
+                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                value={val}
+                                onChange={e => setPay24Inputs(prev => ({
+                                  ...prev,
+                                  [item.id]: { ...(prev[item.id] || {}), [field.key]: e.target.value },
+                                }))}
+                                placeholder={field.placeholder || field.title}
+                                className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white dark:bg-slate-800 text-(--text)"
+                              />
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                  })
+                })()}
+              </div>
+            )}
 
             {/* RAZER_AUTO URL input — 1 ช่องต่อ 1 หน่วย (bundle: 1 ช่องต่อ 1 component unit) */}
             {cart.some(i => isRazerAuto(i.fill_type)) && (

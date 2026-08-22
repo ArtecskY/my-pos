@@ -41,6 +41,7 @@ export default defineConfig({
       '/uploads':           p(BACKEND),
       '/sheet-config':      p(BACKEND),
       '/export-to-sheets':  p(BACKEND),
+      '/pay24':             p(BACKEND),
       '/id-pass-dashboard': p(BACKEND),
       '/health':            p(BACKEND),
     }

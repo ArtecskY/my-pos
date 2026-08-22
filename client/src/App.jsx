@@ -12,9 +12,11 @@ import DashboardPage from './pages/DashboardPage'
 import BankPage from './pages/BankPage'
 import RazerPage from './pages/RazerPage'
 import EmailSummaryPage from './pages/EmailSummaryPage'
+import Pay24Page from './pages/Pay24Page'
+import Pay24BotPage from './pages/Pay24BotPage'
 
-const VALID_PAGES = ['pos', 'manage', 'emails', 'orders', 'dashboard', 'bank', 'email-summary', 'razer', 'users']
-const ADMIN_PAGES = new Set(['razer', 'users'])
+const VALID_PAGES = ['pos', 'manage', 'emails', 'orders', 'dashboard', 'bank', 'email-summary', 'razer', 'pay24', 'pay24-bot', 'users']
+const ADMIN_PAGES = new Set(['razer', 'pay24', 'pay24-bot', 'users'])
 
 function hashPage() {
   const h = window.location.hash.slice(1)
@@ -94,8 +96,10 @@ function AppShell({ user, onLogout }) {
             {page === 'dashboard'     && <DashboardPage />}
             {page === 'bank'          && <BankPage />}
             {page === 'email-summary' && <EmailSummaryPage />}
-            {page === 'razer'  && user?.is_admin && <RazerPage />}
-            {page === 'users'  && user?.is_admin && <UsersPage currentUser={user} />}
+            {page === 'razer'     && user?.is_admin && <RazerPage />}
+            {page === 'pay24'     && user?.is_admin && <Pay24Page />}
+            {page === 'pay24-bot' && user?.is_admin && <Pay24BotPage />}
+            {page === 'users'     && user?.is_admin && <UsersPage currentUser={user} />}
           </div>
         </main>
       </div>
