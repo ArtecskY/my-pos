@@ -128,7 +128,7 @@ export default function Pay24BotPage() {
 
                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-(--text-muted)">
                       <span>Order #{order.order_id}</span>
-                      <span>{new Date(order.created_at).toLocaleString('th-TH')}</span>
+                      <span>{new Date(order.created_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</span>
                       {order.price > 0 && <span>ราคา: {order.price.toLocaleString()} ฿</span>}
                     </div>
 

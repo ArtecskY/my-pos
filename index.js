@@ -817,8 +817,9 @@ initDB().then(() => {
       total += result[0].values[0][0] * item.quantity
     }
 
-    db.run('INSERT INTO orders (total, transfer_amount, transfer_time, transfer_time2, channel, tw, order_note) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [total, transfer_amount || null, transfer_time || null, transfer_time2 || null, channel || null, tw ? 1 : 0, order_note || null])
+    const _orderCreatedAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Bangkok' })
+    db.run('INSERT INTO orders (total, transfer_amount, transfer_time, transfer_time2, channel, tw, order_note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [total, transfer_amount || null, transfer_time || null, transfer_time2 || null, channel || null, tw ? 1 : 0, order_note || null, _orderCreatedAt])
     const orderResult = db.exec('SELECT last_insert_rowid()')
     const orderId = orderResult[0].values[0][0]
 
