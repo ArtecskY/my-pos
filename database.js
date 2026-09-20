@@ -158,6 +158,32 @@ async function initDB() {
     value TEXT NOT NULL
   )`)
 
+  // OOC_AUTO system
+  try { db.run('ALTER TABLE categories ADD COLUMN ooc_enabled INTEGER DEFAULT 0') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN ooc_url TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN ooc_status TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN ooc_error TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE order_items ADD COLUMN ooc_finished_at TEXT') } catch (e) { /* column exists */ }
+  db.run(`CREATE TABLE IF NOT EXISTS ooc_config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )`)
+  db.run(`CREATE TABLE IF NOT EXISTS ooc_topups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    amount REAL NOT NULL,
+    cost REAL NOT NULL,
+    note TEXT,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+  )`)
+  db.run(`CREATE TABLE IF NOT EXISTS ooc_api_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label TEXT NOT NULL,
+    key_hash TEXT NOT NULL UNIQUE,
+    key_prefix TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    active INTEGER NOT NULL DEFAULT 1
+  )`)
+
   db.run(`CREATE TABLE IF NOT EXISTS reservations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     customer_name TEXT,
@@ -178,6 +204,24 @@ async function initDB() {
 
   // à¸œà¸¹à¹‰à¹ƒà¸Šà¹‰à¸„à¸™à¹à¸£à¸à¹€à¸›à¹‡à¸™ admin à¹€à¸ªà¸¡à¸­
   db.run('UPDATE users SET is_admin=1 WHERE id=(SELECT MIN(id) FROM users)')
+
+  // User management overhaul: roles, suspend, session invalidation, audit log
+  try { db.run("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'") } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 1') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE users ADD COLUMN last_login_at TEXT') } catch (e) { /* column exists */ }
+  try { db.run('ALTER TABLE users ADD COLUMN created_at TEXT') } catch (e) { /* column exists */ }
+  db.run("UPDATE users SET role='superadmin' WHERE is_admin=1")
+  db.run(`CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor_user_id INTEGER,
+    actor_username TEXT,
+    action TEXT NOT NULL,
+    target_type TEXT,
+    target_id TEXT,
+    detail TEXT,
+    created_at TEXT
+  )`)
 
   console.log('âœ… à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­à¸à¸²à¸™à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸ªà¸³à¹€à¸£à¹‡à¸ˆ')
   return db

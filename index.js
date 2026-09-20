@@ -12,6 +12,8 @@ let razerBot = null
 try { razerBot = require('./razer-bot') } catch (e) { console.warn('[razer-bot] puppeteer ไม่พร้อม:', e.message) }
 let pay24Bot = null
 try { pay24Bot = require('./pay24-bot') } catch (e) { console.warn('[pay24-bot] โหลดไม่สำเร็จ:', e.message) }
+let oocBot = null
+try { oocBot = require('./ooc-bot') } catch (e) { console.warn('[ooc-bot] โหลดไม่สำเร็จ:', e.message) }
 
 const app = express()
 app.set('trust proxy', 1)
@@ -59,8 +61,38 @@ app.use((req, res, next) => {
 })
 
 function requireLogin(req, res, next) {
-  if (req.session.user) return next()
-  res.status(401).json({ error: 'กรุณา Login ก่อนครับ' })
+  if (!req.session.user) return res.status(401).json({ error: 'กรุณา Login ก่อนครับ' })
+  const dbRef = getDB()
+  const row = dbRef.exec('SELECT session_version, active, role, is_admin FROM users WHERE id=?', [req.session.user.id])
+  const vals = row[0]?.values[0]
+  if (!vals || vals[1] !== 1 || vals[0] !== req.session.user.sv) {
+    req.session.destroy(() => {})
+    return res.status(401).json({ error: 'เซสชันหมดอายุ กรุณา Login ใหม่' })
+  }
+  // เผื่อ role/is_admin ถูกเปลี่ยนหลัง login — sync ให้ทันสมัยเสมอโดยไม่ต้อง logout
+  req.session.user.role = vals[2]
+  req.session.user.is_admin = vals[3] === 1
+  next()
+}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.session.user || !roles.includes(req.session.user.role)) {
+      return res.status(403).json({ error: 'ไม่มีสิทธิ์เข้าถึงส่วนนี้' })
+    }
+    next()
+  }
+}
+const requireSuperAdmin = requireRole('superadmin')
+
+function logAudit(actorUser, action, targetType, targetId, detail) {
+  try {
+    const dbRef = getDB()
+    dbRef.run('INSERT INTO audit_log (actor_user_id, actor_username, action, target_type, target_id, detail, created_at) VALUES (?,?,?,?,?,?,?)',
+      [actorUser?.id ?? null, actorUser?.username ?? null, action, targetType ?? null, targetId != null ? String(targetId) : null, detail ?? null,
+        new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Bangkok' })])
+    save()
+  } catch (e) { console.warn('[audit] บันทึกไม่สำเร็จ:', e.message) }
 }
 
 const reservationSseClients = new Set()
@@ -101,19 +133,21 @@ initDB().then(() => {
   const db = getDB()
 
   app.get('/categories', (req, res) => {
-    const result = db.exec('SELECT id, name, fill_type, shop_name, razer_account_type, pay24_enabled FROM categories ORDER BY name')
+    const result = db.exec('SELECT id, name, fill_type, shop_name, razer_account_type, pay24_enabled, ooc_enabled FROM categories ORDER BY name')
     const categories = result[0] ? result[0].values.map(row => ({
       id: row[0], name: row[1], fill_type: row[2] || 'UID', shop_name: row[3] || null,
       razer_account_type: row[4] || null, pay24_enabled: row[5] ? true : false,
+      ooc_enabled: row[6] ? true : false,
     })) : []
     res.json(categories)
   })
 
-  app.post('/categories', requireLogin, (req, res) => {
+  app.post('/categories', requireLogin, requireSuperAdmin, (req, res) => {
     const { name, fill_type, shop_name, razer_account_type } = req.body
     try {
-      db.run('INSERT INTO categories (name, fill_type, shop_name, razer_account_type) VALUES (?, ?, ?, ?)',
-        [name, fill_type || 'UID', shop_name || null, razer_account_type || null])
+      const _isOocCat = (fill_type || 'UID') === 'OOC_AUTO'
+      db.run('INSERT INTO categories (name, fill_type, shop_name, razer_account_type, ooc_enabled) VALUES (?, ?, ?, ?, ?)',
+        [name, fill_type || 'UID', shop_name || null, razer_account_type || null, _isOocCat ? 1 : 0])
       const result = db.exec('SELECT last_insert_rowid()')
       const id = result[0].values[0][0]
       save()
@@ -123,7 +157,7 @@ initDB().then(() => {
     }
   })
 
-  app.put('/categories/:id', requireLogin, (req, res) => {
+  app.put('/categories/:id', requireLogin, requireSuperAdmin, (req, res) => {
     const { name, fill_type, shop_name, razer_account_type } = req.body
     if (name !== undefined) {
       db.run('UPDATE categories SET name=?, fill_type=?, shop_name=?, razer_account_type=? WHERE id=?',
@@ -136,7 +170,7 @@ initDB().then(() => {
     res.json({ message: 'อัปเดตหมวดหมู่สำเร็จ' })
   })
 
-  app.delete('/categories/:id', requireLogin, (req, res) => {
+  app.delete('/categories/:id', requireLogin, requireSuperAdmin, (req, res) => {
     db.run('UPDATE products SET category_id=NULL WHERE category_id=?', [req.params.id])
     db.run('DELETE FROM categories WHERE id=?', [req.params.id])
     save()
@@ -206,7 +240,7 @@ initDB().then(() => {
     res.json(products)
   })
 
-  app.post('/products', requireLogin, (req, res) => {
+  app.post('/products', requireLogin, requireSuperAdmin, (req, res) => {
     const { name, price, stock, category_id, is_bundle, price_usd, cost, credits_min, credits_max } = req.body
     db.run('INSERT INTO products (name, price, stock, category_id, is_bundle, price_usd, cost, credits_min, credits_max) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [name, price, stock, category_id || null, is_bundle ? 1 : 0, price_usd ?? null, cost ?? 0, credits_min ?? null, credits_max ?? null])
@@ -217,7 +251,7 @@ initDB().then(() => {
   })
 
   // Feature 1: เรียงลำดับสินค้า (ต้องอยู่ก่อน /products/:id เสมอ)
-  app.put('/products/reorder', requireLogin, (req, res) => {
+  app.put('/products/reorder', requireLogin, requireSuperAdmin, (req, res) => {
     const items = req.body // [{ id, sort_order }, ...]
     for (const { id, sort_order } of items) {
       db.run('UPDATE products SET sort_order=? WHERE id=?', [sort_order, id])
@@ -228,7 +262,7 @@ initDB().then(() => {
     res.json({ message: 'บันทึกลำดับสำเร็จ' })
   })
 
-  app.put('/products/:id', requireLogin, (req, res) => {
+  app.put('/products/:id', requireLogin, requireSuperAdmin, (req, res) => {
     const { name, price, stock, category_id, price_usd, cost, credits_min, credits_max } = req.body
     db.run('UPDATE products SET name=?, price=?, stock=?, category_id=?, price_usd=?, cost=?, credits_min=?, credits_max=? WHERE id=?',
       [name, price, stock, category_id || null, price_usd ?? null, cost ?? 0, credits_min ?? null, credits_max ?? null, req.params.id])
@@ -236,7 +270,7 @@ initDB().then(() => {
     res.json({ message: 'แก้ไขสินค้าสำเร็จ' })
   })
 
-  app.patch('/products/:id', requireLogin, (req, res) => {
+  app.patch('/products/:id', requireLogin, requireSuperAdmin, (req, res) => {
     const { price_usd } = req.body
     if (price_usd !== undefined) {
       db.run('UPDATE products SET price_usd=? WHERE id=?', [price_usd === '' ? null : Number(price_usd), req.params.id])
@@ -246,7 +280,7 @@ initDB().then(() => {
   })
 
   // Feature 2: Copy สินค้าจากเกมอื่น
-  app.post('/categories/:id/copy-products', requireLogin, (req, res) => {
+  app.post('/categories/:id/copy-products', requireLogin, requireSuperAdmin, (req, res) => {
     const { source_category_id } = req.body
     const targetId = req.params.id
     if (!source_category_id) return res.status(400).json({ error: 'กรุณาระบุเกมต้นทาง' })
@@ -279,7 +313,7 @@ initDB().then(() => {
     res.json({ message: 'อัปเดตต้นทุนสำเร็จ' })
   })
 
-  app.post('/products/:id/image', requireLogin, upload.single('image'), (req, res) => {
+  app.post('/products/:id/image', requireLogin, requireSuperAdmin, upload.single('image'), (req, res) => {
     console.log('📸 image upload hit, file:', req.file, 'session:', req.session.user)
     if (!req.file) return res.status(400).json({ error: 'ไม่พบไฟล์รูปภาพ' })
     const imageUrl = `/uploads/${req.file.filename}`
@@ -375,7 +409,7 @@ initDB().then(() => {
     res.json(components)
   })
 
-  app.post('/products/:id/bundle-components', requireLogin, (req, res) => {
+  app.post('/products/:id/bundle-components', requireLogin, requireSuperAdmin, (req, res) => {
     const { components } = req.body // [{product_id, quantity}]
     db.run('DELETE FROM product_bundles WHERE product_id=?', [req.params.id])
     for (const comp of (components || [])) {
@@ -386,7 +420,7 @@ initDB().then(() => {
     res.json({ message: 'บันทึก components สำเร็จ' })
   })
 
-  app.delete('/products/:id', requireLogin, (req, res) => {
+  app.delete('/products/:id', requireLogin, requireSuperAdmin, (req, res) => {
     // Delete image file if exists
     const result = db.exec('SELECT image FROM products WHERE id=?', [req.params.id])
     if (result[0]?.values[0][0]) {
@@ -447,6 +481,46 @@ initDB().then(() => {
       .finally(() => {
         pay24QueueRunning = false
         processPay24Queue()
+      })
+  }
+  // ─────────────────────────────────────────────────────────────
+
+  // ── OOC Order Queue (ทำทีละ 1 รายการ) ──────────────────────
+  const oocQueue = []
+  let oocQueueRunning = false
+
+  function getOocConfig() {
+    const r = db.exec('SELECT key, value FROM ooc_config')
+    const cfg = {}
+    if (r[0]) r[0].values.forEach(([k, v]) => { cfg[k] = v })
+    return { email: cfg.email || '', password: cfg.password || '', credit: parseFloat(cfg.credit || '0') }
+  }
+
+  function enqueueOocItem(orderItemId) {
+    if (!oocBot) { console.warn('[ooc] bot not loaded'); return }
+    oocQueue.push(orderItemId)
+    console.log(`[ooc-queue] เพิ่ม item#${orderItemId} (รวม: ${oocQueue.length})`)
+    processOocQueue()
+  }
+
+  function processOocQueue() {
+    if (oocQueueRunning || oocQueue.length === 0) return
+    const orderItemId = oocQueue.shift()
+    oocQueueRunning = true
+    console.log(`[ooc-queue] เริ่ม item#${orderItemId}`)
+    const cfg = getOocConfig()
+    oocBot.processOocItem(orderItemId, { db, save, email: cfg.email, password: cfg.password })
+      .catch(e => {
+        console.error(`[ooc-queue] item#${orderItemId} failed:`, e.message)
+        try {
+          db.run('UPDATE order_items SET ooc_status=?, ooc_error=?, ooc_finished_at=? WHERE id=?',
+            ['failed', e.message.slice(0, 200), new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Bangkok' }), orderItemId])
+          save()
+        } catch {}
+      })
+      .finally(() => {
+        oocQueueRunning = false
+        processOocQueue()
       })
   }
   // ─────────────────────────────────────────────────────────────
@@ -620,7 +694,7 @@ initDB().then(() => {
     res.json(types)
   })
 
-  app.post('/email-types', requireLogin, (req, res) => {
+  app.post('/email-types', requireLogin, requireSuperAdmin, (req, res) => {
     const { key, label, color, behavior } = req.body
     if (!label?.trim()) return res.status(400).json({ error: 'กรุณากรอกชื่อประเภท' })
     const k = key?.trim() || label.trim()
@@ -636,7 +710,7 @@ initDB().then(() => {
     }
   })
 
-  app.delete('/email-types/:id', requireLogin, (req, res) => {
+  app.delete('/email-types/:id', requireLogin, requireSuperAdmin, (req, res) => {
     db.run('DELETE FROM email_types WHERE id=?', [req.params.id])
     save()
     res.json({ message: 'ลบประเภทสำเร็จ' })
@@ -721,7 +795,7 @@ initDB().then(() => {
       if (!is_bundle) {
         const catCheck = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
         const autoType = catCheck[0]?.values[0][0]
-        if (autoType === 'RAZER_AUTO' || autoType === 'RAZER_KUROKO_UID' || autoType === '24PAY_AUTO') continue
+        if (autoType === 'RAZER_AUTO' || autoType === 'RAZER_KUROKO_UID' || autoType === '24PAY_AUTO' || autoType === 'OOC_AUTO') continue
       }
 
       if (is_bundle) {
@@ -925,6 +999,25 @@ initDB().then(() => {
             db.run('UPDATE order_items SET pay24_input=?, pay24_status=?, cost_used=? WHERE id=?',
               [_p24InputStr, 'pending', _p24Cost, _p24OiId])
             enqueuePay24Item(_p24OiId)
+          }
+          continue
+        }
+      }
+
+      // OOC_AUTO: สร้าง order_item แยกทีละชิ้น แนบ URL จากลูกค้า
+      if (!is_bundle) {
+        const _oocCat = db.exec('SELECT fill_type FROM categories WHERE id=?', [category_id])
+        if (_oocCat[0]?.values[0][0] === 'OOC_AUTO') {
+          const _oocCost = db.exec('SELECT cost FROM products WHERE id=?', [item.product_id])[0]?.values[0][0] ?? null
+          const _oocUrlList = Array.isArray(item.ooc_urls) ? item.ooc_urls : [item.ooc_url || '']
+          for (let _qi = 0; _qi < (item.quantity || 1); _qi++) {
+            const _oocUrl = _oocUrlList[_qi] || ''
+            db.run('INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)',
+              [orderId, item.product_id, 1, price])
+            const _oocOiId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
+            db.run('UPDATE order_items SET ooc_url=?, ooc_status=?, cost_used=? WHERE id=?',
+              [_oocUrl, 'pending', _oocCost, _oocOiId])
+            enqueueOocItem(_oocOiId)
           }
           continue
         }
@@ -1464,7 +1557,7 @@ initDB().then(() => {
     res.json(emails)
   })
 
-  app.post('/emails', requireLogin, (req, res) => {
+  app.post('/emails', requireLogin, requireSuperAdmin, (req, res) => {
     const { email, password, link_sms, credits, note, cost, fill_type, initial_credits, created_date } = req.body
     const isCredits = fill_type && getCustomEmailBehavior(fill_type) === 'CREDITS'
     if (!email) return res.status(400).json({ error: 'กรุณากรอก Email หรือชื่อ Supplier' })
@@ -1483,7 +1576,7 @@ initDB().then(() => {
     res.json({ id: newEmailId, message: 'เพิ่ม Email สำเร็จ' })
   })
 
-  app.put('/emails/:id', requireLogin, (req, res) => {
+  app.put('/emails/:id', requireLogin, requireSuperAdmin, (req, res) => {
     const { email, password, link_sms, credits, note, cost, fill_type, broken, created_date, backup_codes, razer_account_type } = req.body
     // backup_codes ไม่ถูกส่งมา → คง value เดิมใน DB ไว้ ป้องกันการลบโดยไม่ตั้งใจ
     if (backup_codes === undefined) {
@@ -1502,14 +1595,14 @@ initDB().then(() => {
     res.json({ message: 'แก้ไข Email สำเร็จ' })
   })
 
-  app.patch('/emails/:id/broken', requireLogin, (req, res) => {
+  app.patch('/emails/:id/broken', requireLogin, requireSuperAdmin, (req, res) => {
     const { broken } = req.body
     db.run('UPDATE emails SET broken=? WHERE id=?', [broken ? 1 : 0, req.params.id])
     save()
     res.json({ message: 'อัปเดตสถานะสำเร็จ' })
   })
 
-  app.delete('/emails/:id', requireLogin, (req, res) => {
+  app.delete('/emails/:id', requireLogin, requireSuperAdmin, (req, res) => {
     db.run('DELETE FROM emails WHERE id=?', [req.params.id])
     save()
     res.json({ message: 'ลบ Email สำเร็จ' })
@@ -1648,7 +1741,7 @@ initDB().then(() => {
     res.json({ message: 'retry queued' })
   })
 
-  app.post('/emails/:id/topup', requireLogin, (req, res) => {
+  app.post('/emails/:id/topup', requireLogin, requireSuperAdmin, (req, res) => {
     const { amount, cost } = req.body
     if (!amount || Number(amount) <= 0) return res.status(400).json({ error: 'กรุณากรอกจำนวนเครดิต' })
     if (cost == null || Number(cost) < 0) return res.status(400).json({ error: 'กรุณากรอกต้นทุนต่อเครดิต' })
@@ -1932,24 +2025,31 @@ initDB().then(() => {
     res.json(items)
   })
 
-  function requireAdmin(req, res, next) {
-    if (!req.session.user?.is_admin) return res.status(403).json({ error: 'ต้องการสิทธิ์ Admin' })
-    next()
+  function thNow() { return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Bangkok' }) }
+
+  // จำนวน SuperAdmin ที่ active อยู่ ไม่นับ excludeId (ใช้เช็คก่อนลด role/suspend/ลบ)
+  function activeSuperAdminCountExcluding(excludeId) {
+    const r = db.exec('SELECT COUNT(*) FROM users WHERE role=? AND active=1 AND id<>?', ['superadmin', excludeId])
+    return r[0]?.values[0][0] || 0
   }
 
-  // สร้างผู้ใช้ — admin เท่านั้น (หรือ bootstrap ถ้ายังไม่มีผู้ใช้)
+  // สร้างผู้ใช้ — superadmin เท่านั้น (หรือ bootstrap ถ้ายังไม่มีผู้ใช้)
   app.post('/register', (req, res) => {
-    const { username, password, is_admin } = req.body
+    const { username, password, role } = req.body
     const countRes = db.exec('SELECT COUNT(*) FROM users')
     const userCount = countRes[0]?.values[0][0] || 0
-    if (userCount > 0 && !req.session.user?.is_admin) {
+    if (userCount > 0 && req.session.user?.role !== 'superadmin') {
       return res.status(403).json({ error: 'ไม่มีสิทธิ์สร้างผู้ใช้' })
     }
-    const adminFlag = userCount === 0 ? 1 : (is_admin ? 1 : 0)
+    const finalRole = userCount === 0 ? 'superadmin' : (role === 'superadmin' ? 'superadmin' : 'admin')
+    const adminFlag = finalRole === 'superadmin' ? 1 : 0
     const hash = bcrypt.hashSync(password, 10)
     try {
-      db.run('INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)', [username, hash, adminFlag])
+      db.run('INSERT INTO users (username, password, is_admin, role, created_at) VALUES (?, ?, ?, ?, ?)',
+        [username, hash, adminFlag, finalRole, thNow()])
+      const newId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
       save()
+      logAudit(req.session.user, 'create_user', 'user', newId, `username=${username}, role=${finalRole}`)
       res.json({ message: 'สร้างผู้ใช้สำเร็จ' })
     } catch {
       res.status(400).json({ error: 'Username นี้มีแล้ว' })
@@ -1958,12 +2058,15 @@ initDB().then(() => {
 
   app.post('/login', (req, res) => {
     const { username, password } = req.body
-    const result = db.exec('SELECT id, username, password, is_admin FROM users WHERE username=?', [username])
+    const result = db.exec('SELECT id, username, password, is_admin, role, active, session_version FROM users WHERE username=?', [username])
     if (!result[0]) return res.status(401).json({ error: 'Username หรือ Password ไม่ถูกต้อง' })
     const user = result[0].values[0]
     if (!bcrypt.compareSync(password, user[2])) return res.status(401).json({ error: 'Username หรือ Password ไม่ถูกต้อง' })
-    req.session.user = { id: user[0], username: user[1], is_admin: user[3] === 1 }
-    res.json({ message: 'Login สำเร็จ', username: user[1], is_admin: user[3] === 1 })
+    if (user[5] !== 1) return res.status(403).json({ error: 'บัญชีนี้ถูกระงับการใช้งาน' })
+    db.run('UPDATE users SET last_login_at=? WHERE id=?', [thNow(), user[0]])
+    save()
+    req.session.user = { id: user[0], username: user[1], is_admin: user[3] === 1, role: user[4], sv: user[6] }
+    res.json({ id: user[0], message: 'Login สำเร็จ', username: user[1], is_admin: user[3] === 1, role: user[4] })
   })
 
   app.post('/logout', (req, res) => {
@@ -1976,25 +2079,83 @@ initDB().then(() => {
     res.status(401).json({ error: 'ยังไม่ได้ Login' })
   })
 
-  // TEMP: Download DB endpoint (ลบออกหลังใช้งาน)
-  app.get('/admin/download-db', (req, res) => {
-    if (req.query.token !== 'pos-download-2026') return res.status(403).json({ error: 'Forbidden' })
-    const dbPath = path.join(process.env.DATA_DIR || __dirname, 'pos.db')
-    res.download(dbPath, 'pos.db')
-  })
-
-  app.get('/users', requireLogin, requireAdmin, (req, res) => {
-    const result = db.exec('SELECT id, username, is_admin FROM users ORDER BY id')
-    const users = result[0] ? result[0].values.map(r => ({ id: r[0], username: r[1], is_admin: r[2] === 1 })) : []
+  app.get('/users', requireLogin, requireSuperAdmin, (req, res) => {
+    const result = db.exec('SELECT id, username, is_admin, role, active, last_login_at, created_at FROM users ORDER BY id')
+    const users = result[0] ? result[0].values.map(r => ({
+      id: r[0], username: r[1], is_admin: r[2] === 1, role: r[3] || 'admin',
+      active: r[4] === 1, last_login_at: r[5] || null, created_at: r[6] || null,
+    })) : []
     res.json(users)
   })
 
-  app.delete('/users/:id', requireLogin, requireAdmin, (req, res) => {
-    if (Number(req.params.id) === req.session.user.id) {
+  app.get('/audit-log', requireLogin, requireSuperAdmin, (req, res) => {
+    const result = db.exec('SELECT id, actor_user_id, actor_username, action, target_type, target_id, detail, created_at FROM audit_log ORDER BY id DESC LIMIT 200')
+    const logs = result[0] ? result[0].values.map(r => ({
+      id: r[0], actor_user_id: r[1], actor_username: r[2], action: r[3],
+      target_type: r[4], target_id: r[5], detail: r[6], created_at: r[7],
+    })) : []
+    res.json(logs)
+  })
+
+  app.patch('/users/:id/role', requireLogin, requireSuperAdmin, (req, res) => {
+    const id = Number(req.params.id)
+    const { role } = req.body
+    if (!['superadmin', 'admin'].includes(role)) return res.status(400).json({ error: 'role ไม่ถูกต้อง' })
+    const cur = db.exec('SELECT role FROM users WHERE id=?', [id])[0]?.values[0]
+    if (!cur) return res.status(404).json({ error: 'ไม่พบผู้ใช้' })
+    if (cur[0] === 'superadmin' && role !== 'superadmin' && activeSuperAdminCountExcluding(id) === 0) {
+      return res.status(400).json({ error: 'ต้องมี SuperAdmin ที่ใช้งานอยู่อย่างน้อย 1 คน' })
+    }
+    db.run('UPDATE users SET role=?, is_admin=?, session_version=session_version+1 WHERE id=?',
+      [role, role === 'superadmin' ? 1 : 0, id])
+    save()
+    logAudit(req.session.user, 'change_role', 'user', id, `role -> ${role}`)
+    res.json({ message: 'อัปเดต Role สำเร็จ' })
+  })
+
+  app.patch('/users/:id/status', requireLogin, requireSuperAdmin, (req, res) => {
+    const id = Number(req.params.id)
+    const { active } = req.body
+    const activeFlag = active ? 1 : 0
+    const cur = db.exec('SELECT role FROM users WHERE id=?', [id])[0]?.values[0]
+    if (!cur) return res.status(404).json({ error: 'ไม่พบผู้ใช้' })
+    if (activeFlag === 0 && cur[0] === 'superadmin' && activeSuperAdminCountExcluding(id) === 0) {
+      return res.status(400).json({ error: 'ต้องมี SuperAdmin ที่ใช้งานอยู่อย่างน้อย 1 คน' })
+    }
+    if (activeFlag === 0) {
+      db.run('UPDATE users SET active=0, session_version=session_version+1 WHERE id=?', [id])
+    } else {
+      db.run('UPDATE users SET active=1 WHERE id=?', [id])
+    }
+    save()
+    logAudit(req.session.user, activeFlag ? 'activate_user' : 'suspend_user', 'user', id, null)
+    res.json({ message: activeFlag ? 'เปิดใช้งานบัญชีสำเร็จ' : 'ระงับบัญชีสำเร็จ' })
+  })
+
+  app.patch('/users/:id/password', requireLogin, requireSuperAdmin, (req, res) => {
+    const id = Number(req.params.id)
+    const { password } = req.body
+    if (!password || String(password).length < 4) return res.status(400).json({ error: 'รหัสผ่านสั้นเกินไป' })
+    const hash = bcrypt.hashSync(password, 10)
+    db.run('UPDATE users SET password=?, session_version=session_version+1 WHERE id=?', [hash, id])
+    save()
+    logAudit(req.session.user, 'reset_password', 'user', id, null)
+    res.json({ message: 'รีเซ็ตรหัสผ่านสำเร็จ' })
+  })
+
+  app.delete('/users/:id', requireLogin, requireSuperAdmin, (req, res) => {
+    const id = Number(req.params.id)
+    if (id === req.session.user.id) {
       return res.status(400).json({ error: 'ไม่สามารถลบบัญชีตัวเองได้' })
     }
-    db.run('DELETE FROM users WHERE id=?', [req.params.id])
+    const cur = db.exec('SELECT role, username FROM users WHERE id=?', [id])[0]?.values[0]
+    if (!cur) return res.status(404).json({ error: 'ไม่พบผู้ใช้' })
+    if (cur[0] === 'superadmin' && activeSuperAdminCountExcluding(id) === 0) {
+      return res.status(400).json({ error: 'ต้องมี SuperAdmin ที่ใช้งานอยู่อย่างน้อย 1 คน' })
+    }
+    db.run('DELETE FROM users WHERE id=?', [id])
     save()
+    logAudit(req.session.user, 'delete_user', 'user', id, `username=${cur[1]}`)
     res.json({ message: 'ลบผู้ใช้สำเร็จ' })
   })
 
@@ -2413,6 +2574,205 @@ initDB().then(() => {
       console.error('[startup] pay24 re-queue error:', e.message)
     }
   }, 3000)
+
+  // Re-queue pending OOC items on startup
+  setTimeout(() => {
+    try {
+      const pending = db.exec(`
+        SELECT oi.id FROM order_items oi
+        JOIN products p ON p.id = oi.product_id
+        JOIN categories c ON c.id = p.category_id
+        WHERE oi.ooc_status = 'pending' AND c.fill_type = 'OOC_AUTO'
+      `)
+      if (!pending[0]) return
+      for (const [id] of pending[0].values) {
+        console.log(`[startup] re-queue ooc item#${id}`)
+        enqueueOocItem(id)
+      }
+    } catch (e) {
+      console.error('[startup] ooc re-queue error:', e.message)
+    }
+  }, 4000)
+
+  // ── OOC Routes ───────────────────────────────────────────────
+  const crypto = require('crypto')
+
+  function getOocCredit() {
+    const r = db.exec("SELECT value FROM ooc_config WHERE key='credit'")
+    return parseFloat(r[0]?.values[0][0] || '0')
+  }
+  function setOocCredit(val) {
+    db.run("INSERT OR REPLACE INTO ooc_config (key, value) VALUES ('credit', ?)", [String(val)])
+  }
+
+  // GET /ooc/status — account info + credit
+  app.get('/ooc/status', requireLogin, (req, res) => {
+    const cfg = getOocConfig()
+    const topups = db.exec('SELECT id, amount, cost, note, created_at FROM ooc_topups ORDER BY id DESC LIMIT 20')
+    res.json({
+      email: cfg.email || '',
+      hasPassword: !!cfg.password,
+      credit: cfg.credit,
+      queueLength: oocQueue.length,
+      running: oocQueueRunning,
+      topups: topups[0] ? topups[0].values.map(r => ({ id: r[0], amount: r[1], cost: r[2], note: r[3], created_at: r[4] })) : [],
+    })
+  })
+
+  // POST /ooc/config — set email/password
+  app.post('/ooc/config', requireLogin, (req, res) => {
+    if (!req.session.user?.is_admin) return res.status(403).json({ error: 'Admin only' })
+    const { email, password } = req.body
+    if (email !== undefined) db.run("INSERT OR REPLACE INTO ooc_config (key,value) VALUES ('email',?)", [email])
+    if (password) db.run("INSERT OR REPLACE INTO ooc_config (key,value) VALUES ('password',?)", [password])
+    save()
+    res.json({ message: 'บันทึกแล้ว' })
+  })
+
+  // POST /ooc/topup — เติม credit
+  app.post('/ooc/topup', requireLogin, (req, res) => {
+    if (!req.session.user?.is_admin) return res.status(403).json({ error: 'Admin only' })
+    const { amount, cost, note } = req.body
+    if (!amount || amount <= 0) return res.status(400).json({ error: 'amount ต้องมากกว่า 0' })
+    const cur = getOocCredit()
+    setOocCredit(cur + Number(amount))
+    const topupAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Bangkok' })
+    db.run('INSERT INTO ooc_topups (amount, cost, note, created_at) VALUES (?,?,?,?)',
+      [amount, cost || 0, note || null, topupAt])
+    save()
+    res.json({ message: 'เติม credit สำเร็จ', credit: cur + Number(amount) })
+  })
+
+  // GET /ooc/orders — รายการ OOC_AUTO
+  app.get('/ooc/orders', requireLogin, (req, res) => {
+    const r = db.exec(`
+      SELECT oi.id, o.id as order_id, o.created_at, p.name as product_name,
+             oi.ooc_status, oi.ooc_url, oi.ooc_error, oi.ooc_finished_at,
+             oi.price, oi.cost_used
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      JOIN products p ON p.id = oi.product_id
+      JOIN categories c ON c.id = p.category_id
+      WHERE c.fill_type = 'OOC_AUTO'
+      ORDER BY o.id DESC
+      LIMIT 100
+    `)
+    const orders = r[0] ? r[0].values.map(row => ({
+      id: row[0], order_id: row[1], created_at: row[2], product_name: row[3],
+      status: row[4] || 'pending', url: row[5], error: row[6], finished_at: row[7],
+      price: row[8], cost: row[9],
+    })) : []
+    res.json(orders)
+  })
+
+  // POST /ooc/retry/:id — retry รายการที่ล้มเหลว
+  app.post('/ooc/retry/:id', requireLogin, (req, res) => {
+    const id = Number(req.params.id)
+    db.run('UPDATE order_items SET ooc_status=?, ooc_error=NULL, ooc_finished_at=NULL WHERE id=?', ['pending', id])
+    save()
+    enqueueOocItem(id)
+    res.json({ message: 'เพิ่มในคิว retry แล้ว' })
+  })
+
+  // ── OOC API Keys ─────────────────────────────────────────────
+  app.get('/ooc/api-keys', requireLogin, (req, res) => {
+    if (!req.session.user?.is_admin) return res.status(403).json({ error: 'Admin only' })
+    const r = db.exec('SELECT id, label, key_prefix, created_at, active FROM ooc_api_keys ORDER BY id DESC')
+    res.json(r[0] ? r[0].values.map(v => ({ id: v[0], label: v[1], prefix: v[2], created_at: v[3], active: !!v[4] })) : [])
+  })
+
+  app.post('/ooc/api-keys', requireLogin, (req, res) => {
+    if (!req.session.user?.is_admin) return res.status(403).json({ error: 'Admin only' })
+    const { label } = req.body
+    if (!label) return res.status(400).json({ error: 'ต้องระบุ label' })
+    const rawKey = 'ooc_' + crypto.randomBytes(24).toString('hex')
+    const hash = crypto.createHash('sha256').update(rawKey).digest('hex')
+    const prefix = rawKey.slice(0, 12)
+    const createdAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Bangkok' })
+    db.run('INSERT INTO ooc_api_keys (label, key_hash, key_prefix, created_at) VALUES (?,?,?,?)',
+      [label, hash, prefix, createdAt])
+    save()
+    res.json({ message: 'สร้���ง key สำเร็จ', key: rawKey, prefix })
+  })
+
+  app.patch('/ooc/api-keys/:id', requireLogin, (req, res) => {
+    if (!req.session.user?.is_admin) return res.status(403).json({ error: 'Admin only' })
+    const { active } = req.body
+    db.run('UPDATE ooc_api_keys SET active=? WHERE id=?', [active ? 1 : 0, Number(req.params.id)])
+    save()
+    res.json({ message: 'อัพเดทแล้ว' })
+  })
+
+  app.delete('/ooc/api-keys/:id', requireLogin, (req, res) => {
+    if (!req.session.user?.is_admin) return res.status(403).json({ error: 'Admin only' })
+    db.run('DELETE FROM ooc_api_keys WHERE id=?', [Number(req.params.id)])
+    save()
+    res.json({ message: 'ลบแล้ว' })
+  })
+
+  // ── OOC External API (สำหรับ partner website) ────────────────
+  function verifyOocApiKey(req, res) {
+    const key = req.headers['x-api-key'] || req.query.api_key
+    if (!key) { res.status(401).json({ error: 'ต้องระบุ X-Api-Key' }); return null }
+    const hash = crypto.createHash('sha256').update(key).digest('hex')
+    const r = db.exec('SELECT id FROM ooc_api_keys WHERE key_hash=? AND active=1', [hash])
+    if (!r[0]) { res.status(403).json({ error: 'API Key ไม่ถูกต้องหรือถูกปิดใช้งาน' }); return null }
+    return r[0].values[0][0]
+  }
+
+  // POST /ooc/external/order — partner สร้าง order ใหม่
+  app.post('/ooc/external/order', (req, res) => {
+    const keyId = verifyOocApiKey(req, res)
+    if (!keyId) return
+    const { url, product_name, price, cost, ref_id } = req.body
+    if (!url) return res.status(400).json({ error: 'ต้องระบุ url' })
+    if (!product_name) return res.status(400).json({ error: 'ต้องระบุ product_name' })
+
+    const createdAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Bangkok' })
+    db.run('INSERT INTO orders (total, created_at) VALUES (?,?)', [price || 0, createdAt])
+    const orderId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
+
+    // หาหรือสร้าง product placeholder สำหรับ external orders
+    let productId = null
+    const extCat = db.exec("SELECT id FROM categories WHERE name='OOC External' AND fill_type='OOC_AUTO'")
+    if (extCat[0]) {
+      productId = null
+      const extProd = db.exec('SELECT id FROM products WHERE name=? AND category_id=?', [product_name, extCat[0].values[0][0]])
+      if (extProd[0]) {
+        productId = extProd[0].values[0][0]
+      } else {
+        db.run('INSERT INTO products (name, price, stock, category_id, cost) VALUES (?,?,?,?,?)',
+          [product_name, price || 0, -1, extCat[0].values[0][0], cost || 0])
+        productId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
+      }
+    } else {
+      db.run("INSERT INTO categories (name, fill_type, ooc_enabled) VALUES ('OOC External','OOC_AUTO',1)")
+      const newCatId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
+      db.run('INSERT INTO products (name, price, stock, category_id, cost) VALUES (?,?,?,?,?)',
+        [product_name, price || 0, -1, newCatId, cost || 0])
+      productId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
+    }
+
+    db.run('INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)',
+      [orderId, productId, 1, price || 0])
+    const oiId = db.exec('SELECT last_insert_rowid()')[0].values[0][0]
+    db.run('UPDATE order_items SET ooc_url=?, ooc_status=?, cost_used=? WHERE id=?',
+      [url, 'pending', cost || 0, oiId])
+    save()
+    enqueueOocItem(oiId)
+    res.json({ id: oiId, order_id: orderId, status: 'pending', ref_id: ref_id || null })
+  })
+
+  // GET /ooc/external/order/:id — partner check status
+  app.get('/ooc/external/order/:id', (req, res) => {
+    const keyId = verifyOocApiKey(req, res)
+    if (!keyId) return
+    const r = db.exec('SELECT id, ooc_status, ooc_error, ooc_finished_at FROM order_items WHERE id=?', [Number(req.params.id)])
+    if (!r[0]) return res.status(404).json({ error: 'ไม่พบ order' })
+    const [id, status, error, finished_at] = r[0].values[0]
+    res.json({ id, status: status || 'pending', error: error || null, finished_at: finished_at || null })
+  })
+  // ─────────────────────────────────────────────────────────────
 
   // SPA fallback — ต้องอยู่หลัง API routes ทั้งหมด
   app.use((req, res) => {

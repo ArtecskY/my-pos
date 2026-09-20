@@ -30,6 +30,9 @@ function isRazerAuto(fill_type) {
 function is24PayAuto(fill_type) {
   return fill_type === '24PAY_AUTO'
 }
+function isOocAuto(fill_type) {
+  return fill_type === 'OOC_AUTO'
+}
 
 const EMAIL_BUILTINS = ['EMAIL', 'OTHER_EMAIL']
 function creditsNeeded(item, emailTypes, qty) {
@@ -76,6 +79,9 @@ export default function POSPage({ onNavigate }) {
 
   // 24PAY_AUTO: { [itemId]: { [fieldKey]: value } }
   const [pay24Inputs, setPay24Inputs] = useState({})
+
+  // OOC_AUTO: { [itemId]: string[] } — URL ต่อ 1 ชิ้น
+  const [oocUrls, setOocUrls] = useState({})
 
   // RAZER_AUTO: { [itemId]: string[] } — index ตรงกับ unit ที่ 1..N
   const [razerUrls, setRazerUrls] = useState({})
@@ -157,6 +163,7 @@ export default function POSPage({ onNavigate }) {
     .filter(cat => !selectedCat || String(cat.id) === selectedCat)
     .filter(cat => !selectedFillType || cat.fill_type === selectedFillType)
     .filter(cat => cat.fill_type !== '24PAY_AUTO' || !!cat.pay24_enabled)
+    .filter(cat => cat.fill_type !== 'OOC_AUTO')
     .map(cat => {
       const searchLower = search.toLowerCase()
       const catMatch = !search || cat.name.toLowerCase().includes(searchLower)
@@ -397,6 +404,17 @@ export default function POSPage({ onNavigate }) {
           })
         }
         orderItems.push({ product_id: item.id, quantity: item.quantity, bundle_email_ids })
+        continue
+      }
+
+      if (isOocAuto(item.fill_type)) {
+        const urls = oocUrls[item.id] || []
+        for (let qi = 0; qi < item.quantity; qi++) {
+          if (!urls[qi]?.trim()) {
+            alert(`กรุณากรอก URL${item.quantity > 1 ? ` ชิ้นที่ ${qi + 1}` : ''} สำหรับ "${item.name}"`); return
+          }
+        }
+        orderItems.push({ product_id: item.id, quantity: item.quantity, ooc_urls: urls.slice(0, item.quantity) })
         continue
       }
 
@@ -1315,6 +1333,38 @@ export default function POSPage({ onNavigate }) {
                   )
                   })
                 })()}
+              </div>
+            )}
+
+            {/* OOC_AUTO URL input — 1 ช่องต่อ 1 ชิ้น */}
+            {cart.some(i => isOocAuto(i.fill_type)) && (
+              <div className="mb-6 space-y-3">
+                {cart.filter(i => isOocAuto(i.fill_type)).map(item => (
+                  <div key={item.id} className="border border-purple-300 dark:border-purple-700 rounded-xl p-4 bg-purple-50 dark:bg-purple-900/20 space-y-3">
+                    <p className="text-sm font-semibold text-purple-800 dark:text-purple-300">{item.name} × {item.quantity}</p>
+                    {Array.from({ length: item.quantity }, (_, qi) => {
+                      const url = (oocUrls[item.id] || [])[qi] || ''
+                      return (
+                        <div key={qi} className="space-y-1">
+                          <label className="block text-xs text-slate-500">
+                            {item.quantity > 1 ? `Link ชิ้นที่ ${qi + 1}` : 'Link URL'}
+                          </label>
+                          <input
+                            type="url"
+                            value={url}
+                            onChange={e => {
+                              const arr = [...(oocUrls[item.id] || Array(item.quantity).fill(''))]
+                              arr[qi] = e.target.value
+                              setOocUrls(prev => ({ ...prev, [item.id]: arr }))
+                            }}
+                            placeholder="https://..."
+                            className="w-full border border-purple-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-purple-500 bg-white dark:bg-slate-800 text-(--text)"
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
               </div>
             )}
 

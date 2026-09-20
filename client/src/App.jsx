@@ -16,7 +16,8 @@ import Pay24Page from './pages/Pay24Page'
 import Pay24BotPage from './pages/Pay24BotPage'
 
 const VALID_PAGES = ['pos', 'manage', 'emails', 'orders', 'dashboard', 'bank', 'email-summary', 'razer', 'pay24', 'pay24-bot', 'users']
-const ADMIN_PAGES = new Set(['razer', 'pay24', 'pay24-bot', 'users'])
+const ADMIN_PAGES = new Set(['manage', 'razer', 'pay24', 'pay24-bot', 'users'])
+const isSuperAdmin = u => u?.role === 'superadmin'
 
 function hashPage() {
   const h = window.location.hash.slice(1)
@@ -66,9 +67,9 @@ function AppShell({ user, onLogout }) {
       const code = e.code
       if (code === 'KeyB') navigate(page === 'pos' ? 'orders' : 'pos')
       if (code === 'KeyD') navigate('dashboard')
-      if (code === 'KeyM') navigate('manage')
+      if (code === 'KeyM' && isSuperAdmin(user)) navigate('manage')
       if (code === 'KeyE') navigate('emails')
-      if (code === 'KeyK' && user?.is_admin) navigate('razer')
+      if (code === 'KeyK' && isSuperAdmin(user)) navigate('razer')
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -90,16 +91,16 @@ function AppShell({ user, onLogout }) {
         <main ref={mainRef} className="flex-1 overflow-y-auto">
           <div className="px-4 sm:px-6 py-5 sm:py-6 max-w-screen-2xl mx-auto">
             {page === 'pos'           && <POSPage onNavigate={navigate} />}
-            {page === 'manage'        && <ManagePage />}
-            {page === 'emails'        && <EmailsPage />}
+            {page === 'manage'        && isSuperAdmin(user) && <ManagePage />}
+            {page === 'emails'        && <EmailsPage currentUser={user} />}
             {page === 'orders'        && <OrdersPage />}
             {page === 'dashboard'     && <DashboardPage />}
             {page === 'bank'          && <BankPage />}
             {page === 'email-summary' && <EmailSummaryPage />}
-            {page === 'razer'     && user?.is_admin && <RazerPage />}
-            {page === 'pay24'     && user?.is_admin && <Pay24Page />}
-            {page === 'pay24-bot' && user?.is_admin && <Pay24BotPage />}
-            {page === 'users'     && user?.is_admin && <UsersPage currentUser={user} />}
+            {page === 'razer'     && isSuperAdmin(user) && <RazerPage />}
+            {page === 'pay24'     && isSuperAdmin(user) && <Pay24Page />}
+            {page === 'pay24-bot' && isSuperAdmin(user) && <Pay24BotPage />}
+            {page === 'users'     && isSuperAdmin(user) && <UsersPage currentUser={user} />}
           </div>
         </main>
       </div>
@@ -129,7 +130,7 @@ export default function App() {
       .then(u => {
         setUser(u)
         setLoading(false)
-        if (u && ADMIN_PAGES.has(hashPage()) && !u.is_admin) window.location.hash = 'pos'
+        if (u && ADMIN_PAGES.has(hashPage()) && !isSuperAdmin(u)) window.location.hash = 'pos'
       })
   }, [])
 

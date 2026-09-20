@@ -8,6 +8,7 @@ const TYPE_CONFIG = {
   'OTHER_EMAIL':      { label: 'อื่นๆ · Email', cls: 'bg-purple-100 text-purple-700' },
   'ID_PASS':          { label: 'ID-PASS',        cls: 'bg-yellow-100 text-yellow-700' },
   'RAZER_AUTO':       { label: 'Razer Auto',     cls: 'bg-orange-100 text-orange-700' },
+  'OOC_AUTO':         { label: 'OOC Auto',       cls: 'bg-purple-100 text-purple-700' },
 }
 
 const TYPE_BUTTONS = [
@@ -575,6 +576,7 @@ export default function ManagePage() {
   const searchLower = search.toLowerCase()
   const grouped = categories
     .filter(c => c.fill_type !== '24PAY_AUTO' || !!c.pay24_enabled)
+    .filter(c => c.fill_type !== 'OOC_AUTO')
     .filter(c => !selectedFillType || c.fill_type === selectedFillType)
     .filter(c => !selectedCat || String(c.id) === selectedCat)
     .map(c => ({
@@ -608,7 +610,7 @@ export default function ManagePage() {
             className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 bg-white"
           >
             <option value="">ทุกเกม</option>
-            {categories.filter(c => c.fill_type !== '24PAY_AUTO' || !!c.pay24_enabled).map(c => (
+            {categories.filter(c => (c.fill_type !== '24PAY_AUTO' || !!c.pay24_enabled) && c.fill_type !== 'OOC_AUTO').map(c => (
               <option key={c.id} value={String(c.id)}>{c.name}</option>
             ))}
           </select>

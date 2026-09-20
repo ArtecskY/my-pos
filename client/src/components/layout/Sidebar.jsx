@@ -16,7 +16,6 @@ const NAV_GROUPS = [
   {
     label: 'Manage',
     items: [
-      { key: 'manage',        label: 'จัดการสินค้า', icon: Package },
       { key: 'emails',        label: 'จัดการ Email', icon: Mail },
       { key: 'email-summary', label: 'สรุป Email',   icon: FileText },
     ],
@@ -26,6 +25,7 @@ const NAV_GROUPS = [
 const ADMIN_GROUP = {
   label: 'Admin',
   items: [
+    { key: 'manage',    label: 'จัดการสินค้า',  icon: Package },
     { key: 'razer',    label: 'Razer Bot',     icon: Bot },
     { key: 'pay24',    label: '24Pay จัดการ',  icon: Package },
     { key: 'pay24-bot', label: '24Pay Bot',    icon: Bot },
@@ -34,7 +34,7 @@ const ADMIN_GROUP = {
 }
 
 export default function Sidebar({ page, onChangePage, user, open, onClose, collapsed, onToggleCollapse }) {
-  const groups = [...NAV_GROUPS, ...(user?.is_admin ? [ADMIN_GROUP] : [])]
+  const groups = [...NAV_GROUPS, ...(user?.role === 'superadmin' ? [ADMIN_GROUP] : [])]
 
   function handleNav(key) {
     onChangePage(key)
@@ -158,7 +158,7 @@ export default function Sidebar({ page, onChangePage, user, open, onClose, colla
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-(--text) truncate">{user?.username}</p>
-                <p className="text-xs text-(--text-muted)">{user?.is_admin ? 'Admin' : 'Staff'}</p>
+                <p className="text-xs text-(--text-muted)">{user?.role === 'superadmin' ? 'SuperAdmin' : 'Admin'}</p>
               </div>
             </div>
           )}

@@ -57,7 +57,8 @@ function CopyCell({ value, masked, maskChar = '••••••••' }) {
   )
 }
 
-export default function EmailsPage() {
+export default function EmailsPage({ currentUser }) {
+  const canEdit = currentUser?.role === 'superadmin'
   const [emails, setEmails] = useState([])
   const [customTypes, setCustomTypes] = useState([])
   const [form, setForm] = useState({
@@ -328,6 +329,7 @@ export default function EmailsPage() {
   return (
     <div className="space-y-5">
       {/* Add Email */}
+      {canEdit && (
       <div className="bg-white rounded-xl p-6 shadow-sm">
         <h2 className="font-semibold text-slate-800 mb-4">เพิ่ม Email ใหม่</h2>
         <div className="grid grid-cols-2 gap-2.5 mb-2">
@@ -427,9 +429,10 @@ export default function EmailsPage() {
           + เพิ่ม Email
         </button>
       </div>
+      )}
 
       {/* Custom type tags */}
-      {customTypes.length > 0 && (
+      {canEdit && customTypes.length > 0 && (
         <div className="bg-white rounded-xl px-6 py-4 shadow-sm">
           <p className="text-xs text-slate-400 font-medium uppercase tracking-wide mb-3">ประเภทที่สร้างเอง</p>
           <div className="flex flex-wrap gap-2">
@@ -574,7 +577,7 @@ export default function EmailsPage() {
                         )}
                       </td>
                       <td className="py-2.5 px-2 text-xs text-slate-500 max-w-[160px]">
-                        {inlineNote?.id === e.id ? (
+                        {inlineNote?.id === e.id && canEdit ? (
                           <textarea
                             autoFocus
                             className="w-full border border-blue-300 rounded px-1.5 py-1 text-xs resize-none focus:outline-none focus:border-blue-500 bg-blue-50"
@@ -589,9 +592,9 @@ export default function EmailsPage() {
                           />
                         ) : (
                           <span
-                            onClick={() => setInlineNote({ id: e.id, value: e.note || '' })}
-                            className="cursor-pointer hover:bg-slate-100 rounded px-1 -mx-1 block truncate"
-                            title={e.note ? e.note : 'คลิกเพื่อแก้ไขหมายเหตุ'}
+                            onClick={() => canEdit && setInlineNote({ id: e.id, value: e.note || '' })}
+                            className={`rounded px-1 -mx-1 block truncate ${canEdit ? 'cursor-pointer hover:bg-slate-100' : ''}`}
+                            title={e.note ? e.note : (canEdit ? 'คลิกเพื่อแก้ไขหมายเหตุ' : '')}
                           >
                             {e.note || <span className="text-slate-300">—</span>}
                           </span>
@@ -617,37 +620,43 @@ export default function EmailsPage() {
                         </span>
                       </td>
                       <td className="py-2.5 px-2 text-right whitespace-nowrap">
-                        <button
-                          onClick={() => toggleBroken(e)}
-                          className={`px-2.5 py-1.5 rounded-md mr-1 cursor-pointer text-xs font-medium transition-colors ${
-                            e.broken
-                              ? 'bg-red-500 hover:bg-red-600 text-white'
-                              : 'bg-slate-100 hover:bg-slate-200 text-slate-500'
-                          }`}
-                          title={e.broken ? 'คลิกเพื่อยกเลิกเสีย' : 'คลิกเพื่อระบุว่าเสีย'}
-                        >
-                          เสีย
-                        </button>
-                        {isRazerLike(e.fill_type) && (
-                          <button
-                            onClick={() => { setTopupModal({ id: e.id, email: e.email, credits: e.credits }); setTopupAmount(''); setTopupCost(String(e.cost || '')); setTopupError('') }}
-                            className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md mr-1 cursor-pointer text-xs"
-                          >
-                            เติม
-                          </button>
+                        {canEdit ? (
+                          <>
+                            <button
+                              onClick={() => toggleBroken(e)}
+                              className={`px-2.5 py-1.5 rounded-md mr-1 cursor-pointer text-xs font-medium transition-colors ${
+                                e.broken
+                                  ? 'bg-red-500 hover:bg-red-600 text-white'
+                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-500'
+                              }`}
+                              title={e.broken ? 'คลิกเพื่อยกเลิกเสีย' : 'คลิกเพื่อระบุว่าเสีย'}
+                            >
+                              เสีย
+                            </button>
+                            {isRazerLike(e.fill_type) && (
+                              <button
+                                onClick={() => { setTopupModal({ id: e.id, email: e.email, credits: e.credits }); setTopupAmount(''); setTopupCost(String(e.cost || '')); setTopupError('') }}
+                                className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md mr-1 cursor-pointer text-xs"
+                              >
+                                เติม
+                              </button>
+                            )}
+                            <button
+                              onClick={() => { setEditModal({ ...e }); setEditShowPass(false) }}
+                              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-md mr-1 cursor-pointer text-xs"
+                            >
+                              แก้ไข
+                            </button>
+                            <button
+                              onClick={() => deleteEmail(e.id)}
+                              className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-md cursor-pointer text-xs"
+                            >
+                              ลบ
+                            </button>
+                          </>
+                        ) : (
+                          e.broken && <span className="text-red-500 text-xs font-medium">เสีย</span>
                         )}
-                        <button
-                          onClick={() => { setEditModal({ ...e }); setEditShowPass(false) }}
-                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-md mr-1 cursor-pointer text-xs"
-                        >
-                          แก้ไข
-                        </button>
-                        <button
-                          onClick={() => deleteEmail(e.id)}
-                          className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-md cursor-pointer text-xs"
-                        >
-                          ลบ
-                        </button>
                       </td>
                     </tr>
                   ))}
