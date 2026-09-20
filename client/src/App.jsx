@@ -16,7 +16,7 @@ import Pay24Page from './pages/Pay24Page'
 import Pay24BotPage from './pages/Pay24BotPage'
 
 const VALID_PAGES = ['pos', 'manage', 'emails', 'orders', 'dashboard', 'bank', 'email-summary', 'razer', 'pay24', 'pay24-bot', 'users']
-const ADMIN_PAGES = new Set(['manage', 'razer', 'pay24', 'pay24-bot', 'users'])
+const ADMIN_PAGES = new Set(['manage', 'pay24', 'users'])
 const isSuperAdmin = u => u?.role === 'superadmin'
 
 function hashPage() {
@@ -69,7 +69,7 @@ function AppShell({ user, onLogout }) {
       if (code === 'KeyD') navigate('dashboard')
       if (code === 'KeyM' && isSuperAdmin(user)) navigate('manage')
       if (code === 'KeyE') navigate('emails')
-      if (code === 'KeyK' && isSuperAdmin(user)) navigate('razer')
+      if (code === 'KeyK') navigate('razer')
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -97,9 +97,9 @@ function AppShell({ user, onLogout }) {
             {page === 'dashboard'     && <DashboardPage />}
             {page === 'bank'          && <BankPage />}
             {page === 'email-summary' && <EmailSummaryPage />}
-            {page === 'razer'     && isSuperAdmin(user) && <RazerPage />}
+            {page === 'razer'     && <RazerPage />}
             {page === 'pay24'     && isSuperAdmin(user) && <Pay24Page />}
-            {page === 'pay24-bot' && isSuperAdmin(user) && <Pay24BotPage />}
+            {page === 'pay24-bot' && <Pay24BotPage />}
             {page === 'users'     && isSuperAdmin(user) && <UsersPage currentUser={user} />}
           </div>
         </main>
