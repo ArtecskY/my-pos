@@ -1,8 +1,9 @@
 const express = require('express')
 const session = require('express-session')
 const bcrypt = require('bcryptjs')
-const { initDB, save, getDB } = require('./database')
+const { initDB, save, getDB, isHealthy, exitOnBrokenDB } = require('./database')
 const cors = require('cors')
+const compression = require('compression')
 const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
@@ -17,6 +18,10 @@ try { oocBot = require('./ooc-bot') } catch (e) { console.warn('[ooc-bot] โห
 
 const app = express()
 app.set('trust proxy', 1)
+// gzip ลด egress — ยกเว้น SSE (/reservations/events) เพราะ gzip จะกักข้อมูลไว้ไม่ส่งแบบ real-time
+app.use(compression({
+  filter: (req, res) => req.path !== '/reservations/events' && compression.filter(req, res)
+}))
 app.use(express.json())
 app.use(cors({
   origin: (origin, cb) => cb(null, true),
@@ -98,7 +103,10 @@ function logAudit(actorUser, action, targetType, targetId, detail) {
 const reservationSseClients = new Set()
 
 // Health check — Railway ใช้ตรวจสอบว่า server ทำงานอยู่
-app.get('/health', (req, res) => res.json({ status: 'ok' }))
+app.get('/health', (req, res) => {
+  if (getDB() && !isHealthy()) return res.status(503).json({ status: 'db-broken' })
+  res.json({ status: 'ok' })
+})
 
 // Restart server — ใช้สำหรับ user กด Restart จากหน้า Login
 app.post('/restart', (req, res) => {
@@ -131,6 +139,9 @@ app.get('/admin/download-db', (req, res) => {
 
 initDB().then(() => {
   const db = getDB()
+
+  // Watchdog: Railway เรียก /health แค่ตอน deploy — จึงตรวจ DB เองทุก 30 วินาที ถ้าเสียให้ปิดเพื่อ restart อัตโนมัติ
+  setInterval(() => { if (!isHealthy()) exitOnBrokenDB('watchdog') }, 30000).unref()
 
   app.get('/categories', (req, res) => {
     const result = db.exec('SELECT id, name, fill_type, shop_name, razer_account_type, pay24_enabled, ooc_enabled FROM categories ORDER BY name')
@@ -1912,8 +1923,27 @@ initDB().then(() => {
     }
   })
 
+  // วันที่ของออเดอร์ = 10 ตัวแรกของ transfer_time (ถ้าว่างใช้ created_at) — ตรงกับ getDateKey ฝั่ง client
+  const ORDER_DATE_SQL = "substr(COALESCE(NULLIF(o.transfer_time, ''), o.created_at), 1, 10)"
+  const ORDER_VISIBLE_SQL = "(o.razer_status IS NULL OR o.razer_status NOT IN ('failed','partial'))"
+
+  function latestOrderDate() {
+    const r = db.exec(`SELECT MAX(${ORDER_DATE_SQL}) FROM orders o WHERE ${ORDER_VISIBLE_SQL}`)
+    return r[0]?.values[0][0] || null
+  }
+
+  // GET /order-items/latest-date — วันล่าสุดที่มีออเดอร์ (หน้าประวัติรายการใช้เลือกวันเริ่มต้น)
+  app.get('/order-items/latest-date', requireLogin, (req, res) => {
+    res.set('Cache-Control', 'no-store')
+    res.json({ date: latestOrderDate() })
+  })
+
+  // GET /order-items?date=YYYY-MM-DD — รายการของวันเดียว (ไม่ระบุ = วันล่าสุดที่มีออเดอร์)
+  // เดิมส่งทุกออเดอร์ตั้งแต่เริ่มระบบทุกครั้ง (17MB) ทำให้ egress สูงและ sql.js หน่วยความจำเต็ม
   app.get('/order-items', requireLogin, (req, res) => {
     try {
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '') ? req.query.date : latestOrderDate()
+    if (!date) { res.set('Cache-Control', 'no-store'); return res.json([]) }
     // Pre-load bundle components map for bundle display
     const bundleCompsRes = db.exec(
       'SELECT pb.product_id, p.name, pb.quantity, p.price_usd FROM product_bundles pb JOIN products p ON p.id = pb.component_id ORDER BY pb.product_id, pb.rowid'
@@ -1951,9 +1981,9 @@ initDB().then(() => {
       LEFT JOIN categories c ON c.id = p.category_id
       LEFT JOIN emails e ON e.id = oi.email_id_used
       LEFT JOIN product_lots pl ON pl.id = oi.lot_id_used
-      WHERE (o.razer_status IS NULL OR o.razer_status NOT IN ('failed','partial'))
+      WHERE ${ORDER_VISIBLE_SQL} AND ${ORDER_DATE_SQL} = ?
       ORDER BY COALESCE(o.transfer_time, o.created_at) DESC, o.id DESC, oi.id ASC
-    `)
+    `, [date])
     const items = result[0] ? result[0].values.map(row => {
       const item = {
         order_id: row[0], transfer_time: row[1], created_at: row[2],
@@ -2008,6 +2038,95 @@ initDB().then(() => {
     res.json(items)
     } catch (err) {
       console.error('[order-items] error:', err.message, err.stack)
+      res.status(500).json({ error: err.message })
+    }
+  })
+
+  // GET /dashboard-summary?period=7|30|90|all — สรุปยอดให้ Dashboard (คำนวณที่ server ส่งแค่ตัวเลข)
+  app.get('/dashboard-summary', requireLogin, (req, res) => {
+    try {
+      const period = ['7', '30', '90', 'all'].includes(req.query.period) ? req.query.period : '7'
+      // 1 แถวต่อออเดอร์ — เกม/ประเภทมาจาก item แรกของออเดอร์ (oi.id น้อยสุด) เหมือน Dashboard เดิม
+      const result = db.exec(`
+        SELECT o.id, COALESCE(NULLIF(o.transfer_time, ''), o.created_at) AS t, o.transfer_amount, o.channel,
+               c.name, c.fill_type, oi.manual_data
+        FROM orders o
+        JOIN (SELECT order_id, MIN(id) AS first_id FROM order_items GROUP BY order_id) f ON f.order_id = o.id
+        JOIN order_items oi ON oi.id = f.first_id
+        LEFT JOIN products p ON p.id = oi.product_id AND oi.product_id != 0
+        LEFT JOIN categories c ON c.id = p.category_id
+        WHERE ${ORDER_VISIBLE_SQL}
+      `)
+      const orders = (result[0]?.values || []).map(([id, t, amount, channel, catName, fillType, manualData]) => {
+        let category_name = catName || null
+        if (manualData) { try { category_name = JSON.parse(manualData).game_name || category_name } catch {} }
+        return {
+          order_id: id, transfer_time: t, dateKey: t ? t.slice(0, 10) : 'unknown',
+          transfer_amount: Number(amount) || 0, channel: channel || null,
+          category_name, fill_type: fillType || null,
+        }
+      })
+
+      const todayKey = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Bangkok' }).slice(0, 10)
+      const monthKey = todayKey.slice(0, 7)
+      const sum = list => list.reduce((s, o) => s + o.transfer_amount, 0)
+      const todayOrders = orders.filter(o => o.dateKey === todayKey)
+      const monthOrders = orders.filter(o => o.dateKey.slice(0, 7) === monthKey)
+
+      // ช่วงเวลาที่เลือก: 7/30/90 วันย้อนหลังนับรวมวันนี้, all = ทั้งหมด
+      let startKey = null
+      if (period !== 'all') {
+        const d = new Date(todayKey + 'T00:00:00Z')
+        d.setUTCDate(d.getUTCDate() - (Number(period) - 1))
+        startKey = d.toISOString().slice(0, 10)
+      }
+      const periodOrders = startKey ? orders.filter(o => o.dateKey >= startKey && o.dateKey <= todayKey) : orders
+
+      const gameMap = new Map()
+      for (const o of periodOrders) {
+        const name = o.category_name || 'ไม่ระบุเกม'
+        if (!gameMap.has(name)) gameMap.set(name, { name, revenue: 0, count: 0 })
+        const g = gameMap.get(name)
+        g.revenue += o.transfer_amount
+        g.count++
+      }
+      const gameStats = Array.from(gameMap.values()).sort((a, b) => b.revenue - a.revenue)
+
+      // กราฟ: รายวัน (เติม 0 ให้วันที่ไม่มีออเดอร์) หรือรายเดือนสำหรับ all
+      const bucketOf = o => period === 'all' ? o.dateKey.slice(0, 7) : o.dateKey
+      const buckets = new Map()
+      if (startKey) {
+        for (const d = new Date(startKey + 'T00:00:00Z'); d.toISOString().slice(0, 10) <= todayKey; d.setUTCDate(d.getUTCDate() + 1)) {
+          const k = d.toISOString().slice(0, 10)
+          buckets.set(k, { date: k, revenue: 0, count: 0 })
+        }
+      }
+      for (const o of periodOrders) {
+        if (o.dateKey === 'unknown') continue
+        const k = bucketOf(o)
+        if (!buckets.has(k)) buckets.set(k, { date: k, revenue: 0, count: 0 })
+        const b = buckets.get(k)
+        b.revenue += o.transfer_amount
+        b.count++
+      }
+      const chart = Array.from(buckets.values()).sort((a, b) => a.date.localeCompare(b.date))
+
+      const recent = [...orders]
+        .sort((a, b) => (b.transfer_time || '').localeCompare(a.transfer_time || '') || b.order_id - a.order_id)
+        .slice(0, 8)
+        .map(({ dateKey, ...o }) => o)
+
+      res.set('Cache-Control', 'no-store')
+      res.json({
+        period,
+        today: { orders: todayOrders.length, revenue: sum(todayOrders) },
+        month: { orders: monthOrders.length, revenue: sum(monthOrders) },
+        totalOrders: orders.length,
+        periodSummary: { orders: periodOrders.length, revenue: sum(periodOrders) },
+        gameStats, chart, chartUnit: period === 'all' ? 'month' : 'day', recent,
+      })
+    } catch (err) {
+      console.error('[dashboard-summary] error:', err.message)
       res.status(500).json({ error: err.message })
     }
   })

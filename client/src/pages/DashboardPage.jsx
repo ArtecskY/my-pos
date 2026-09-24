@@ -11,12 +11,15 @@ import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card'
 import { StatCardSkeleton, ChartSkeleton, Skeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 
-function getDateKey(s) { return s ? s.slice(0, 10) : 'unknown' }
-
 function formatShortDate(dateStr) {
   if (!dateStr) return ''
   const d = new Date(dateStr)
   return `${d.getDate()}/${d.getMonth() + 1}`
+}
+
+function formatShortMonth(monthStr) {
+  if (!monthStr) return ''
+  return new Date(monthStr + '-01T00:00:00').toLocaleDateString('th-TH', { month: 'short', year: '2-digit' })
 }
 
 function formatThaiDate(dateStr) {
@@ -58,86 +61,45 @@ const CustomTooltip = ({ active, payload, label }) => {
   )
 }
 
+const PERIODS = [
+  { key: '7',   label: '7 วัน' },
+  { key: '30',  label: '30 วัน' },
+  { key: '90',  label: '3 เดือน' },
+  { key: 'all', label: 'All Time' },
+]
+
 export default function DashboardPage() {
-  const [orderItems, setOrderItems] = useState([])
+  const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [chartPeriod, setChartPeriod] = useState('7')
 
+  // server สรุปยอดมาให้ตามช่วงเวลา (เดิมโหลดทุกออเดอร์มาคำนวณในเบราว์เซอร์)
   useEffect(() => {
-    fetch('/order-items')
+    let cancelled = false
+    fetch(`/dashboard-summary?period=${chartPeriod}`)
       .then(r => r.json())
-      .then(data => { setOrderItems(data); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [])
-
-  const todayKey = new Date().toISOString().slice(0, 10)
-  const thisMonthKey = new Date().toISOString().slice(0, 7)
+      .then(data => { if (!cancelled && data && !data.error) setSummary(data) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [chartPeriod])
 
   const stats = useMemo(() => {
-    const orderMap = new Map()
-    for (const item of orderItems) {
-      if (!orderMap.has(item.order_id)) {
-        const dateKey = getDateKey(item.transfer_time || item.created_at)
-        orderMap.set(item.order_id, {
-          order_id: item.order_id, dateKey,
-          monthKey: dateKey.slice(0, 7),
-          transfer_amount: Number(item.transfer_amount) || 0,
-          channel: item.channel || null,
-          fill_type: item.fill_type || null,
-          transfer_time: item.transfer_time || item.created_at,
-          items: [],
-        })
-      }
-      orderMap.get(item.order_id).items.push(item)
-    }
-    const orders = Array.from(orderMap.values())
-    const todayOrders  = orders.filter(o => o.dateKey === todayKey)
-    const monthOrders  = orders.filter(o => o.monthKey === thisMonthKey)
-
-    const todayRevenue = todayOrders.reduce((s, o) => s + o.transfer_amount, 0)
-    const monthRevenue = monthOrders.reduce((s, o) => s + o.transfer_amount, 0)
-
-    // game stats
-    const gameMap = new Map()
-    for (const order of orders) {
-      const cat = order.items[0]?.category_name || 'ไม่ระบุเกม'
-      if (!gameMap.has(cat)) gameMap.set(cat, { name: cat, revenue: 0, count: 0 })
-      const g = gameMap.get(cat)
-      g.revenue += order.transfer_amount
-      g.count++
-    }
-    const gameStats = Array.from(gameMap.values()).sort((a, b) => b.revenue - a.revenue)
-    const topGame = gameStats[0]?.name || '—'
-
-    // daily stats
-    const dateRevMap = new Map()
-    for (const order of orders) {
-      if (!dateRevMap.has(order.dateKey)) dateRevMap.set(order.dateKey, { date: order.dateKey, revenue: 0, count: 0 })
-      const d = dateRevMap.get(order.dateKey)
-      d.revenue += order.transfer_amount
-      d.count++
-    }
-    const allDaily = Array.from(dateRevMap.values()).sort((a, b) => a.date.localeCompare(b.date))
-    const daily7  = allDaily.slice(-7)
-    const daily30 = allDaily.slice(-30)
-
-    // recent orders (latest 8)
-    const recent = orders
-      .sort((a, b) => (b.transfer_time || '').localeCompare(a.transfer_time || ''))
-      .slice(0, 8)
-
+    const s = summary || {}
+    const gameStats = s.gameStats || []
     return {
-      todayOrders: todayOrders.length, todayRevenue,
-      monthOrders: monthOrders.length, monthRevenue,
-      totalOrders: orders.length,
-      topGame, gameStats,
-      daily7, daily30, recent,
+      todayOrders: s.today?.orders || 0, todayRevenue: s.today?.revenue || 0,
+      monthOrders: s.month?.orders || 0, monthRevenue: s.month?.revenue || 0,
+      totalOrders: s.totalOrders || 0,
+      topGame: gameStats[0]?.name || '—', gameStats,
+      recent: (s.recent || []).map(o => ({ ...o, items: [{ category_name: o.category_name, fill_type: o.fill_type }] })),
     }
-  }, [orderItems, todayKey, thisMonthKey])
+  }, [summary])
 
-  const chartData = chartPeriod === '7' ? stats.daily7 : stats.daily30
-  const chartDataFormatted = chartData.map(d => ({
-    ...d, label: formatShortDate(d.date)
+  const isMonthly = summary?.chartUnit === 'month'
+  const periodLabel = PERIODS.find(p => p.key === chartPeriod)?.label
+  const chartDataFormatted = (summary?.chart || []).map(d => ({
+    ...d, label: isMonthly ? formatShortMonth(d.date) : formatShortDate(d.date)
   }))
 
   if (loading) {
@@ -187,7 +149,7 @@ export default function DashboardPage() {
           color="purple"
         />
         <StatCard
-          label="เกมยอดนิยม"
+          label={`เกมยอดนิยม (${periodLabel})`}
           value={stats.topGame}
           sub={`${stats.gameStats[0]?.count || 0} ออเดอร์`}
           icon={Gamepad2}
@@ -202,23 +164,23 @@ export default function DashboardPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>ยอดโอนรายวัน</CardTitle>
+                <CardTitle>{isMonthly ? 'ยอดโอนรายเดือน' : 'ยอดโอนรายวัน'}</CardTitle>
                 <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  ยอดโอนรวมแต่ละวัน
+                  {periodLabel}: ฿{(summary?.periodSummary?.revenue || 0).toLocaleString()} · {(summary?.periodSummary?.orders || 0).toLocaleString()} ออเดอร์
                 </p>
               </div>
               <div className="flex items-center gap-1 p-1 bg-[var(--surface2)] rounded-xl border border-[var(--border)]">
-                {['7', '30'].map(p => (
+                {PERIODS.map(p => (
                   <button
-                    key={p}
-                    onClick={() => setChartPeriod(p)}
+                    key={p.key}
+                    onClick={() => setChartPeriod(p.key)}
                     className={`px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                      chartPeriod === p
+                      chartPeriod === p.key
                         ? 'bg-brand text-white shadow-sm'
                         : 'text-[var(--text-muted)] hover:text-[var(--text)]'
                     }`}
                   >
-                    {p} วัน
+                    {p.label}
                   </button>
                 ))}
               </div>
@@ -260,7 +222,7 @@ export default function DashboardPage() {
               <div className="w-7 h-7 rounded-lg bg-brand/10 flex items-center justify-center">
                 <BarChart2 size={14} className="text-brand" />
               </div>
-              <CardTitle>ยอดขายตามเกม</CardTitle>
+              <CardTitle>ยอดขายตามเกม ({periodLabel})</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="pt-0">

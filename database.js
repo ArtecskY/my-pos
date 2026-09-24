@@ -227,9 +227,29 @@ async function initDB() {
   return db
 }
 
+// sql.js (WASM) เมื่อหน่วยความจำเต็มจะพังแบบกู้ไม่ได้ (out of memory / memory access out of bounds / malformed schema)
+// ตรวจด้วย query เบาๆ — ถ้า throw แปลว่า DB ใน memory เสียแล้ว
+function isHealthy() {
+  try {
+    db.exec('SELECT COUNT(*) FROM sqlite_master')
+    return true
+  } catch (e) {
+    console.error('[db] health check ล้มเหลว:', e?.message || String(e))
+    return false
+  }
+}
+
+// ปิด process ด้วย exit code 1 ให้ Railway เปิดใหม่ (โหลด pos.db ล่าสุดที่ยังดีอยู่)
+function exitOnBrokenDB(reason) {
+  console.error(`[db] ฐานข้อมูลใน memory เสียหาย (${reason}) — ปิด server เพื่อให้ restart อัตโนมัติ`)
+  process.exit(1)
+}
+
 function save() {
+  // ห้ามเขียน DB ที่เสียทับ pos.db ที่ยังดีอยู่
+  if (!isHealthy()) exitOnBrokenDB('save')
   const data = db.export()
   fs.writeFileSync(DB_PATH, Buffer.from(data))
 }
 
-module.exports = { initDB, save, getDB: () => db }
+module.exports = { initDB, save, getDB: () => db, isHealthy, exitOnBrokenDB }

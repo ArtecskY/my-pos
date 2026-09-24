@@ -14,6 +14,7 @@ export default defineConfig({
       '/products':          p(BACKEND),
       '/orders':            p(BACKEND),
       '/order-items':       p(BACKEND),
+      '/dashboard-summary': p(BACKEND),
       '/categories':        p(BACKEND),
       '/emails':            p(BACKEND),
       '/email-types':       p(BACKEND),

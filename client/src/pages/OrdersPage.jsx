@@ -128,22 +128,43 @@ export default function OrdersPage() {
   const [editNoteOrderId, setEditNoteOrderId] = useState(null)
   const [editNoteValue, setEditNoteValue] = useState('')
   const [fetchError, setFetchError] = useState(null)
+  const [loadedDate, setLoadedDate] = useState('')
 
   useEffect(() => {
+    fetch('/email-types').then(r => r.json()).then(setCustomTypes).catch(() => {})
+    // เปิดหน้าครั้งแรก: เลือกวันล่าสุดที่มีออเดอร์ (ไม่มีเลย = วันนี้)
+    fetch('/order-items/latest-date')
+      .then(r => r.json())
+      .then(d => setSelectedDate(prev => prev || d?.date || new Date().toLocaleDateString('sv-SE')))
+      .catch(err => setFetchError(String(err)))
+  }, [])
+
+  // โหลดเฉพาะวันที่เลือก + poll ทุก 8 วินาทีเฉพาะตอนที่แท็บเปิดดูอยู่
+  useEffect(() => {
+    if (!selectedDate) return
+    let cancelled = false
     function loadData() {
-      fetch('/order-items')
+      if (document.hidden) return
+      fetch(`/order-items?date=${selectedDate}`)
         .then(r => r.json())
         .then(data => {
-          if (Array.isArray(data)) { setOrderItems(data); setFetchError(null) }
+          if (cancelled) return
+          if (Array.isArray(data)) { setOrderItems(data); setLoadedDate(selectedDate); setFetchError(null) }
           else setFetchError(data?.error || JSON.stringify(data).slice(0, 200))
         })
-        .catch(err => setFetchError(String(err)))
-      fetch('/email-types').then(r => r.json()).then(setCustomTypes).catch(() => {})
+        .catch(err => { if (!cancelled) setFetchError(String(err)) })
     }
     loadData()
     const timer = setInterval(loadData, 8000)
-    return () => clearInterval(timer)
-  }, [])
+    document.addEventListener('visibilitychange', loadData)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', loadData)
+    }
+  }, [selectedDate])
+
+  const loadingDate = !!selectedDate && loadedDate !== selectedDate
 
   const groupedByDate = useMemo(() => {
     const dateMap = new Map()
@@ -209,14 +230,7 @@ export default function OrdersPage() {
     return Array.from(dateMap.values())
   }, [orderItems])
 
-  // auto-select วันล่าสุด
-  useEffect(() => {
-    if (groupedByDate.length > 0 && !selectedDate) {
-      setSelectedDate(groupedByDate[0].dateKey)
-    }
-  }, [groupedByDate, selectedDate])
-
-  // รายชื่อเกมทั้งหมด
+  // รายชื่อเกมของวันที่เลือก
   const uniqueGames = useMemo(() => {
     const s = new Set()
     for (const item of orderItems) { if (item.category_name) s.add(item.category_name) }
@@ -536,7 +550,7 @@ export default function OrdersPage() {
 
       {!currentGroup || filteredOrders.length === 0 ? (
         <div className="bg-white rounded-xl p-12 shadow-sm text-center text-slate-400">
-          {selectedDate ? 'ไม่มีรายการในวันที่เลือก' : 'ยังไม่มีรายการ'}
+          {!selectedDate || loadingDate ? 'กำลังโหลด...' : 'ไม่มีรายการในวันที่เลือก'}
         </div>
       ) : (
         <>
