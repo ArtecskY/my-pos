@@ -58,6 +58,9 @@ export default function POSPage({ onNavigate }) {
   const [cart, setCart] = useState([])
   const [receipt, setReceipt] = useState(null)
   const [showPayModal, setShowPayModal] = useState(false)
+  // กันกดเบิ้ล: ref ล็อกทันทีตั้งแต่คลิกแรก (state อัปเดตไม่ทันคลิกที่ 2) ส่วน state ใช้ปิดปุ่ม/เปลี่ยนข้อความ
+  const submittingRef = useRef(false)
+  const [submitting, setSubmitting] = useState(false)
   const [transferAmount, setTransferAmount] = useState('')
   const [transferTime, setTransferTime] = useState('')
   const [transferTime2, setTransferTime2] = useState('')
@@ -339,6 +342,18 @@ export default function POSPage({ onNavigate }) {
     if (item && !isRazerBehavior(item.fill_type, emailTypes)) {
       setSelectedEmails(prev => { const n = { ...prev }; delete n[splitKey]; return n })
       fetchEmailsFor(splitKey, item.fill_type, creditsNeeded(item, emailTypes, newQty))
+    }
+  }
+
+  async function submitOnce(fn) {
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setSubmitting(true)
+    try {
+      await fn()
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
     }
   }
 
@@ -1038,10 +1053,11 @@ export default function POSPage({ onNavigate }) {
                   </button>
                 )}
                 <button
-                  onClick={saveReservation}
-                  className={`${activeReservationId ? 'flex-1' : 'w-full'} bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg cursor-pointer font-medium`}
+                  onClick={() => submitOnce(saveReservation)}
+                  disabled={submitting}
+                  className={`${activeReservationId ? 'flex-1' : 'w-full'} bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg cursor-pointer font-medium disabled:opacity-60 disabled:cursor-wait`}
                 >
-                  {activeReservationId ? 'บันทึกทับ (คิวเดิม)' : 'บันทึกการจอง'}
+                  {submitting ? 'กำลังบันทึก...' : activeReservationId ? 'บันทึกทับ (คิวเดิม)' : 'บันทึกการจอง'}
                 </button>
               </div>
             </>
@@ -1631,12 +1647,12 @@ export default function POSPage({ onNavigate }) {
             </div>
 
             <div className="flex gap-2.5">
-              <button onClick={confirmCheckout}
-                className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg cursor-pointer font-medium">
-                ยืนยันชำระเงิน
+              <button onClick={() => submitOnce(confirmCheckout)} disabled={submitting}
+                className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg cursor-pointer font-medium disabled:opacity-60 disabled:cursor-wait">
+                {submitting ? 'กำลังบันทึก...' : 'ยืนยันชำระเงิน'}
               </button>
-              <button onClick={() => setShowPayModal(false)}
-                className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-600 py-3 rounded-lg cursor-pointer">
+              <button onClick={() => setShowPayModal(false)} disabled={submitting}
+                className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-600 py-3 rounded-lg cursor-pointer disabled:opacity-60">
                 ยกเลิก
               </button>
             </div>
